@@ -1,0 +1,50 @@
+site_name: mpctrano
+site_description: Calibration, state estimation and economic MPC of Trano RC building models
+repo_name: mpctrano
+repo_url: https://github.com/andoludo/mpctrano
+theme:
+  name: material
+  palette:
+    - media: '(prefers-color-scheme: light)'
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/lightbulb
+        name: Switch to dark mode
+    - media: '(prefers-color-scheme: dark)'
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to light mode
+  features:
+    - content.code.annotate
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.tabs
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  icon:
+    repo: fontawesome/brands/github-alt
+  language: en
+plugins:
+  - search
+nav:
+  - Workflow: index.md
+  - Monitoring data: data.md
+  - Calibration: calibration.md
+  - State estimation: estimation.md
+  - MPC, tariffs and flexibility: mpc.md
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite

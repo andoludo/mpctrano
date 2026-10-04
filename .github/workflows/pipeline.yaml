@@ -2,34 +2,118 @@ name: Pipeline
 
 on:
   push:
-  pull_request:
 
 jobs:
   linting:
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/') && ! contains(github.event.head_commit.message, 'Auto-increment')
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
       - name: Install dependencies
-        run: uv sync
-      - name: Lint and type check
+        run: uv sync --group dev --group docs
+
+      - name: Run linting
         run: make linting
 
   tests:
     needs: [linting]
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: ${{ matrix.python-version }}
+
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --group dev --group docs
+
       - name: Run tests
-        run: uv run pytest
+        run: make tests-all
+
+  create-revision-and-tag:
+    if: startsWith(github.ref, 'refs/heads/main')
+    needs: [tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Bump minor version
+        run: |
+          uv version --bump minor
+          echo "NEW_VERSION=$(uv version --short)" >> $GITHUB_ENV
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: Auto-increment release version
+
+      - name: Create and Push Git Tag
+        run: |
+          git tag ${{ env.NEW_VERSION }}
+          git push origin ${{ env.NEW_VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+  publish:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set version from tag
+        run: echo "NEW_VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+
+      - name: Build source and wheel archives
+        run: uv build
+
+      - name: List generated files
+        run: ls -l dist
+
+      - name: Upload Wheel to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          tag_name: ${{ env.NEW_VERSION }}
+          name: Release ${{ env.NEW_VERSION }}
+          body: |
+            ## Release Notes
+            - Automatically generated release for version **${{ env.NEW_VERSION }}**
+            - Commit: ${{ github.sha }}
+            - Triggered by push to branch `${{ github.ref_name }}`
+          files: dist/*.whl
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+
+      - name: Publish to PyPI
+        if: contains(github.event.head_commit.message, 'Auto-increment release version')
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

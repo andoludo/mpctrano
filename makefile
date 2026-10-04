@@ -1,7 +1,7 @@
 .PHONY: install linting tests tests-all tutorials
 
 install:
-	uv sync
+	uv sync --group dev --group docs
 
 linting:
 	uv run ruff format .

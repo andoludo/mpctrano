@@ -70,14 +70,22 @@ class ComfortSchedule(BaseModel):
         upper = np.where(occupied, self.occupied_upper, self.unoccupied_upper) + KELVIN
         return lower, upper
 
-    def widen(self, delta: float) -> ComfortSchedule:
-        """Schedule with a band wider by ``delta`` K on each side (more flexibility)."""
+    def widen(self, delta: float, side: str = "both") -> ComfortSchedule:
+        """Schedule with a band wider by ``delta`` K (``side``: ``both``, ``upper`` or ``lower``).
+
+        Raising only the upper bound keeps the comfort requirement and adds room to pre-heat
+        the thermal mass: this is the flexibility lever; lowering the lower bound reduces comfort.
+        """
+        if side not in ("both", "upper", "lower"):
+            raise ValueError("side must be 'both', 'upper' or 'lower'.")
+        lower = delta if side in ("both", "lower") else 0.0
+        upper = delta if side in ("both", "upper") else 0.0
         return self.model_copy(
             update={
-                "occupied_lower": self.occupied_lower - delta,
-                "occupied_upper": self.occupied_upper + delta,
-                "unoccupied_lower": self.unoccupied_lower - delta,
-                "unoccupied_upper": self.unoccupied_upper + delta,
+                "occupied_lower": self.occupied_lower - lower,
+                "occupied_upper": self.occupied_upper + upper,
+                "unoccupied_lower": self.unoccupied_lower - lower,
+                "unoccupied_upper": self.unoccupied_upper + upper,
             }
         )
 
@@ -107,7 +115,7 @@ class ComfortSpec(BaseModel):
             upper.append(zone_upper)
         return ComfortBounds(index=index, zones=list(model.zone_names), lower=np.vstack(lower), upper=np.vstack(upper))
 
-    def map(self, transform: str, *args: float) -> ComfortSpec:
+    def map(self, transform: str, *args: float | str) -> ComfortSpec:
         """Apply ``ComfortSchedule.<transform>(*args)`` to every schedule (e.g. ``widen``)."""
         default = getattr(self.default, transform)(*args)
         zones = {name: getattr(schedule, transform)(*args) for name, schedule in self.zones.items()}

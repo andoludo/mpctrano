@@ -11,12 +11,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer, field_validator
 
 HOURS_PER_DAY = 24
 
@@ -105,20 +106,31 @@ class TimeOfUseTariff(Tariff):
         return np.where(self.is_peak(index), self.peak_price, self.off_peak_price)
 
 
+def _to_series(value: Any) -> pd.Series:  # noqa: ANN401
+    """Accept a series or a ``{timestamp: price}`` mapping (JSON)."""
+    series = value if isinstance(value, pd.Series) else pd.Series(dict(value))
+    series.index = pd.to_datetime(series.index)
+    if not isinstance(series.index, pd.DatetimeIndex):
+        raise ValueError("The price series needs a DatetimeIndex.")
+    return series.sort_index().astype(float)
+
+
+PriceSeries = Annotated[
+    pd.Series,
+    BeforeValidator(_to_series),
+    PlainSerializer(
+        lambda series: {str(stamp.isoformat()): float(price) for stamp, price in series.items()}, return_type=dict
+    ),
+]
+
+
 class DynamicTariff(Tariff):
     """Time series of prices (e.g. day-ahead market prices plus grid fees), held between samples."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     kind: Literal["dynamic"] = "dynamic"
-    series: Annotated[pd.Series, Field(description="Prices [EUR/kWh] indexed by time")]
-
-    @field_validator("series")
-    @classmethod
-    def _check_series(cls, series: pd.Series) -> pd.Series:
-        if not isinstance(series.index, pd.DatetimeIndex):
-            raise ValueError("The price series needs a DatetimeIndex.")
-        return series.sort_index().astype(float)
+    series: PriceSeries = Field(description="Prices [EUR/kWh] indexed by time")
 
     @classmethod
     def from_csv(cls, path: Path | str, column: str = "price", capacity_charge: float = 0.0) -> DynamicTariff:
@@ -157,15 +169,15 @@ class DynamicTariff(Tariff):
 class DemandResponseEvent(BaseModel):
     """A period where the grid asks for flexibility: a price multiplier and/or a power cap."""
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True)
 
-    start: pd.Timestamp
-    end: pd.Timestamp
+    start: datetime
+    end: datetime
     price_multiplier: float = Field(1.0, ge=0, description="Multiplies the base price during the event")
     power_limit: float | None = Field(None, ge=0, description="Maximum total heating power during the event [W]")
 
     def active(self, index: pd.DatetimeIndex) -> np.ndarray:
-        return np.asarray((index >= self.start) & (index < self.end), dtype=bool)
+        return np.asarray((index >= pd.Timestamp(self.start)) & (index < pd.Timestamp(self.end)), dtype=bool)
 
 
 class DemandResponseTariff(Tariff):

@@ -149,7 +149,7 @@ class RCModel:
         stem = stem or self.interface.package
         modelica_path = directory / f"{stem}.mo"
         modelica_path.write_text(self.source)
-        return modelica_path, self.calibrated_interface().write(directory / f"{stem}.mpc.json")
+        return modelica_path, self.portable_interface().write(directory / f"{stem}.mpc.json")
 
     # ----------------------------------------------------------------- names and indices
     @property
@@ -276,6 +276,14 @@ class RCModel:
             for specification, value in zip(self.interface.parameters, self.parameters, strict=True)
         ]
         return self.interface.model_copy(update={"parameters": parameters})
+
+    def portable_interface(self) -> MPCModelInterface:
+        """:meth:`calibrated_interface` with the weather file as an absolute path, if it exists."""
+        interface = self.calibrated_interface()
+        weather = self.weather_path
+        if weather is not None and weather.exists():
+            interface = interface.model_copy(update={"weather_file": str(weather)})
+        return interface
 
     # ----------------------------------------------------------------- dynamics
     @cached_property

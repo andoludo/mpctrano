@@ -19,6 +19,7 @@ from mpctrano.forecast import Forecaster
 from mpctrano.metrics import ControlMetrics
 from mpctrano.model import RCModel
 from mpctrano.mpc import ModelPredictiveController
+from mpctrano.tariff import Tariff
 
 
 class Plant(Protocol):
@@ -80,6 +81,22 @@ class ClosedLoopResult:
     @property
     def zones(self) -> list[str]:
         return [column.removesuffix("_QHea") for column in self.frame.columns if column.endswith("_QHea")]
+
+    def metrics_under(self, tariff: Tariff) -> ControlMetrics:
+        """The indicators of this run costed with another tariff (same trajectories)."""
+        index = pd.DatetimeIndex(self.frame.index)
+        signal = tariff.signal(index)
+        zones = self.zones
+        return ControlMetrics.compute(
+            index,
+            self.frame[[f"{zone}_QHea" for zone in zones]].to_numpy(dtype=float).T,
+            self.frame[[f"{zone}_Ti_end" for zone in zones]].to_numpy(dtype=float).T,
+            self.frame[[f"{zone}_lower" for zone in zones]].to_numpy(dtype=float).T,
+            self.frame[[f"{zone}_upper" for zone in zones]].to_numpy(dtype=float).T,
+            signal.prices,
+            self.time_step,
+            capacity_charge=signal.capacity_charge,
+        )
 
     def summary(self) -> pd.Series:
         values = self.metrics.model_dump()

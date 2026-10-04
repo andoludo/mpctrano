@@ -45,7 +45,13 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
     settings = MPCSettings(horizon=horizon)
     timestamp = pd.Timestamp(start)
     comfort = ComfortSpec()
-    dynamic = DynamicTariff.synthetic_day_ahead(timestamp - pd.Timedelta(days=1), int(days) + 3)
+    deep_setback = ComfortSpec(default=ComfortSchedule(unoccupied_lower=15.0))
+    # Contrasted but realistic retail prices: the slow envelope of a building only pays back part of the
+    # stored heat within the expensive hours, so a spread of a few times is needed to see it move.
+    time_of_use = TimeOfUseTariff(peak_price=0.40, off_peak_price=0.10)
+    dynamic = DynamicTariff.synthetic_day_ahead(
+        timestamp - pd.Timedelta(days=1), int(days) + 3, base=0.18, amplitude=0.18, noise=0.02
+    )
     event = DemandResponseEvent(
         start=timestamp + pd.Timedelta(hours=17),
         end=timestamp + pd.Timedelta(hours=20),
@@ -61,8 +67,8 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         ),
         Scenario(
             name="time_of_use",
-            description="Peak / off-peak tariff: the MPC pre-heats the thermal mass before the peak hours.",
-            tariff=TimeOfUseTariff(),
+            description="Peak / off-peak tariff (0.40 / 0.10 EUR/kWh): the MPC pre-heats before the peak hours.",
+            tariff=time_of_use,
             comfort=comfort,
         ),
         Scenario(
@@ -74,25 +80,25 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         Scenario(
             name="demand_response",
             description="Time-of-use tariff with a demand response event (price x3 and a power cap, 17h-20h on day 1).",
-            tariff=TimeOfUseTariff().with_events([event]),
+            tariff=time_of_use.with_events([event]),
             comfort=comfort,
         ),
         Scenario(
             name="peak_shaving",
-            description="Flat tariff with a capacity charge on the peak power: the MPC flattens the heating profile.",
+            description="Deep night setback and a capacity charge on the peak: the MPC spreads the morning boost.",
             tariff=FlatTariff(price=0.25, capacity_charge=8.0),
-            comfort=comfort,
+            comfort=deep_setback,
         ),
         Scenario(
             name="wide_comfort_band",
-            description="Day-ahead prices with a comfort band widened by 1 K: more flexibility, lower cost.",
+            description="Day-ahead prices with the upper bound raised by 2 K: room to pre-heat, same comfort.",
             tariff=dynamic,
-            comfort=comfort.map("widen", 1.0),
+            comfort=comfort.map("widen", 2.0, "upper"),
         ),
         Scenario(
             name="imperfect_forecast",
             description="Time-of-use tariff with forecast errors and a moving horizon estimator.",
-            tariff=TimeOfUseTariff(),
+            tariff=time_of_use,
             comfort=comfort,
             forecast_noise=ForecastNoise(temperature_std=2.0, irradiance_relative_std=0.3, seed=1),
             estimator="mhe",

@@ -46,7 +46,9 @@ class MPCSettings(BaseModel):
     time_step: float = Field(3600.0, gt=0, description="Control interval [s]")
     comfort_penalty: float = Field(5.0, ge=0, description="Linear penalty of comfort violations [EUR/(K.h)]")
     comfort_quadratic: float = Field(1.0, ge=0, description="Quadratic penalty of comfort violations [EUR/(K2.h)]")
-    power_limit_penalty: float = Field(2.0, ge=0, description="Penalty of energy above a power limit [EUR/kWh]")
+    power_limit_penalty: float = Field(
+        50.0, ge=0, description="Penalty of the energy above a demand response power limit [EUR/kWh] (soft cap)"
+    )
     ramp_weight: float = Field(0.0, ge=0, description="Penalty of control changes [EUR/kW2]")
     max_power: dict[str, float] | None = Field(None, description="Maximum heating power per zone [W]")
     min_power: float = Field(0.0, description="Minimum heating power [W] (negative allows cooling)")

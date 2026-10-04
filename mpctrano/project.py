@@ -126,7 +126,7 @@ class Project:
         written: dict[str, Path] = {}
         written["modelica"], written["interface"] = self.model.write(directory, stem)
         if self.calibrated is not None:
-            written["calibrated_interface"] = self.calibrated.calibrated_interface().write(
+            written["calibrated_interface"] = self.calibrated.portable_interface().write(
                 directory / f"{stem}.calibrated.mpc.json"
             )
         if self.calibration is not None:

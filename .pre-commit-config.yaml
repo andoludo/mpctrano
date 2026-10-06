@@ -1,0 +1,25 @@
+# Run `uv run pre-commit install` once; the hooks then run on every commit.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix --exit-non-zero-on-fix
+        language: system
+        types_or: [python]
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        pass_filenames: false
+        files: ^mpctrano/
+      - id: jupytext-sync
+        name: jupytext sync (tutorial notebooks paired with percent scripts)
+        entry: uv run jupytext --sync --quiet
+        language: system
+        files: ^tutorials/\d\d_.*\.(py|ipynb)$

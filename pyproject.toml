@@ -29,6 +29,10 @@ dependencies = [
 
 [project.optional-dependencies]
 plot = ["plotly>=5.22"]
+notebook = [
+    "ipywidgets>=8.1",
+    "plotly>=5.22",
+]
 
 [project.urls]
 Repository = "https://github.com/andoludo/mpctrano"
@@ -43,6 +47,12 @@ dev = [
     "mypy>=1.10",
     "pandas-stubs>=2.2.0.240218",
     "plotly>=5.22",
+    "jupyterlab>=4.6.4",
+    "ipywidgets>=8.1.9",
+    "jupytext>=1.19.6",
+    "nbmake>=1.5.5",
+    "pre-commit>=4.6.2",
+    "pyarrow>=25.0.1",
 ]
 
 docs = [
@@ -68,6 +78,12 @@ markers = [
     "slow: longer closed-loop scenarios (deselect with -m 'not slow')",
 ]
 
+[tool.jupytext]
+# Every tutorial notebook is paired with a percent-format script: edit either, `make sync-notebooks` keeps them equal.
+formats = "ipynb,py:percent"
+notebook_metadata_filter = "-all"
+cell_metadata_filter = "-all"
+
 [tool.mypy]
 plugins = "pydantic.mypy"
 packages = "mpctrano"
@@ -86,7 +102,7 @@ ignore_missing_imports = true
 
 [tool.ruff]
 line-length = 120
-exclude = [".git", ".venv", "build", "dist", "docs"]
+exclude = [".git", ".venv", "build", "dist", "docs", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "B006", "RUF", "UP", "SIM", "FURB", "PIE", "PERF", "C4", "B", "PL", "S", "C901", "N", "ANN", "ERA001", "PD"]
@@ -95,4 +111,4 @@ fixable = ["ALL"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "PLR", "S", "D"]
-"tutorials/*" = ["ANN", "PLR", "S", "T201", "E402", "ERA001", "N999"]
+"tutorials/**" = ["ANN", "PLR", "S", "T201", "E402", "ERA001", "N999", "INP001"]

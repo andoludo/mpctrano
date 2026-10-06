@@ -44,6 +44,26 @@ jobs:
       - name: Run tests
         run: make tests-all
 
+  notebooks:
+    needs: [tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --group dev --group docs
+
+      - name: Execute the tutorial notebooks
+        run: make notebooks
+
   create-revision-and-tag:
     if: startsWith(github.ref, 'refs/heads/main')
     needs: [tests]

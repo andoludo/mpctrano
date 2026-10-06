@@ -130,8 +130,9 @@ energy bought below the median price, the comfort violations and the peak power 
 
 ## Tutorials
 
-The `tutorials/` scripts walk through the package on the three-zone building of the Trano test
-suite (`uv run python tutorials/01_model_from_trano.py`, figures written to `tutorials/output/`):
+The interactive notebooks on MPC and energy flexibility live in `tutorials/` (see
+`tutorials/README.md`). The `tutorials/package/` scripts walk through the package on the three-zone building of the Trano test
+suite (`uv run python tutorials/package/01_model_from_trano.py`, figures written to `tutorials/output/`):
 
 1. `01_model_from_trano.py` - generate the model, inspect the interface, simulate it.
 2. `02_monitoring_data_and_calibration.py` - monitoring CSV, validation report, calibration, fit plots.

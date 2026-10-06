@@ -222,3 +222,4 @@ tutorials/output/
 
 # mkdocs
 /site
+tutorials/**/trano.log

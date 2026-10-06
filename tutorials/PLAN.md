@@ -1,6 +1,11 @@
 # Plan: interactive MPC and energy-flexibility tutorials in mpctrano
 
-Status: **approved on 2026-10-06 (all open questions resolved with the proposed defaults). Day 1 in progress.**
+Status: **approved on 2026-10-06 (all open questions resolved with the proposed defaults).**
+Progress: Day 1 done on 2026-10-06 with two caveats: the cached price samples could not be
+downloaded (network policy of the container denies the data providers; run
+`tutorials/scripts/fetch_prices.py` elsewhere or allow the hosts), and most entries of
+`references.md` are confirmed from search snippets only (publisher and regulator hosts denied);
+re-check the DOIs from a normal machine. Next: Day 2 (trano `feature/mpc-systems`).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

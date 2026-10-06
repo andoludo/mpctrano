@@ -1,6 +1,6 @@
 # Plan: interactive MPC and energy-flexibility tutorials in mpctrano
 
-Status: **revision 2, waiting for approval** (no code written yet).
+Status: **revision 3, waiting for approval of the remaining open questions** (no code written yet).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the
@@ -10,8 +10,9 @@ Execution: one phase per working session (a "day" below), each ending with a pus
 a short report. Every step lists the files it touches and a "done when" check, so a session can
 stop after any step and the next one resumes from this file.
 
-Branches: mpctrano on `ccr-c0c43f9d-7vxewf`; trano on `ccr-c0c43f9d-7vxewf` unless you prefer
-feature branches (open question 5). trano `master` is never touched directly.
+Branches: mpctrano on `ccr-c0c43f9d-7vxewf`; trano on new feature branches
+(`feature/mpc-systems` for Day 2, `feature/district-models` for Day 8), approved on
+2026-10-06. trano `master` is never touched directly.
 
 ---
 
@@ -133,17 +134,19 @@ documented runtime.
 
 ---
 
-## 2. Typologies (3 + 1 optional)
+## 2. Typologies (4, confirmed on 2026-10-06)
 
 | # | Typology | Why it contrasts | Model and YAML needs |
 |---|---|---|---|
 | 1 | Single-family house, air-water heat pump + floor heating | Reference. High mass, slow emitter, COP tied to supply temperature: textbook shifting, pre-heating and rebound. | 2 zones (day / night), R4C3 plant, floor-heating emitter settings, `air_water_heat_pump`. Variants: envelope (old / renovated / passive), mass, HP size, + PV. Existing YAML elements suffice. |
 | 2 | Apartment block, central heat pump + radiators + DHW tank | Lower mass, fast emitters, a second storage with a hard daily demand: storage competition, DHW as the cheapest flexibility. | 6 zones (3 floors x 2 orientations), `use_storage_tank` + `tank_volume` mapped to the DHW tank, draw-off profile from external data. |
 | 3 | Office, AHU + cooling, weekday occupancy | Cooling, large gains, occupancy window, summer week: pre-cooling against afternoon peaks, summer value for TSO/DSO. | 4 zones (core + 3 facades), new `chiller` system (or a cooling variant of the AHU), ventilation gains. |
-| 4 (optional) | House of #1 + battery + EV charger | Electric next to thermal storage: dispatch order, negative prices, PV self-consumption, EV deadlines. | New `battery` and `ev_charger` YAML elements. |
+| 4 | House of #1 + battery + EV charger | Electric next to thermal storage: dispatch order, negative prices, PV self-consumption, EV deadlines. | New `battery` and `ev_charger` YAML elements. |
 
-YAMLs in `tutorials/buildings/`, generated `.mo` + `.mpc.json` in `tutorials/models/`, both
-committed (text, tens of kB each).
+Rule agreed with the author: a typology is in scope as long as it can be described in trano
+YAML; the YAML schema is extended on the trano branch where an element is missing (chiller,
+battery, ev_charger, DHW draw-off profile). YAMLs in `tutorials/buildings/`, generated `.mo` +
+`.mpc.json` in `tutorials/models/`, both committed (text, tens of kB each).
 
 ---
 
@@ -260,11 +263,12 @@ mpctrano
     `tutorials/03_apartment_block.py` (storage competition, DHW as cheapest flexibility,
     radiators vs floor heating).
 
-### Day 7 - Phase 3b: office (+ optional typology 4)
+### Day 7 - Phase 3b: office and house with battery + EV
 
 17. Office YAML (chiller, AHU gains, weekday occupancy), summer scenarios,
     `tutorials/04_office_cooling.py`.
-18. Optional: `tutorials/05_pv_battery_ev.py` with the battery and EV elements.
+18. `tutorials/05_pv_battery_ev.py`: house of 01 with `photovoltaic`, `battery` and `ev_charger`
+    (dispatch order thermal vs electric storage, negative prices, self-consumption, EV deadline).
 
 ### Day 8 - Phase 5: district
 
@@ -299,8 +303,8 @@ mpctrano
 ## 6. Open questions
 
 1. ~~Energy systems in mpctrano or trano?~~ **Resolved: trano `mpc` library (Modelica).**
-2. **Typologies**: confirm section 2. Typology 4 (battery + EV) in scope from the start or
-   optional? PV alone is folded into the house variants either way.
+2. ~~Typologies~~ **Resolved: the four typologies of section 2, each modelled in trano YAML,
+   with the schema extended on the trano branch where needed.**
 3. **Dependencies** (mpctrano dev group): `jupyterlab`, `ipywidgets`, `jupytext`, `nbmake`,
    `pre-commit`, `pyarrow`; runtime extra `notebook = [plotly, ipywidgets]`. OK?
 4. **trano release path.** The single-building tutorials now need the trano systems extension,
@@ -308,8 +312,8 @@ mpctrano
    asked to be consulted before anything that requires merging into trano main: proposal is one
    PR for the systems (after Day 2) that you merge and release, and a second PR for the district
    (after Day 8). Until the release, mpctrano's lock points at the trano branch via a git source.
-5. **trano branch names**: the designated `ccr-c0c43f9d-7vxewf`, or `feature/mpc-systems` and
-   `feature/district-models`? (Pushing elsewhere needs your explicit OK.)
+5. ~~trano branch names~~ **Resolved: new trano feature branches are allowed**
+   (`feature/mpc-systems`, `feature/district-models`).
 6. **Price data**: committed CSV samples of a few hundred kB, Belgian market, ENTSO-E as the
    documented download path? Committed caches up to ~10 MB, larger via a download script?
 7. **Plant model**: R4C3 perturbed plant against an R3C2 controller as default mismatch, with a

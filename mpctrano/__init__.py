@@ -10,6 +10,8 @@ Workflow::
     result = project.run(scenario_catalogue()["time_of_use"])  # state estimation + MPC
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from mpctrano.calibration import CalibrationResult, CalibrationSettings, Calibrator, evaluate, simulate_fit
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
@@ -26,6 +28,7 @@ from mpctrano.forecast import (
 from mpctrano.metrics import ControlMetrics, FitMetrics
 from mpctrano.model import RCModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
+from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import Scenario, run_scenario, scenario_catalogue
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_closed_loop
@@ -39,6 +42,11 @@ from mpctrano.tariff import (
     TariffSignal,
     TimeOfUseTariff,
 )
+
+try:
+    __version__ = version("mpctrano")
+except PackageNotFoundError:  # pragma: no cover - source checkout without installation
+    __version__ = "0.0.0"
 
 __all__ = [
     "CalibrationResult",
@@ -66,8 +74,10 @@ __all__ = [
     "MonitoringData",
     "MovingHorizonEstimator",
     "OccupancySchedule",
+    "PriceSignal",
     "Project",
     "RCModel",
+    "RetailComponents",
     "Scenario",
     "StateEstimator",
     "SyntheticData",
@@ -76,6 +86,7 @@ __all__ = [
     "TimeOfUseTariff",
     "WeatherFile",
     "WeatherForecaster",
+    "__version__",
     "compare",
     "evaluate",
     "generate_monitoring_data",

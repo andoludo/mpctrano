@@ -1,6 +1,6 @@
 # Plan: interactive MPC and energy-flexibility tutorials in mpctrano
 
-Status: **revision 3, waiting for approval of the remaining open questions** (no code written yet).
+Status: **approved on 2026-10-06 (all open questions resolved with the proposed defaults). Day 1 in progress.**
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the
@@ -305,24 +305,22 @@ mpctrano
 1. ~~Energy systems in mpctrano or trano?~~ **Resolved: trano `mpc` library (Modelica).**
 2. ~~Typologies~~ **Resolved: the four typologies of section 2, each modelled in trano YAML,
    with the schema extended on the trano branch where needed.**
-3. **Dependencies** (mpctrano dev group): `jupyterlab`, `ipywidgets`, `jupytext`, `nbmake`,
-   `pre-commit`, `pyarrow`; runtime extra `notebook = [plotly, ipywidgets]`. OK?
-4. **trano release path.** The single-building tutorials now need the trano systems extension,
-   so it has to reach trano `master` and PyPI before mpctrano can pin it (`trano>=0.36`). You
-   asked to be consulted before anything that requires merging into trano main: proposal is one
-   PR for the systems (after Day 2) that you merge and release, and a second PR for the district
-   (after Day 8). Until the release, mpctrano's lock points at the trano branch via a git source.
+3. ~~Dependencies~~ **Resolved: dev group `jupyterlab`, `ipywidgets`, `jupytext`, `nbmake`,
+   `pre-commit`, `pyarrow`; runtime extra `notebook = [plotly, ipywidgets]`.**
+4. ~~trano release path~~ **Resolved: one trano PR for the systems after Day 2 and one for the
+   district after Day 8, merged and released by the author; until then mpctrano's lock points
+   at the trano branch via a git source.**
 5. ~~trano branch names~~ **Resolved: new trano feature branches are allowed**
    (`feature/mpc-systems`, `feature/district-models`).
-6. **Price data**: committed CSV samples of a few hundred kB, Belgian market, ENTSO-E as the
-   documented download path? Committed caches up to ~10 MB, larger via a download script?
-7. **Plant model**: R4C3 perturbed plant against an R3C2 controller as default mismatch, with a
-   switch to "same structure, perturbed parameters"? Calibration step in the tutorials, or keep
-   the Trano prior and show the cost of mismatch?
-8. **Period and location**: Uccle TMY weather (in the repo), January week for heating, July
-   week for the office. OK?
-9. **YAML naming** for the new elements: `chiller`, `battery`, `ev_charger` under `systems`,
-   and a `district:` top-level list of building files for Day 8. OK?
+6. ~~Price data~~ **Resolved: committed Belgian CSV samples of a few hundred kB, ENTSO-E as the
+   documented download path, committed caches up to ~10 MB, larger via a download script.**
+7. ~~Plant model~~ **Resolved: R4C3 perturbed plant against an R3C2 controller by default, a
+   switch to "same structure, perturbed parameters"; the tutorials keep the Trano prior and show
+   the cost of mismatch (calibration stays an optional pointer to the existing tutorial 02).**
+8. ~~Period and location~~ **Resolved: Uccle TMY weather, January week for heating, July week
+   for the office.**
+9. ~~YAML naming~~ **Resolved: `chiller`, `battery`, `ev_charger` under `systems`; a
+   `district:` top-level list of building files for Day 8.**
 
 ## 7. Risks and mitigations
 

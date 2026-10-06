@@ -5,7 +5,12 @@ Progress: Day 1 done on 2026-10-06 with two caveats: the cached price samples co
 downloaded (network policy of the container denies the data providers; run
 `tutorials/scripts/fetch_prices.py` elsewhere or allow the hosts), and most entries of
 `references.md` are confirmed from search snippets only (publisher and regulator hosts denied);
-re-check the DOIs from a normal machine. Next: Day 2 (trano `feature/mpc-systems`).
+re-check the DOIs from a normal machine.
+Day 2 done on 2026-10-06: trano branch `feature/mpc-systems` (energy systems inlined in the `mpc`
+library, interface version 2, schema elements `chiller`, `dhw_tank`, `battery`, `ev_charger`,
+PV parameters, heat pump performance on the boiler; 495 tests green). A pull request to trano
+`master` carries it; mpctrano will lock that branch through a git source until the release.
+Next: Day 3 (mpctrano consumes interface version 2).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

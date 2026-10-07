@@ -223,3 +223,6 @@ tutorials/output/
 # mkdocs
 /site
 tutorials/**/trano.log
+
+# Pre-generated tutorial models are committed (the global *.mo rule above excludes build output)
+!tutorials/models/**/*.mo

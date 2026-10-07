@@ -56,9 +56,15 @@ def plot_closed_loop(result: ClosedLoopResult, title: str | None = None) -> Any:
     figure.add_trace(
         go.Scatter(x=frame.index, y=frame["TOut"] - KELVIN, name="outdoor", line={"color": "black"}), row=1, col=1
     )
-    for zone in result.zones:
+    for column in result.heating_columns:
         figure.add_trace(
-            go.Scatter(x=frame.index, y=frame[f"{zone}_QHea"] / 1000, name=f"{zone} heating", line={"shape": "hv"}),
+            go.Scatter(x=frame.index, y=frame[column] / 1000, name=column, line={"shape": "hv"}), row=2, col=1
+        )
+    if "P_meter" in frame:
+        figure.add_trace(
+            go.Scatter(
+                x=frame.index, y=frame["P_meter"] / 1000, name="billed power", line={"shape": "hv", "color": "black"}
+            ),
             row=2,
             col=1,
         )
@@ -66,7 +72,7 @@ def plot_closed_loop(result: ClosedLoopResult, title: str | None = None) -> Any:
         go.Scatter(x=frame.index, y=frame["price"], name="price", line={"shape": "hv", "color": "red"}), row=3, col=1
     )
     figure.update_yaxes(title_text="Temperature [degC]", row=1, col=1)
-    figure.update_yaxes(title_text="Heating [kW]", row=2, col=1)
+    figure.update_yaxes(title_text="Power [kW]", row=2, col=1)
     figure.update_yaxes(title_text="Price [EUR/kWh]", row=3, col=1)
     figure.update_layout(title=title or f"Closed loop: {result.name}", height=800)
     return figure

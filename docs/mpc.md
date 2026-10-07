@@ -1,19 +1,44 @@
 # Model predictive control, tariffs and flexibility
 
+## Energy systems and the meter
+
+With trano >= 0.36 the YAML systems are part of the model (interface version 2): a heat pump
+makes the heating input of its zones *electrical* (`<zone>_PHea`, heat `= COP(TOut, TSup) · P`),
+a chiller adds `<zone>_PCoo`, a hot water tank, a battery and an electric vehicle add states and
+inputs, PV adds a generation disturbance. `mpctrano.meter.Meter` builds the balance at the meter:
+
+```
+P_net    = Σ electrical inputs − Σ battery discharge − Σ PV generation
+P_import − P_export = P_net,  P_import, P_export ≥ 0
+P_meter  = P_heat + P_import          # billed at the tariff; P_heat = ideal thermal inputs
+P_gas    = Σ Q_boiler / efficiency    # billed at MPCSettings.gas_price
+```
+
+The interface also gives what the ODE cannot carry: the compressor limit shared by the zones (and
+tanks) of one heat pump, the state of charge bounds, the tank temperature band and the sessions of
+the vehicles. `RCModel.control_groups`, `storage_bands`, `vehicles`, `control_bounds()` and
+`state_bounds()` expose them.
+
 ## Optimisation problem
 
 At every step, from the estimated state `x0` and the forecasts over `N` steps of `dt` seconds:
 
 ```
-min   Σ_k π_k · (Σ_z u_{z,k}) · dt / 3.6e6              energy cost [EUR], π in EUR/kWh
-    + c_cap · P_peak / 1000                              capacity charge [EUR/kW] on the horizon peak
-    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600     comfort violations [K·h]
-    + w_lim · Σ_k s_lim,k · dt / 3.6e6                   energy above a demand response power limit
-    + w_ramp · Σ_k |u_k - u_{k-1}|²                       optional smoothing
+min   Σ_k π_k · P_meter,k · dt / 3.6e6                   energy cost [EUR], π in EUR/kWh
+    − Σ_k π_exp,k · P_export,k · dt / 3.6e6               export revenue
+    + π_gas · Σ_k P_gas,k · dt / 3.6e6                    fuel of the boilers
+    + c_cap · P_peak / 1000                               capacity charge [EUR/kW] on the horizon peak
+    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600     comfort violations of the zones and tanks [K·h]
+    + w_lim · Σ_k s_lim,k · dt / 3.6e6                    energy above a demand response power limit
+    + w_ramp · Σ_k |u_k - u_{k-1}|²                        optional smoothing
+    + w_ev · Σ_k v_k / 3.6e6                               energy missing in a vehicle at departure
 s.t.  x_{k+1} = F(x_k, u_k, d_k, p)
-      min_power ≤ u ≤ max_power (design power of each zone from the Trano interface by default)
-      T_lower,k - s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k     soft comfort band on every zone
-      Σ_z u_{z,k} ≤ limit_k + s_lim,k,     Σ_z u_{z,k} ≤ P_peak
+      lower ≤ u ≤ upper (design power, compressor, charger and tank limits of the interface)
+      Σ_{i ∈ heat pump} u_{i,k} ≤ P_el,max                 shared compressor limit
+      state bounds (temperatures, state of charge)
+      T_lower,k - s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k      soft comfort band on every zone and tank
+      P_meter,k ≤ limit_k + s_lim,k,     P_meter,k ≤ P_peak
+      u_ev,k ≤ plugged_k · P_max,    E_ev,k+1 + v_k ≥ departure_k · E_target
 ```
 
 `MPCSettings` holds the horizon, the time step, the penalties and the power bounds. The problem
@@ -24,6 +49,16 @@ loop keeps running and counts the failures).
 
 Comfort bounds apply at the end of each step (the occupied band starting at 7h constrains the
 temperature reached at 7h); prices apply to the energy of the step.
+
+## Plant mismatch
+
+`Mismatch` describes how the plant differs from the control model: another RC structure generated
+from the same YAML (`plant_model_type`, R4C3 by default so that the plant has the emitter state
+the R3C2 controller lacks), log-normally perturbed envelope parameters (`parameter_std`), sensor
+noise and forecast noise. `Project.plant(mismatch)` builds it and `Project.run(scenario)` uses it
+unless a plant is given; `Scenario.mismatch` keeps it with the scenario. The signals of the plant
+are matched by name, so the controller only needs the measured states (zone temperatures, tank,
+batteries), the controls and the disturbances to exist in both.
 
 ## Tariffs
 

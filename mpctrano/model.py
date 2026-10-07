@@ -18,17 +18,73 @@ from typing import TYPE_CHECKING, Any
 
 import casadi as ca
 import numpy as np
+import pandas as pd
 import rumoca
-from trano.mpc import InputRole, MPCModelInterface, RCModelType
+from trano.mpc import AnySystemSpec, InputRole, InputSpec, MPCModelInterface, RCModelType, StateSpec
 
 if TYPE_CHECKING:
-    import pandas as pd
     from trano.mpc.estimation import EstimationSettings
     from trano.topology import Network
 
 KELVIN = 273.15
 STATE_BOUNDS = (243.15, 373.15)
 """Physical range of the temperatures states, used as bounds in the optimisation problems."""
+STORAGE_TEMPERATURE_BOUNDS = (273.15, 373.15)
+"""Physical range of a hot water tank temperature [K]."""
+RESISTANCE_POWER = 3000.0
+"""Electrical power of the resistance of a tank without heat pump [W]."""
+
+
+@dataclass(frozen=True)
+class ControlGroup:
+    """Control inputs sharing one power limit (the compressor of a heat pump, a chiller)."""
+
+    system: str
+    indices: list[int]
+    """Positions in the control vector."""
+    max_power: float
+    """Bound on the sum of the inputs [W]."""
+
+
+@dataclass(frozen=True)
+class StorageBand:
+    """Soft temperature band of a hot water tank state."""
+
+    system: str
+    state_index: int
+    lower: float
+    upper: float
+
+
+@dataclass(frozen=True)
+class VehicleSpec:
+    """What the controller needs to charge an electric vehicle: its state, input and sessions."""
+
+    system: str
+    state_index: int
+    control_index: int
+    capacity: float
+    target_energy: float
+    arrival_hour: float
+    departure_hour: float
+    weekend_present: bool
+
+    def plugged_in(self, index: pd.DatetimeIndex) -> np.ndarray:
+        """Whether the vehicle is at the charger at the start of each interval."""
+        hours = np.asarray(index.hour + index.minute / 60, dtype=float)
+        if self.departure_hour <= self.arrival_hour:
+            away = (hours >= self.departure_hour) & (hours < self.arrival_hour)
+        else:
+            away = (hours >= self.departure_hour) | (hours < self.arrival_hour)
+        if self.weekend_present:
+            away &= np.asarray(index.dayofweek < 5)
+        return ~away
+
+    def departures(self, index: pd.DatetimeIndex, time_step: float) -> np.ndarray:
+        """Whether the vehicle leaves during each interval (the target energy applies at its end)."""
+        start = self.plugged_in(index)
+        end = self.plugged_in(index + pd.Timedelta(seconds=time_step))
+        return np.asarray(start & ~end, dtype=bool)
 
 
 class ModelError(ValueError):
@@ -173,6 +229,17 @@ class RCModel:
         return [signal.name for signal in self.interface.controls]
 
     @cached_property
+    def controls(self) -> list[InputSpec]:
+        return list(self.interface.controls)
+
+    @cached_property
+    def systems(self) -> list[AnySystemSpec]:
+        return list(self.interface.systems)
+
+    def system(self, name: str) -> AnySystemSpec:
+        return self.interface.system(name)
+
+    @cached_property
     def disturbance_names(self) -> list[str]:
         return [signal.name for signal in self.interface.disturbances]
 
@@ -188,6 +255,164 @@ class RCModel:
     @cached_property
     def comfort_indices(self) -> list[int]:
         return [self.state_names.index(name) for name in self.comfort_states]
+
+    @cached_property
+    def measured_states(self) -> list[str]:
+        """States with a sensor: the zone air temperatures and the storage states (tank, batteries)."""
+        storages = [state.name for state in self.interface.states if state.system is not None]
+        return self.comfort_states + storages
+
+    @cached_property
+    def measured_indices(self) -> list[int]:
+        return [self.state_names.index(name) for name in self.measured_states]
+
+    @property
+    def n_measured(self) -> int:
+        return len(self.measured_states)
+
+    # ----------------------------------------------------------------- systems and carriers
+    def _control_positions(self, predicate: Any) -> list[int]:  # noqa: ANN401
+        return [position for position, signal in enumerate(self.controls) if predicate(signal)]
+
+    @cached_property
+    def zone_heating_indices(self) -> list[int]:
+        """Position of the heating input of each zone in the control vector (zone order)."""
+        return [self.control_names.index(zone.heating_input) for zone in self.interface.zones]
+
+    @cached_property
+    def heat_control_indices(self) -> list[int]:
+        """Thermal control inputs (ideal heating, costed at the tariff price)."""
+        return self._control_positions(lambda signal: signal.carrier == "heat")
+
+    @cached_property
+    def gas_control_indices(self) -> list[int]:
+        return self._control_positions(lambda signal: signal.carrier == "gas")
+
+    @cached_property
+    def discharge_control_indices(self) -> list[int]:
+        """Battery discharging inputs: electricity delivered to the meter."""
+        discharging = {system.discharge_input for system in self.systems if system.kind == "battery"}
+        return self._control_positions(lambda signal: signal.name in discharging)
+
+    @cached_property
+    def consumption_control_indices(self) -> list[int]:
+        """Electrical control inputs drawn from the meter (heat pumps, chillers, tanks, charging)."""
+        discharging = set(self.discharge_control_indices)
+        electrical = self._control_positions(lambda signal: signal.carrier == "electricity")
+        return [position for position in electrical if position not in discharging]
+
+    @cached_property
+    def generation_indices(self) -> list[int]:
+        """Positions of the PV generation inputs in the disturbance vector."""
+        return [
+            position
+            for position, signal in enumerate(self.interface.disturbances)
+            if signal.source is not None and signal.source.kind == "photovoltaic"
+        ]
+
+    @property
+    def has_meter(self) -> bool:
+        """Whether electricity is exchanged with the grid (electrical inputs or PV)."""
+        return bool(self.consumption_control_indices or self.discharge_control_indices or self.generation_indices)
+
+    @cached_property
+    def gas_efficiencies(self) -> np.ndarray:
+        """Efficiency of the boiler behind each gas control input (``gas_control_indices`` order)."""
+        efficiencies = {}
+        for system in self.systems:
+            if system.kind == "boiler":
+                for name in system.inputs:
+                    efficiencies[name] = system.efficiency
+        return np.array([efficiencies.get(self.control_names[i], 1.0) for i in self.gas_control_indices])
+
+    @cached_property
+    def control_groups(self) -> list[ControlGroup]:
+        """Compressor limits shared by the inputs of a heat pump (zones and tanks) or a chiller."""
+        groups = []
+        for system in self.systems:
+            if system.kind == "heat_pump":
+                names = list(system.inputs) + list(system.tank_inputs)
+            elif system.kind == "chiller":
+                names = list(system.inputs)
+            else:
+                continue
+            indices = [self.control_names.index(name) for name in names if name in self.control_names]
+            if indices:
+                groups.append(ControlGroup(system=system.name, indices=indices, max_power=system.max_electrical_power))
+        return groups
+
+    @cached_property
+    def storage_bands(self) -> list[StorageBand]:
+        return [
+            StorageBand(
+                system=system.name,
+                state_index=self.state_names.index(system.state),
+                lower=system.min_temperature,
+                upper=system.set_temperature,
+            )
+            for system in self.systems
+            if system.kind == "dhw_tank"
+        ]
+
+    @cached_property
+    def vehicles(self) -> list[VehicleSpec]:
+        return [
+            VehicleSpec(
+                system=system.name,
+                state_index=self.state_names.index(system.state),
+                control_index=self.control_names.index(system.charge_input),
+                capacity=system.capacity,
+                target_energy=system.target_soc * system.capacity,
+                arrival_hour=system.arrival_hour,
+                departure_hour=system.departure_hour,
+                weekend_present=system.weekend_present,
+            )
+            for system in self.systems
+            if system.kind == "ev_charger"
+        ]
+
+    @cached_property
+    def _system_limits(self) -> dict[str, float]:
+        """Upper bound [W] of the control inputs owned by a system."""
+        limits: dict[str, float] = {}
+        for system in self.systems:
+            limits |= _system_input_limits(system)
+        return limits
+
+    def control_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """Lower and upper bound of each control input [W] from the interface (design powers, converters)."""
+        upper = np.full(self.n_controls, np.inf)
+        lower = np.zeros(self.n_controls)
+        design = {zone.heating_input: zone.design_heating_power for zone in self.interface.zones}
+        limits = self._system_limits
+        for position, signal in enumerate(self.controls):
+            if signal.name in limits:
+                upper[position] = limits[signal.name]
+            elif design.get(signal.name) is not None:
+                upper[position] = float(design[signal.name])
+        if not np.all(np.isfinite(upper)):
+            missing = [self.control_names[i] for i in np.flatnonzero(~np.isfinite(upper))]
+            raise ModelError(f"The interface gives no power bound for the controls {missing}.")
+        return lower, upper
+
+    def state_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        """Physical bounds of the states: temperatures, tank temperatures and stored energies."""
+        lower = np.full(self.n_states, STATE_BOUNDS[0])
+        upper = np.full(self.n_states, STATE_BOUNDS[1])
+        for system in self.systems:
+            if system.kind == "dhw_tank":
+                index = self.state_names.index(system.state)
+                lower[index], upper[index] = STORAGE_TEMPERATURE_BOUNDS
+            elif system.kind == "battery":
+                index = self.state_names.index(system.state)
+                lower[index], upper[index] = system.min_soc * system.capacity, system.max_soc * system.capacity
+            elif system.kind == "ev_charger":
+                index = self.state_names.index(system.state)
+                lower[index], upper[index] = 0.0, system.capacity
+        return lower, upper
+
+    def state_spec(self, name: str) -> StateSpec:
+        return next(state for state in self.interface.states if state.name == name)
 
     @cached_property
     def control_indices(self) -> list[int]:
@@ -219,11 +444,10 @@ class RCModel:
 
     @cached_property
     def max_heating_power(self) -> np.ndarray:
-        """Design heating power of each zone [W] (upper bound of the control inputs)."""
-        powers = [zone.design_heating_power for zone in self.interface.zones]
-        if any(power is None for power in powers):
-            raise ModelError("The interface does not provide the design heating power of every zone.")
-        return np.array(powers, dtype=float)
+        """Upper bound of the heating input of each zone [W]: the design heating power of a thermal
+        input, the compressor limit of the heat pump for an electrical one."""
+        _, upper = self.control_bounds()
+        return np.array([upper[index] for index in self.zone_heating_indices], dtype=float)
 
     @property
     def initial_state(self) -> np.ndarray:
@@ -344,8 +568,28 @@ class RCModel:
         step = ca.Function("F", [x, u, d, p], [x_next], ["x", "u", "d", "p"], ["x_next"])
         return DiscreteDynamics(step=step, time_step=time_step, substeps=substeps)
 
+    def linearization(self, time_step: float, substeps: int | None = None) -> ca.Function:
+        """``(x, u, d) -> (x_next, A)``: the discrete map and its state Jacobian at the current parameters.
+
+        Exact for the (linear) envelope; for a heat pump the heat is bilinear in the electrical
+        power and the emitter or tank temperature, so the Jacobian depends on the operating point
+        (extended Kalman filter).
+        """
+        dynamics = self.discrete(time_step, substeps)
+        x = ca.MX.sym("x", self.n_states)
+        u = ca.MX.sym("u", self.n_controls)
+        d = ca.MX.sym("d", self.n_disturbances)
+        x_next = dynamics(x, u, d, self.parameters)
+        return ca.Function(
+            "linearization", [x, u, d], [x_next, ca.jacobian(x_next, x)], ["x", "u", "d"], ["x_next", "A"]
+        )
+
     def affine(self, time_step: float, substeps: int | None = None) -> AffineDynamics:
-        """Exact affine form of :meth:`discrete` at the current parameters."""
+        """Affine form of :meth:`discrete` at the current parameters, linearised at zero inputs.
+
+        Exact for the envelope models (linear in the states and the inputs); approximate when a
+        heat pump makes the dynamics bilinear, use :meth:`linearization` then.
+        """
         dynamics = self.discrete(time_step, substeps)
         x = ca.MX.sym("x", self.n_states)
         u = ca.MX.sym("u", self.n_controls)
@@ -385,8 +629,6 @@ class RCModel:
         self, x0: np.ndarray | Sequence[float], inputs: pd.DataFrame, parameters: np.ndarray | None = None
     ) -> pd.DataFrame:
         """:meth:`simulate` with a time-indexed frame of inputs; returns the states on the same index."""
-        import pandas as pd
-
         from mpctrano.data import time_step_of
 
         time_step = time_step_of(inputs.index)
@@ -394,6 +636,22 @@ class RCModel:
         disturbances = inputs[self.disturbance_names].to_numpy(dtype=float).T[:, :-1]
         states = self.simulate(x0, controls, disturbances, time_step, parameters=parameters)
         return pd.DataFrame(states.T, index=inputs.index, columns=self.state_names)
+
+
+def _system_input_limits(system: AnySystemSpec) -> dict[str, float]:
+    """Upper bound [W] of the control inputs of one system."""
+    if system.kind == "heat_pump":
+        return dict.fromkeys(list(system.inputs) + list(system.tank_inputs), system.max_electrical_power)
+    if system.kind == "chiller":
+        return dict.fromkeys(system.inputs, system.max_electrical_power)
+    if system.kind == "boiler":
+        return dict.fromkeys(system.inputs, system.max_heating_power)
+    if system.kind == "battery":
+        return {system.charge_input: system.max_charge_power, system.discharge_input: system.max_discharge_power}
+    if system.kind == "ev_charger":
+        return {system.charge_input: system.max_charge_power}
+    resistance = system.kind == "dhw_tank" and system.heat_pump is None
+    return {system.heating_input: RESISTANCE_POWER} if resistance else {}
 
 
 def _package_name(stem: str) -> str:

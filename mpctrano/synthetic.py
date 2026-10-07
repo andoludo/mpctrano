@@ -23,12 +23,18 @@ FRACTION_UNIT = "1"
 def perturb(
     model: RCModel, relative_std: float = 0.3, seed: int | None = 0, parameters: list[str] | None = None
 ) -> RCModel:
-    """Log-normal multiplicative perturbation of the parameters (fractions and ``TGro`` untouched)."""
+    """Log-normal multiplicative perturbation of the envelope parameters.
+
+    Fractions, ``TGro`` and the parameters of the energy systems (COP, capacities, limits) are left
+    untouched unless ``parameters`` selects them explicitly.
+    """
     generator = np.random.default_rng(seed)
     names = model.select_parameters(parameters) if parameters else model.parameter_names
     values = model.parameters.copy()
     for index, (name, specification) in enumerate(zip(model.parameter_names, model.interface.parameters, strict=True)):
         if name not in names or name == "TGro" or specification.unit == FRACTION_UNIT:
+            continue
+        if parameters is None and specification.system is not None:
             continue
         values[index] *= float(np.exp(generator.normal(0, relative_std)))
     return model.with_parameters(values)
@@ -74,6 +80,7 @@ def generate_monitoring_data(
     dynamics = model.discrete(time_step)
     max_power = model.max_heating_power
     n_zones = model.n_zones
+    heating = model.zone_heating_indices
 
     setpoints = np.zeros((n_zones, steps))
     for zone in range(n_zones):
@@ -87,11 +94,11 @@ def generate_monitoring_data(
 
     x = model.initial_state.copy() if x0 is None else np.asarray(x0, dtype=float).copy()
     states = np.zeros((model.n_states, steps + 1))
-    controls = np.zeros((n_zones, steps))
+    controls = np.zeros((model.n_controls, steps))
     states[:, 0] = x
     for k in range(steps):
         temperatures = x[model.comfort_indices]
-        controls[:, k] = np.clip(excitation.gain * (setpoints[:, k] - temperatures), 0, max_power)
+        controls[heating, k] = np.clip(excitation.gain * (setpoints[:, k] - temperatures), 0, max_power)
         x = np.asarray(
             dynamics(x, controls[:, k], disturbances.iloc[k].to_numpy(dtype=float), model.parameters), dtype=float
         ).reshape(-1)

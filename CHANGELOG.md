@@ -8,6 +8,28 @@ release pipeline.
 
 ### Added
 
+- Interface version 2 of trano 0.36 (energy systems): `RCModel` exposes the systems, the energy
+  carrier of each control input, the compressor limits shared by the inputs of a heat pump
+  (`control_groups`), the tank temperature bands, the electric vehicles and the bounds of every
+  control and state (`control_bounds`, `state_bounds`).
+- `mpctrano.meter.Meter`: electrical balance at the meter (consumption, battery discharge, PV
+  generation, import and export), gas of the boilers and ideal heating, symbolic and on frames.
+- The MPC bills the imported electricity at the tariff and the export at `export_price`, costs the
+  gas with `MPCSettings.gas_price`, enforces the compressor limits, the state of charge bounds,
+  the tank bands (soft), the plug-in windows and the departure targets of the vehicles (soft,
+  `vehicle_penalty`). `MPCSolution.meter` holds the planned import, export and gas.
+- `Mismatch`: how the plant differs from the control model (RC structure, perturbed envelope
+  parameters, sensor noise, forecast noise); `Project.plant()` builds an R4C3 plant from the same
+  YAML against the R3C2 controller; `build_plant`, `Scenario.mismatch`.
+- `ControlMetrics`: export, gas, PV generation and self-consumption; `ClosedLoopResult.frame`
+  carries the meter columns (`P_import`, `P_export`, `P_meter`, `P_gas`, ...) and the solver status.
+- Tariffs carry an export price (`Tariff.export_price`, `DynamicTariff.export_series`,
+  `PriceSignal.tariff()`).
+- The forecaster builds the PV generation, the hot water draw-off and the driving discharge of
+  the vehicles from the sources of the interface.
+- Tutorial house: `tutorials/buildings/house.yaml` and six variants (`old`, `radiators`,
+  `big_heat_pump`, `pv`, `pv_battery_ev`), generated as R3C2 and R4C3 models in
+  `tutorials/models/house/` by `tutorials/scripts/generate_models.py`.
 - Notebook tooling: `notebook` extra (`plotly`, `ipywidgets`), jupytext pairing of the tutorial
   notebooks with percent scripts (`tutorials/NN_*.py` <-> `.ipynb`), `nbmake` execution of the
   notebooks in CI (`make notebooks`), a `pre-commit` configuration and this changelog.
@@ -23,6 +45,17 @@ release pipeline.
 
 ### Changed
 
+- Requires trano >= 0.36 (interface version 2; version 1 files are still read).
+- `KalmanFilter` is an extended Kalman filter linearised at the current estimate (the heat pump
+  terms are bilinear); `RCModel.linearization()` gives the discrete map and its Jacobian.
+- `ControlMetrics.energy_kwh` and `peak_power_kw` are the energy and power billed at the tariff
+  (ideal heating plus grid import), no longer the thermal heating; `total_cost` subtracts the
+  export revenue and adds the gas cost.
+- `ModelPlant` matches the signals of the control model by name (`Plant.align`), so a plant of
+  another RC structure can be controlled; `measure()` returns the measured states (zone
+  temperatures and storages), `ClosedLoopResult.zones` and the plots follow the heating input of
+  each zone (`<zone>_QHea` or `<zone>_PHea`).
+- `perturb` leaves the parameters of the energy systems untouched unless selected.
 - The script tutorials of the package moved from `tutorials/` to `tutorials/package/`; the
   top-level `tutorials/` directory is reserved for the numbered interactive notebooks.
 - Ruff no longer lints the generated `.ipynb` files (the paired `.py` scripts are linted).

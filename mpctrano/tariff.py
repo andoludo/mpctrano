@@ -33,10 +33,18 @@ class TariffSignal:
     """Maximum total heating power of each step [W] (``inf`` when unconstrained)."""
     capacity_charge: float
     """Price of the peak power over the horizon [EUR/kW]."""
+    export_prices: np.ndarray | None = None
+    """Remuneration of the exported energy [EUR/kWh] (zeros when the tariff has none)."""
+
+    @property
+    def export(self) -> np.ndarray:
+        return np.zeros(len(self.index)) if self.export_prices is None else self.export_prices
 
     @property
     def frame(self) -> pd.DataFrame:
-        return pd.DataFrame({"price": self.prices, "power_limit": self.power_limits}, index=self.index)
+        return pd.DataFrame(
+            {"price": self.prices, "export_price": self.export, "power_limit": self.power_limits}, index=self.index
+        )
 
 
 class Tariff(BaseModel, ABC):
@@ -53,12 +61,17 @@ class Tariff(BaseModel, ABC):
     def power_limit(self, index: pd.DatetimeIndex) -> np.ndarray:
         return np.full(len(index), np.inf)
 
+    def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
+        """Remuneration of the energy exported to the grid [EUR/kWh] (none by default)."""
+        return np.zeros(len(index))
+
     def signal(self, index: pd.DatetimeIndex) -> TariffSignal:
         return TariffSignal(
             index=index,
             prices=np.asarray(self.energy_price(index), dtype=float),
             power_limits=np.asarray(self.power_limit(index), dtype=float),
             capacity_charge=self.capacity_charge,
+            export_prices=np.asarray(self.export_price(index), dtype=float),
         )
 
     def cost(self, index: pd.DatetimeIndex, total_power: np.ndarray, time_step: float) -> float:
@@ -131,6 +144,7 @@ class DynamicTariff(Tariff):
 
     kind: Literal["dynamic"] = "dynamic"
     series: PriceSeries = Field(description="Prices [EUR/kWh] indexed by time")
+    export_series: PriceSeries | None = Field(None, description="Export remuneration [EUR/kWh] indexed by time")
 
     @classmethod
     def from_csv(cls, path: Path | str, column: str = "price", capacity_charge: float = 0.0) -> DynamicTariff:
@@ -161,9 +175,17 @@ class DynamicTariff(Tariff):
         return cls(series=pd.Series(np.clip(prices, 0.01, None), index=index), capacity_charge=capacity_charge)
 
     def energy_price(self, index: pd.DatetimeIndex) -> np.ndarray:
-        if index.min() < self.series.index.min() or index.max() > self.series.index.max() + pd.Timedelta(days=1):
-            raise ValueError(f"The price series does not cover {index.min()} .. {index.max()}.")
-        return self.series.reindex(self.series.index.union(index)).ffill().loc[index].to_numpy(dtype=float)
+        return _held(self.series, index)
+
+    def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return np.zeros(len(index)) if self.export_series is None else _held(self.export_series, index)
+
+
+def _held(series: pd.Series, index: pd.DatetimeIndex) -> np.ndarray:
+    """Values of a series held between its samples, evaluated on ``index``."""
+    if index.min() < series.index.min() or index.max() > series.index.max() + pd.Timedelta(days=1):
+        raise ValueError(f"The price series does not cover {index.min()} .. {index.max()}.")
+    return series.reindex(series.index.union(index)).ffill().loc[index].to_numpy(dtype=float)
 
 
 class DemandResponseEvent(BaseModel):
@@ -199,6 +221,9 @@ class DemandResponseTariff(Tariff):
             if event.power_limit is not None:
                 limits = np.where(event.active(index), np.minimum(limits, event.power_limit), limits)
         return limits
+
+    def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return self.base.export_price(index)
 
 
 AnyTariff = Annotated[FlatTariff | TimeOfUseTariff | DynamicTariff | DemandResponseTariff, Field(discriminator="kind")]

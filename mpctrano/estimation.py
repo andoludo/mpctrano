@@ -1,8 +1,9 @@
 """State estimation: the MPC needs the full state (including the unmeasured envelope, mass or
 emitter temperatures) at the start of each horizon.
 
-* :class:`KalmanFilter`: the RC model is linear in the states and inputs, so its exact
-  discrete-time affine form gives a standard Kalman filter.
+* :class:`KalmanFilter`: an extended Kalman filter on the discrete-time model, linearised at
+  the current estimate and inputs (exact for the linear envelope models, where it is a
+  standard Kalman filter; the heat pump terms are bilinear).
 * :class:`MovingHorizonEstimator`: least-squares estimation over a sliding window solved with
   IPOPT; it handles state bounds and is the natural counterpart of the MPC problem.
 
@@ -27,15 +28,16 @@ class StateEstimator(Protocol):
     def state(self) -> np.ndarray: ...
 
     def correct(self, measurement: np.ndarray) -> np.ndarray:
-        """Incorporate the measured zone temperatures (NaN for a missing sensor); returns the estimate."""
+        """Incorporate the measured states (zone temperatures, storages; NaN when a sensor is missing)."""
 
     def predict(self, control: np.ndarray, disturbance: np.ndarray) -> np.ndarray:
         """Propagate the estimate over one step with the applied inputs."""
 
 
 def _measurement_matrix(model: RCModel) -> np.ndarray:
-    matrix = np.zeros((model.n_zones, model.n_states))
-    for row, index in enumerate(model.comfort_indices):
+    """Selects the measured states: the zone air temperatures and the storage states."""
+    matrix = np.zeros((model.n_measured, model.n_states))
+    for row, index in enumerate(model.measured_indices):
         matrix[row, index] = 1.0
     return matrix
 
@@ -46,10 +48,11 @@ def _initial_state(model: RCModel, x0: np.ndarray | None) -> np.ndarray:
 
 @dataclass
 class KalmanFilter:
-    """Linear Kalman filter on the exact discrete-time affine form of the RC model.
+    """(Extended) Kalman filter on the discrete-time model, linearised at the current estimate.
 
     ``process_std`` is the standard deviation of the model error per step for each state [K]
-    (a scalar applies to all), ``measurement_std`` the sensor noise [K].
+    (a scalar applies to all), ``measurement_std`` the sensor noise [K]. The storage states
+    (energies [J], tank temperature [K]) use the same values unless an array is given.
     """
 
     model: RCModel
@@ -63,11 +66,11 @@ class KalmanFilter:
     _P: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self.dynamics = self.model.affine(self.time_step, self.substeps)
+        self.dynamics = self.model.linearization(self.time_step, self.substeps)
         self.C = _measurement_matrix(self.model)
         process = np.broadcast_to(np.asarray(self.process_std, dtype=float), (self.model.n_states,))
         self.Q = np.diag(process**2)
-        self.R = np.eye(self.model.n_zones) * self.measurement_std**2
+        self.R = np.eye(self.model.n_measured) * self.measurement_std**2
         self._x = _initial_state(self.model, self.x0)
         self._P = np.eye(self.model.n_states) * self.initial_std**2
 
@@ -94,8 +97,10 @@ class KalmanFilter:
         return self.state
 
     def predict(self, control: np.ndarray, disturbance: np.ndarray) -> np.ndarray:
-        self._x = self.dynamics(self._x, np.asarray(control, dtype=float), np.asarray(disturbance, dtype=float))
-        self._P = self.dynamics.A @ self._P @ self.dynamics.A.T + self.Q
+        x_next, A = self.dynamics(self._x, np.asarray(control, dtype=float), np.asarray(disturbance, dtype=float))
+        self._x = np.asarray(x_next, dtype=float).reshape(-1)
+        A = np.asarray(A, dtype=float)
+        self._P = A @ self._P @ A.T + self.Q
         return self.state
 
 
@@ -162,8 +167,8 @@ class MovingHorizonEstimator:
         opti = ca.Opti()
         X = opti.variable(model.n_states, steps + 1)
         W = opti.variable(model.n_states, max(steps, 1))
-        Y = opti.parameter(model.n_zones, steps + 1)
-        mask = opti.parameter(model.n_zones, steps + 1)
+        Y = opti.parameter(model.n_measured, steps + 1)
+        mask = opti.parameter(model.n_measured, steps + 1)
         U = opti.parameter(model.n_controls, max(steps, 1))
         D = opti.parameter(model.n_disturbances, max(steps, 1))
         prior = opti.parameter(model.n_states)

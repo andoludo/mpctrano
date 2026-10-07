@@ -14,7 +14,7 @@ from mpctrano.data import MonitoringData
 from mpctrano.forecast import ForecastNoise, Forecaster, OccupancySchedule, WeatherForecaster
 from mpctrano.model import RCModel
 from mpctrano.mpc import ModelPredictiveController
-from mpctrano.scenarios import Scenario, run_scenario
+from mpctrano.scenarios import Mismatch, Scenario, build_plant, run_scenario
 from mpctrano.simulation import ClosedLoopResult, Plant
 from mpctrano.synthetic import ExcitationSettings, SyntheticData, generate_monitoring_data, perturb
 
@@ -31,6 +31,9 @@ class Project:
     data: MonitoringData | None = None
     validation: MonitoringData | None = None
     runs: dict[str, ClosedLoopResult] = field(default_factory=dict)
+    path: Path | None = None
+    """YAML description the model was generated from (needed to build a plant of another structure)."""
+    plants: dict[RCModelType, RCModel] = field(default_factory=dict)
 
     # ----------------------------------------------------------------- constructors
     @classmethod
@@ -42,7 +45,9 @@ class Project:
     @classmethod
     def from_yaml(cls, path: Path | str, model_type: RCModelType = RCModelType.r3c2, **kwargs: object) -> Project:
         """Generate the model with Trano from the building description."""
-        return cls.from_model(RCModel.from_yaml(path, model_type=model_type), **kwargs)  # type: ignore[arg-type]
+        project = cls.from_model(RCModel.from_yaml(path, model_type=model_type), **kwargs)  # type: ignore[arg-type]
+        project.path = Path(path)
+        return project
 
     @classmethod
     def from_files(cls, modelica: Path | str, interface: Path | str | None = None, **kwargs: object) -> Project:
@@ -58,6 +63,28 @@ class Project:
     def true_building(self, relative_std: float = 0.3, seed: int = 0) -> RCModel:
         """A perturbed copy of the Trano model playing the real building in studies."""
         return perturb(self.model, relative_std=relative_std, seed=seed)
+
+    def plant_model(self, model_type: RCModelType) -> RCModel:
+        """The model of another RC structure generated from the same YAML (cached)."""
+        if model_type not in self.plants:
+            if model_type == self.model.interface.zones[0].model_type:
+                self.plants[model_type] = self.model
+            elif self.path is None:
+                raise ValueError("The project was not created from a YAML file: no other structure can be generated.")
+            else:
+                self.plants[model_type] = RCModel.from_yaml(self.path, model_type=model_type)
+        return self.plants[model_type]
+
+    def plant(self, mismatch: Mismatch | None = None, time_step: float = 3600.0) -> Plant:
+        """The plant of a mismatch: by default an R4C3 structure with perturbed envelope parameters."""
+        mismatch = mismatch or Mismatch()
+        plant_model = None
+        if mismatch.plant_model_type is not None:
+            try:
+                plant_model = self.plant_model(mismatch.plant_model_type)
+            except ValueError:
+                plant_model = None  # same structure, perturbed parameters
+        return build_plant(self.model, mismatch, time_step, plant_model=plant_model)
 
     # ----------------------------------------------------------------- data
     def synthetic_data(
@@ -110,9 +137,16 @@ class Project:
         plant: Plant | RCModel | None = None,
         forecast_noise: ForecastNoise | None = None,
     ) -> ClosedLoopResult:
-        """Closed loop of a scenario with the control model; ``plant`` defaults to the true building."""
-        noise = forecast_noise or scenario.forecast_noise
+        """Closed loop of a scenario with the control model.
+
+        ``plant`` defaults to the plant of ``scenario.mismatch`` (an R4C3 structure with perturbed
+        envelope parameters when the scenario has none, see :meth:`plant`).
+        """
+        mismatch = scenario.mismatch or Mismatch()
+        noise = forecast_noise or scenario.forecast_noise or mismatch.forecast_noise
         forecaster = WeatherForecaster.from_model(self.control_model, weather=self.model.weather_path, noise=noise)
+        if plant is None:
+            plant = self.plant(mismatch, scenario.settings.time_step)
         result = run_scenario(self.control_model, scenario, plant=plant, forecaster=forecaster)
         self.runs[scenario.name] = result
         return result

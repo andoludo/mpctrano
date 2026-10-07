@@ -9,9 +9,10 @@ interface listing its states, inputs and parameters. mpctrano takes those two ar
 
 1. **calibrates** the RC parameters on monitoring data of the real building (IPOPT least squares),
 2. **estimates** the unmeasured states (Kalman filter or moving horizon estimation),
-3. **controls** the heating of each zone with an economic MPC that keeps comfort at the lowest cost
-   under a tariff: flat, time-of-use, day-ahead prices, demand response events or a capacity charge,
-   which exposes the **flexibility** of the building to the grid.
+3. **controls** the heating of each zone, and the energy systems of the YAML (heat pump, chiller,
+   hot water tank, PV, battery, EV charger), with an economic MPC that keeps comfort at the lowest
+   cost under a tariff: flat, time-of-use, day-ahead prices, demand response events or a capacity
+   charge, which exposes the **flexibility** of the building to the grid.
 
 Everything is symbolic: [rumoca](https://github.com/rumoca/rumoca) translates the Modelica model
 into a [CasADi](https://web.casadi.org/) ODE whose parameters stay free, and the same CasADi

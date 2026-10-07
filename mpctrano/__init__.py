@@ -30,7 +30,8 @@ from mpctrano.model import RCModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
-from mpctrano.scenarios import Scenario, run_scenario, scenario_catalogue
+from mpctrano.meter import Meter
+from mpctrano.scenarios import Mismatch, Scenario, build_plant, run_scenario, scenario_catalogue
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_closed_loop
 from mpctrano.synthetic import ExcitationSettings, SyntheticData, generate_monitoring_data, perturb
 from mpctrano.tariff import (
@@ -69,6 +70,8 @@ __all__ = [
     "KalmanFilter",
     "MPCSettings",
     "MPCSolution",
+    "Meter",
+    "Mismatch",
     "ModelPlant",
     "ModelPredictiveController",
     "MonitoringData",
@@ -87,6 +90,7 @@ __all__ = [
     "WeatherFile",
     "WeatherForecaster",
     "__version__",
+    "build_plant",
     "compare",
     "evaluate",
     "generate_monitoring_data",

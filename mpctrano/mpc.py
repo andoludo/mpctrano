@@ -1,19 +1,28 @@
-"""Economic model predictive control of the heating powers of the zones.
+"""Economic model predictive control of the inputs of a Trano building model.
 
 Every step, the controller solves with IPOPT, over a receding horizon of ``N`` steps:
 
 .. math::
 
-    \\min_{u, x, s}\\; \\sum_k \\pi_k \\, \\frac{\\sum_z u_{z,k}\\,\\Delta t}{3.6\\cdot 10^6}
+    \\min\\; \\sum_k \\pi_k \\, \\frac{P^{meter}_k \\Delta t}{3.6\\cdot 10^6}
+    - \\sum_k \\pi^{exp}_k \\, \\frac{P^{exp}_k \\Delta t}{3.6\\cdot 10^6}
+    + \\pi^{gas} \\sum_k \\frac{P^{gas}_k \\Delta t}{3.6\\cdot 10^6}
     + c_\\mathrm{cap} \\frac{P_\\mathrm{peak}}{1000}
-    + \\sum_k \\left(w_1 (s^{lo}_k + s^{hi}_k) + w_2 (s^{lo\\,2}_k + s^{hi\\,2}_k)\\right)\\frac{\\Delta t}{3600}
-    + \\text{(power limit and ramp penalties)}
+    + \\text{comfort, power limit, ramp and vehicle penalties}
 
-subject to the RC dynamics ``x[k+1] = F(x[k], u[k], d[k])``, the heating power bounds
-``0 <= u <= u_max``, the soft comfort band ``T_lower - s_lo <= T_zone <= T_upper + s_hi`` and
-the soft building-level power limit of the demand response events. ``pi_k`` is the energy price
-of the tariff: with a time-varying price the optimiser pre-heats the thermal mass when the
-energy is cheap and lets the temperature float inside the comfort band when it is expensive.
+where ``P_meter = P_heat + P_import`` is what the tariff bills: the ideal thermal inputs of the
+zones without system (``P_heat``, costed at the tariff price as before) plus the electricity
+imported from the grid. The import and the export are split from the net power at the meter
+(``consumption - battery discharge - PV generation``) with two non-negative variables, which is
+exact as long as the import price is not lower than the export price. Gas boilers are costed with
+their efficiency at ``gas_price``.
+
+Constraints: the ODE of the model, the bounds of every control input (design heating power of a
+thermal input, compressor, charger and tank limits from the interface), the compressor limit
+shared by the zones of one heat pump, the state bounds (temperatures, state of charge), the soft
+comfort band of each zone, the soft temperature band of each hot water tank, the soft
+building-level power limit of the demand response events, the plug-in windows and the departure
+energy targets of the electric vehicles (soft).
 
 The optimisation problem is built once; each call to :meth:`ModelPredictiveController.solve`
 only updates the parameters (initial state, forecasts, prices, bounds) and warm starts IPOPT.
@@ -33,7 +42,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from mpctrano.calibration import ipopt_options
 from mpctrano.comfort import ComfortSpec
 from mpctrano.forecast import forecast_index
-from mpctrano.model import STATE_BOUNDS, RCModel
+from mpctrano.meter import Meter
+from mpctrano.model import RCModel
 from mpctrano.tariff import Tariff
 
 WATT_HOUR_TO_JOULE = 3.6e6
@@ -50,8 +60,12 @@ class MPCSettings(BaseModel):
         50.0, ge=0, description="Penalty of the energy above a demand response power limit [EUR/kWh] (soft cap)"
     )
     ramp_weight: float = Field(0.0, ge=0, description="Penalty of control changes [EUR/kW2]")
-    max_power: dict[str, float] | None = Field(None, description="Maximum heating power per zone [W]")
-    min_power: float = Field(0.0, description="Minimum heating power [W] (negative allows cooling)")
+    max_power: dict[str, float] | None = Field(None, description="Maximum heating input per zone [W]")
+    min_power: float = Field(0.0, description="Minimum thermal heating power [W] (negative allows ideal cooling)")
+    gas_price: float = Field(0.08, ge=0, description="Price of the fuel of the boilers [EUR/kWh]")
+    vehicle_penalty: float = Field(
+        2.0, ge=0, description="Penalty of the energy missing in a vehicle battery at departure [EUR/kWh]"
+    )
     substeps: int | None = None
     max_iterations: int = Field(300, ge=1)
     tolerance: float = Field(1e-6, gt=0)
@@ -73,6 +87,8 @@ class MPCSolution:
     status: str
     iterations: int
     solve_time: float
+    meter: pd.DataFrame | None = None
+    """Planned power at the meter per step [W]: ``P_import``, ``P_export``, ``P_meter``, ``P_gas``."""
 
     @property
     def first_control(self) -> np.ndarray:
@@ -89,27 +105,38 @@ class MPCSolution:
 
 
 class ModelPredictiveController:
-    """Economic MPC of a Trano RC model, see the module documentation for the problem."""
+    """Economic MPC of a Trano building model, see the module documentation for the problem."""
 
     def __init__(self, model: RCModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
         self.model = model
         self.settings = settings
         self.comfort = comfort
         self.tariff = tariff
-        self.max_power = self._max_power()
+        self.meter = Meter(model)
+        self.lower_bounds, self.upper_bounds = self._control_bounds()
         self.dynamics = model.discrete(settings.time_step, settings.substeps)
         self._previous: dict[str, np.ndarray] | None = None
         self._build()
 
-    def _max_power(self) -> np.ndarray:
-        if self.settings.max_power is None:
-            return self.model.max_heating_power
-        missing = set(self.model.zone_names) - set(self.settings.max_power)
-        if missing:
-            raise ValueError(f"max_power is missing the zones {sorted(missing)}.")
-        return np.array([self.settings.max_power[zone] for zone in self.model.zone_names], dtype=float)
+    @property
+    def max_power(self) -> np.ndarray:
+        """Upper bound of the heating input of each zone [W] (zone order)."""
+        return np.array([self.upper_bounds[index] for index in self.model.zone_heating_indices], dtype=float)
 
-    def _build(self) -> None:
+    def _control_bounds(self) -> tuple[np.ndarray, np.ndarray]:
+        model, settings = self.model, self.settings
+        lower, upper = model.control_bounds()
+        if settings.max_power is not None:
+            missing = set(model.zone_names) - set(settings.max_power)
+            if missing:
+                raise ValueError(f"max_power is missing the zones {sorted(missing)}.")
+            for zone, index in zip(model.zone_names, model.zone_heating_indices, strict=True):
+                upper[index] = settings.max_power[zone]
+        for index in model.heat_control_indices:
+            lower[index] = settings.min_power
+        return lower, upper
+
+    def _build(self) -> None:  # noqa: PLR0915
         model, settings = self.model, self.settings
         N, dt = settings.horizon, settings.time_step
         hours = dt / 3600
@@ -120,53 +147,110 @@ class ModelPredictiveController:
         S_hi = opti.variable(model.n_zones, N)
         S_lim = opti.variable(1, N)
         peak = opti.variable()
+        variables: dict[str, Any] = {"X": X, "U": U, "S_lo": S_lo, "S_hi": S_hi, "S_lim": S_lim, "peak": peak}
 
         x0 = opti.parameter(model.n_states)
         D = opti.parameter(model.n_disturbances, N)
         price = opti.parameter(1, N)
+        export_price = opti.parameter(1, N)
         lower = opti.parameter(model.n_zones, N)
         upper = opti.parameter(model.n_zones, N)
         limit = opti.parameter(1, N)
         capacity = opti.parameter()
         u_previous = opti.parameter(model.n_controls)
+        parameters: dict[str, Any] = {
+            "x0": x0, "D": D, "price": price, "export_price": export_price, "lower": lower, "upper": upper,
+            "limit": limit, "capacity": capacity, "u_previous": u_previous,
+        }  # fmt: skip
 
+        # ---- dynamics and bounds
         opti.subject_to(X[:, 0] == x0)
         for k in range(N):
             opti.subject_to(X[:, k + 1] == self.dynamics(X[:, k], U[:, k], D[:, k], model.parameters))
-        opti.subject_to(opti.bounded(STATE_BOUNDS[0], ca.vec(X), STATE_BOUNDS[1]))
-        opti.subject_to(opti.bounded(settings.min_power, ca.vec(U), np.tile(self.max_power, N)))
+        state_lower, state_upper = model.state_bounds()
+        opti.subject_to(opti.bounded(np.tile(state_lower, N), ca.vec(X[:, 1:]), np.tile(state_upper, N)))
+        opti.subject_to(opti.bounded(np.tile(self.lower_bounds, N), ca.vec(U), np.tile(self.upper_bounds, N)))
+        for group in model.control_groups:
+            opti.subject_to(ca.vec(ca.sum1(U[group.indices, :])) <= group.max_power)
         opti.subject_to(ca.vec(S_lo) >= 0)
         opti.subject_to(ca.vec(S_hi) >= 0)
         opti.subject_to(ca.vec(S_lim) >= 0)
+
+        # ---- comfort of the zones and of the hot water tanks
         comfort = X[model.comfort_indices, 1:]
         opti.subject_to(ca.vec(comfort + S_lo) >= ca.vec(lower))
         opti.subject_to(ca.vec(comfort - S_hi) <= ca.vec(upper))
-        total = ca.sum1(U)
-        opti.subject_to(ca.vec(total - S_lim) <= ca.vec(limit))
-        opti.subject_to(ca.vec(total) <= peak)
-
-        energy_cost = ca.sum2(price * total) * dt / WATT_HOUR_TO_JOULE
-        capacity_cost = capacity * peak / 1000
         comfort_cost = (
             settings.comfort_penalty * (ca.sum1(ca.sum2(S_lo)) + ca.sum1(ca.sum2(S_hi)))
             + settings.comfort_quadratic * (ca.sumsqr(S_lo) + ca.sumsqr(S_hi))
         ) * hours
+        if model.storage_bands:
+            T_lo = opti.variable(len(model.storage_bands), N)
+            T_hi = opti.variable(len(model.storage_bands), N)
+            variables |= {"T_lo": T_lo, "T_hi": T_hi}
+            opti.subject_to(ca.vec(T_lo) >= 0)
+            opti.subject_to(ca.vec(T_hi) >= 0)
+            for row, band in enumerate(model.storage_bands):
+                tank = X[band.state_index, 1:]
+                opti.subject_to(ca.vec(tank + T_lo[row, :]) >= band.lower)
+                opti.subject_to(ca.vec(tank - T_hi[row, :]) <= band.upper)
+            comfort_cost += (
+                settings.comfort_penalty * (ca.sum1(ca.sum2(T_lo)) + ca.sum1(ca.sum2(T_hi)))
+                + settings.comfort_quadratic * (ca.sumsqr(T_lo) + ca.sumsqr(T_hi))
+            ) * hours
+
+        # ---- the meter: import / export split, metered power, gas
+        heat = self.meter.heat(U)
+        export_cost: Any = ca.DM(0)
+        if model.has_meter:
+            P_imp = opti.variable(1, N)
+            P_exp = opti.variable(1, N)
+            variables |= {"P_imp": P_imp, "P_exp": P_exp}
+            opti.subject_to(ca.vec(P_imp) >= 0)
+            opti.subject_to(ca.vec(P_exp) >= 0)
+            opti.subject_to(ca.vec(P_imp - P_exp) == ca.vec(self.meter.net(U, D)))
+            metered = heat + P_imp
+            export_cost = -ca.sum2(export_price * P_exp) * dt / WATT_HOUR_TO_JOULE
+        else:
+            metered = heat
+        gas_cost = settings.gas_price * ca.sum2(self.meter.gas(U)) * dt / WATT_HOUR_TO_JOULE
+        opti.subject_to(ca.vec(metered - S_lim) <= ca.vec(limit))
+        opti.subject_to(ca.vec(metered) <= peak)
+
+        # ---- electric vehicles: plug-in windows and departure targets
+        vehicle_cost: Any = ca.DM(0)
+        if model.vehicles:
+            plugged = opti.parameter(len(model.vehicles), N)
+            departure = opti.parameter(len(model.vehicles), N)
+            V = opti.variable(len(model.vehicles), N)
+            parameters |= {"plugged": plugged, "departure": departure}
+            variables["V"] = V
+            opti.subject_to(ca.vec(V) >= 0)
+            for row, vehicle in enumerate(model.vehicles):
+                charging = U[vehicle.control_index, :]
+                opti.subject_to(ca.vec(charging) <= ca.vec(plugged[row, :] * self.upper_bounds[vehicle.control_index]))
+                energy = X[vehicle.state_index, 1:]
+                opti.subject_to(ca.vec(energy + V[row, :]) >= ca.vec(departure[row, :] * vehicle.target_energy))
+            vehicle_cost = settings.vehicle_penalty * ca.sum1(ca.sum2(V)) / WATT_HOUR_TO_JOULE
+
+        energy_cost = ca.sum2(price * metered) * dt / WATT_HOUR_TO_JOULE
+        capacity_cost = capacity * peak / 1000
         limit_cost = settings.power_limit_penalty * ca.sum2(S_lim) * dt / WATT_HOUR_TO_JOULE
         ramp = ca.horzcat(U[:, 0] - u_previous, U[:, 1:] - U[:, :-1]) / 1000
         ramp_cost = settings.ramp_weight * ca.sumsqr(ramp)
-        objective = energy_cost + capacity_cost + comfort_cost + limit_cost + ramp_cost
+        objective = (
+            energy_cost + export_cost + gas_cost + capacity_cost + comfort_cost + limit_cost + ramp_cost + vehicle_cost
+        )
         opti.minimize(objective)
         opti.solver("ipopt", ipopt_options(settings.max_iterations, settings.tolerance, settings.verbose))
 
         self._opti = opti
-        self._variables = {"X": X, "U": U, "S_lo": S_lo, "S_hi": S_hi, "S_lim": S_lim, "peak": peak}
-        self._parameters = {
-            "x0": x0, "D": D, "price": price, "lower": lower, "upper": upper, "limit": limit,
-            "capacity": capacity, "u_previous": u_previous,
-        }  # fmt: skip
+        self._variables = variables
+        self._parameters = parameters
+        self._metered = metered
         self._costs = {
-            "energy": energy_cost, "capacity": capacity_cost, "comfort": comfort_cost,
-            "power_limit": limit_cost, "ramp": ramp_cost,
+            "energy": energy_cost, "export": export_cost, "gas": gas_cost, "capacity": capacity_cost,
+            "comfort": comfort_cost, "power_limit": limit_cost, "ramp": ramp_cost, "vehicle": vehicle_cost,
         }  # fmt: skip
 
     def solve(self, x0: np.ndarray, forecast: pd.DataFrame, u_previous: np.ndarray | None = None) -> MPCSolution:
@@ -180,17 +264,26 @@ class ModelPredictiveController:
         end_of_steps = forecast_index(index[0] + pd.Timedelta(seconds=dt), N, dt)
         signal = self.tariff.signal(index)
         bounds = self.comfort.bounds(model, end_of_steps)
-        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 10 * self.max_power.sum())
+        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 10 * self.upper_bounds.sum())
 
         opti, parameters = self._opti, self._parameters
         opti.set_value(parameters["x0"], np.asarray(x0, dtype=float))
         opti.set_value(parameters["D"], forecast[model.disturbance_names].to_numpy(dtype=float).T)
         opti.set_value(parameters["price"], signal.prices.reshape(1, -1))
+        opti.set_value(parameters["export_price"], signal.export.reshape(1, -1))
         opti.set_value(parameters["lower"], bounds.lower)
         opti.set_value(parameters["upper"], bounds.upper)
         opti.set_value(parameters["limit"], limits.reshape(1, -1))
         opti.set_value(parameters["capacity"], signal.capacity_charge)
         opti.set_value(parameters["u_previous"], np.zeros(model.n_controls) if u_previous is None else u_previous)
+        if model.vehicles:
+            opti.set_value(
+                parameters["plugged"], np.vstack([vehicle.plugged_in(index) for vehicle in model.vehicles]) * 1.0
+            )
+            opti.set_value(
+                parameters["departure"],
+                np.vstack([vehicle.departures(index, dt) for vehicle in model.vehicles]) * 1.0,
+            )
         self._warm_start(np.asarray(x0, dtype=float))
 
         started = time.perf_counter()
@@ -203,10 +296,23 @@ class ModelPredictiveController:
             name: np.asarray(solution.value(variable), dtype=float) for name, variable in variables.items()
         }
         costs = {name: float(solution.value(expression)) for name, expression in self._costs.items()}
+        meter = pd.DataFrame(
+            {
+                "P_meter": np.asarray(solution.value(self._metered), dtype=float).reshape(-1),
+                "P_import": np.asarray(solution.value(variables["P_imp"]), dtype=float).reshape(-1)
+                if "P_imp" in variables
+                else np.zeros(N),
+                "P_export": np.asarray(solution.value(variables["P_exp"]), dtype=float).reshape(-1)
+                if "P_exp" in variables
+                else np.zeros(N),
+                "P_gas": np.asarray(solution.value(self.meter.gas(variables["U"])), dtype=float).reshape(-1),
+            },
+            index=index,
+        )
         return MPCSolution(
             index=index,
             controls=pd.DataFrame(
-                np.clip(controls.T, settings.min_power, self.max_power), index=index, columns=model.control_names
+                np.clip(controls.T, self.lower_bounds, self.upper_bounds), index=index, columns=model.control_names
             ),
             states=pd.DataFrame(states.T, index=index.append(end_of_steps[-1:]), columns=model.state_names),
             lower=bounds.lower,
@@ -217,27 +323,28 @@ class ModelPredictiveController:
             status=status,
             iterations=int(solution.stats().get("iter_count", 0)),
             solve_time=solve_time,
+            meter=meter,
         )
 
     def _warm_start(self, x0: np.ndarray) -> None:
         variables = self._variables
         N = self.settings.horizon
+        opti = self._opti
         if self._previous is None:
-            opti = self._opti
             opti.set_initial(variables["X"], np.tile(x0.reshape(-1, 1), (1, N + 1)))
-            opti.set_initial(variables["U"], np.tile(0.3 * self.max_power.reshape(-1, 1), (1, N)))
+            opti.set_initial(variables["U"], np.tile(0.3 * self.upper_bounds.reshape(-1, 1), (1, N)))
             return
-        previous = self._previous
-        X = np.asarray(previous["X"]).reshape(self.model.n_states, N + 1)
-        U = np.asarray(previous["U"]).reshape(self.model.n_controls, N)
-        shifted_x = np.hstack([X[:, 1:], X[:, -1:]])
-        shifted_x[:, 0] = x0
-        self._opti.set_initial(variables["X"], shifted_x)
-        self._opti.set_initial(variables["U"], np.hstack([U[:, 1:], U[:, -1:]]))
-        for name in ("S_lo", "S_hi"):
-            S = np.asarray(previous[name]).reshape(self.model.n_zones, N)
-            self._opti.set_initial(variables[name], np.hstack([S[:, 1:], S[:, -1:]]))
-        self._opti.set_initial(variables["peak"], float(previous["peak"]))
+        for name, previous in self._previous.items():
+            variable = variables[name]
+            if name == "peak":
+                opti.set_initial(variable, float(previous))
+                continue
+            rows, columns = variable.shape
+            values = np.asarray(previous).reshape(rows, columns)
+            shifted = np.hstack([values[:, 1:], values[:, -1:]])
+            if name == "X":
+                shifted[:, 0] = x0
+            opti.set_initial(variable, shifted)
 
 
 def _solve(opti: Any) -> tuple[Any, bool, str]:  # noqa: ANN401

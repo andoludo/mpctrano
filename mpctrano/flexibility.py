@@ -83,8 +83,8 @@ def shifted_energy(result: ClosedLoopResult, reference: ClosedLoopResult) -> flo
 
 
 def _energy_profile(result: ClosedLoopResult) -> pd.Series:
-    powers = result.frame[[f"{zone}_QHea" for zone in result.zones]].sum(axis=1)
-    return powers * result.time_step / 3.6e6
+    """Energy billed at the tariff per step [kWh] (ideal heating plus grid import)."""
+    return result.frame["P_meter"] * result.time_step / 3.6e6
 
 
 def price_response(result: ClosedLoopResult) -> pd.DataFrame:

@@ -212,6 +212,32 @@ def _evaluate_fraction(expression: str) -> float:
     return value
 
 
+def draw_off_power(index: pd.DatetimeIndex, daily_energy_kwh: float, hourly_fractions: list[float]) -> np.ndarray:
+    """Hot water draw-off heat flow [W] at each timestamp from a daily tap profile (held per hour)."""
+    fractions = np.asarray(hourly_fractions, dtype=float)
+    fractions = fractions / fractions.sum() if fractions.sum() > 0 else fractions
+    return fractions[index.hour] * daily_energy_kwh * 1000
+
+
+def driving_power(
+    index: pd.DatetimeIndex,
+    arrival_hour: float,
+    departure_hour: float,
+    energy_per_day_kwh: float,
+    weekend_present: bool = True,
+) -> np.ndarray:
+    """Discharge of a vehicle battery by driving [W]: the daily energy spread over the hours away."""
+    hours = np.asarray(index.hour + index.minute / 60, dtype=float)
+    if departure_hour <= arrival_hour:
+        away = (hours >= departure_hour) & (hours < arrival_hour)
+    else:
+        away = (hours >= departure_hour) | (hours < arrival_hour)
+    if weekend_present:
+        away &= np.asarray(index.dayofweek < 5)
+    hours_away = (arrival_hour - departure_hour) % 24 or 24.0
+    return np.where(away, energy_per_day_kwh * 1000 / hours_away, 0.0)
+
+
 # --------------------------------------------------------------------------- forecasters
 class ForecastNoise(BaseModel):
     """Imperfect forecast: Gaussian errors added to the realisation, growing with the lead time."""
@@ -235,11 +261,11 @@ class ForecastNoise(BaseModel):
             values = forecast[signal.name].to_numpy(dtype=float)
             if source.kind == "weather":
                 values = values + generator.normal(0, 1, steps) * self.temperature_std * lead
-            elif source.kind == "irradiance":
+            elif source.kind in ("irradiance", "photovoltaic"):
                 values = np.clip(
                     values * (1 + generator.normal(0, 1, steps) * self.irradiance_relative_std * lead), 0, None
                 )
-            else:
+            elif source.kind == "occupancy":
                 values = np.clip(values * (1 + generator.normal(0, 1, steps) * self.gains_relative_std * lead), 0, None)
             forecast[signal.name] = values
         return forecast
@@ -300,6 +326,15 @@ class WeatherForecaster:
                 columns[signal.name] = self.weather.outdoor_temperature(seconds)
             elif source.kind == "irradiance":
                 columns[signal.name] = self.weather.tilted_irradiance(seconds, source.azimuth, source.tilt)
+            elif source.kind == "photovoltaic":
+                irradiance = self.weather.tilted_irradiance(seconds, source.azimuth, source.tilt)
+                columns[signal.name] = source.area * source.efficiency * irradiance
+            elif source.kind == "draw_off":
+                columns[signal.name] = draw_off_power(index, source.daily_energy_kwh, source.hourly_fractions)
+            elif source.kind == "ev_driving":
+                columns[signal.name] = driving_power(
+                    index, source.arrival_hour, source.departure_hour, source.energy_per_day_kwh, source.weekend_present
+                )
             else:
                 schedule = self.occupancy.get(source.zone, OccupancySchedule(gain_per_area=0.0))
                 columns[signal.name] = schedule.gains(index, self.floor_areas[source.zone])

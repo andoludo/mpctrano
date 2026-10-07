@@ -43,21 +43,34 @@ class FitMetrics(BaseModel):
 
 
 class ControlMetrics(BaseModel):
-    """Energy, cost, comfort and peak of a (closed-loop) control run."""
+    """Energy, cost, comfort and peak of a (closed-loop) control run.
 
-    energy_kwh: float = Field(description="Total heating energy [kWh]")
+    ``energy_kwh`` is the energy billed at the tariff: the ideal heating of the zones without
+    system plus the electricity imported from the grid; the export, the gas and the PV
+    generation are reported separately.
+    """
+
+    energy_kwh: float = Field(description="Energy billed at the tariff (ideal heating + grid import) [kWh]")
     energy_cost: float = Field(description="Energy cost at the tariff [EUR]")
     capacity_cost: float = Field(0.0, description="Capacity charge of the peak power [EUR]")
     comfort_violation_kh: float = Field(description="Integral of the band violations over the zones [K.h]")
     max_violation: float = Field(description="Largest band violation [K]")
-    peak_power_kw: float = Field(description="Peak total heating power [kW]")
+    peak_power_kw: float = Field(description="Peak billed power [kW]")
     low_price_share: float = Field(description="Share of the energy consumed below the median price")
     mean_price: float = Field(description="Energy-weighted average price paid [EUR/kWh]")
     steps: int
+    export_kwh: float = Field(0.0, description="Energy exported to the grid [kWh]")
+    export_revenue: float = Field(0.0, description="Revenue of the exported energy [EUR]")
+    gas_kwh: float = Field(0.0, description="Fuel energy of the boilers [kWh]")
+    gas_cost: float = Field(0.0, description="Cost of the fuel [EUR]")
+    generation_kwh: float = Field(0.0, description="PV generation [kWh]")
+    self_consumption: float = Field(
+        float("nan"), description="Share of the PV generation consumed on site (NaN without PV)"
+    )
 
     @property
     def total_cost(self) -> float:
-        return self.energy_cost + self.capacity_cost
+        return self.energy_cost + self.capacity_cost + self.gas_cost - self.export_revenue
 
     @classmethod
     def compute(
@@ -70,14 +83,27 @@ class ControlMetrics(BaseModel):
         prices: np.ndarray,
         time_step: float,
         capacity_charge: float = 0.0,
+        export: np.ndarray | None = None,
+        export_prices: np.ndarray | None = None,
+        gas: np.ndarray | None = None,
+        gas_price: float = 0.0,
+        generation: np.ndarray | None = None,
     ) -> ControlMetrics:
-        """``powers`` and ``temperatures`` are ``(n_zones, N)``, the temperatures at the end of each step."""
+        """``powers`` are the billed powers ``(n, N)`` [W] (summed), ``temperatures`` the zone temperatures
+        ``(n_zones, N)`` at the end of each step; ``export``, ``gas`` and ``generation`` are ``(N,)`` [W]."""
         hours = time_step / 3600
         total = np.sum(np.atleast_2d(powers), axis=0)
         energy = total * hours / 1000
         violation = np.maximum(lower - temperatures, 0) + np.maximum(temperatures - upper, 0)
         median = float(np.median(prices))
         total_energy = float(energy.sum())
+        exported = np.zeros_like(total) if export is None else np.asarray(export, dtype=float) * hours / 1000
+        export_prices = np.zeros_like(prices) if export_prices is None else np.asarray(export_prices, dtype=float)
+        gas_energy = np.zeros_like(total) if gas is None else np.asarray(gas, dtype=float) * hours / 1000
+        generated = None if generation is None else np.asarray(generation, dtype=float) * hours / 1000
+        self_consumption = float("nan")
+        if generated is not None and generated.sum() > 0:
+            self_consumption = float(1 - exported.sum() / generated.sum())
         return cls(
             energy_kwh=total_energy,
             energy_cost=float(np.sum(prices * energy)),
@@ -88,6 +114,12 @@ class ControlMetrics(BaseModel):
             low_price_share=float(energy[prices < median].sum() / total_energy) if total_energy > 0 else 0.0,
             mean_price=float(np.sum(prices * energy) / total_energy) if total_energy > 0 else float("nan"),
             steps=len(index),
+            export_kwh=float(exported.sum()),
+            export_revenue=float(np.sum(export_prices * exported)),
+            gas_kwh=float(gas_energy.sum()),
+            gas_cost=float(gas_price * gas_energy.sum()),
+            generation_kwh=0.0 if generated is None else float(generated.sum()),
+            self_consumption=self_consumption,
         )
 
     def frame(self) -> pd.DataFrame:

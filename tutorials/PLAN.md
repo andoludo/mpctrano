@@ -10,7 +10,14 @@ Day 2 done on 2026-10-06: trano branch `feature/mpc-systems` (energy systems inl
 library, interface version 2, schema elements `chiller`, `dhw_tank`, `battery`, `ev_charger`,
 PV parameters, heat pump performance on the boiler; 495 tests green). A pull request to trano
 `master` carries it; mpctrano will lock that branch through a git source until the release.
-Next: Day 3 (mpctrano consumes interface version 2).
+Day 3 done on 2026-10-07: mpctrano pins trano 0.36 (PR #37 merged and released) and consumes
+interface version 2: systems, meter (import/export, gas), MPC on the billed power with
+compressor groups, tank bands and vehicle targets, extended Kalman filter, name-matched plants
+(R4C3 plant against R3C2 controller), `Mismatch`, the house YAML with six variants and their
+pre-generated R3C2/R4C3 models (`tutorials/models/house/`). Note for Day 8: trano's window
+validator rejects surfaces whose square root does not square back exactly (3.0 m2); the
+tutorial YAMLs give width and height explicitly, fix it in trano with the district PR.
+Next: Day 4 (`mpctrano.notebook`, the reference notebook 01, caches).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

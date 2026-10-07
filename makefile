@@ -1,4 +1,4 @@
-.PHONY: install linting tests tests-all tutorials sync-notebooks notebooks
+.PHONY: install linting tests tests-all tutorials sync-notebooks notebooks models cache
 
 install:
 	uv sync --group dev --group docs
@@ -26,3 +26,10 @@ sync-notebooks:
 # Execute every notebook top to bottom (quick mode: short periods, cached results).
 notebooks: sync-notebooks
 	MPCTRANO_QUICK=1 uv run pytest --nbmake --nbmake-timeout=1800 -p no:cacheprovider tutorials/[0-9][0-9]_*.ipynb
+
+# Regenerate the tutorial models from the YAML files and the cached closed-loop runs.
+models:
+	uv run python tutorials/scripts/generate_models.py
+
+cache:
+	uv run python tutorials/scripts/build_cache.py

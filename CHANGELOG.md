@@ -8,6 +8,16 @@ release pipeline.
 
 ### Added
 
+- `mpctrano.notebook`: helpers of the interactive tutorials: `TutorialBuilding` (pre-generated
+  control and plant models), `ResultCache` (closed-loop results as parquet, keyed by the run
+  parameters), `price_options`, `comfort_spec`, `scenario`, `kpi_table`, the `plan_explorer`
+  (live open-loop MPC) and `closed_loop_explorer` (cached runs, recompute button) widgets,
+  `quick_mode`, `days` and `timed`.
+- `mpctrano.plot`: one palette for every figure, `plot_plan`, `plot_states`, `plot_cop`;
+  `plot_closed_loop` shows the billed power and the export.
+- Tutorial `01_house_heat_pump`: pipeline walk-through, live MPC plan, closed loop with plant
+  mismatch from the cache (`tutorials/cache/house/`, built by `tutorials/scripts/build_cache.py`),
+  state estimation on/off, R3C2 vs R4C3 controller.
 - Interface version 2 of trano 0.36 (energy systems): `RCModel` exposes the systems, the energy
   carrier of each control input, the compressor limits shared by the inputs of a heat pump
   (`control_groups`), the tank temperature bands, the electric vehicles and the bounds of every

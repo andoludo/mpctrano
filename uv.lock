@@ -2509,6 +2509,7 @@ dependencies = [
 notebook = [
     { name = "ipywidgets" },
     { name = "plotly" },
+    { name = "pyarrow" },
 ]
 plot = [
     { name = "plotly" },
@@ -2541,6 +2542,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.2,<3" },
     { name = "plotly", marker = "extra == 'notebook'", specifier = ">=5.22" },
     { name = "plotly", marker = "extra == 'plot'", specifier = ">=5.22" },
+    { name = "pyarrow", marker = "extra == 'notebook'", specifier = ">=15" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "rumoca", specifier = ">=0.10.0,<0.11" },
     { name = "trano", specifier = ">=0.36.0" },

@@ -1,0 +1,35 @@
+{
+ "name": "radiators day-ahead wide perfect",
+ "metrics": {
+  "energy_kwh": 64.83379356247893,
+  "energy_cost": 17.290884179816473,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.00020243337411329776,
+  "max_violation": 2.9385072934928758e-06,
+  "peak_power_kw": 2.2000000219923295,
+  "low_price_share": 0.4185219210396467,
+  "mean_price": 0.2666955491838314,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 23.905196079999996,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "radiators",
+  "price": "day-ahead",
+  "band": "wide",
+  "mismatch": "perfect",
+  "days": 3.0
+ }
+}

@@ -1,0 +1,35 @@
+{
+ "name": "old flat tight mismatch",
+ "metrics": {
+  "energy_kwh": 56.99673383313157,
+  "energy_cost": 14.47717039361542,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 8.705858165250447,
+  "max_violation": 0.48791092553182125,
+  "peak_power_kw": 1.613768684099945,
+  "low_price_share": 0.0,
+  "mean_price": 0.254,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 17.316651348999926,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "old",
+  "price": "flat",
+  "band": "tight",
+  "mismatch": "mismatch",
+  "days": 3.0
+ }
+}

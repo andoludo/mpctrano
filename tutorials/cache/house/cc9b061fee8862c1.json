@@ -1,0 +1,35 @@
+{
+ "name": "base flat tight perfect",
+ "metrics": {
+  "energy_kwh": 41.514041766399714,
+  "energy_cost": 10.54456660866553,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.0003893572445576865,
+  "max_violation": 2.930998334704782e-06,
+  "peak_power_kw": 1.2924798826287751,
+  "low_price_share": 0.0,
+  "mean_price": 0.25400000000000006,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 17.391638914999987,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "base",
+  "price": "flat",
+  "band": "tight",
+  "mismatch": "perfect",
+  "days": 3.0
+ }
+}

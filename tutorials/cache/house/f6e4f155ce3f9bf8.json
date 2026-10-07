@@ -1,0 +1,35 @@
+{
+ "name": "big_heat_pump flat wide mismatch",
+ "metrics": {
+  "energy_kwh": 28.044060260034914,
+  "energy_cost": 7.123191306048868,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 8.433993522480364,
+  "max_violation": 1.3204410906996031,
+  "peak_power_kw": 1.6397218766884079,
+  "low_price_share": 0.0,
+  "mean_price": 0.254,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 18.702269987999898,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "big_heat_pump",
+  "price": "flat",
+  "band": "wide",
+  "mismatch": "mismatch",
+  "days": 3.0
+ }
+}

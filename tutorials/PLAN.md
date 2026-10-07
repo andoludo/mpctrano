@@ -17,7 +17,12 @@ compressor groups, tank bands and vehicle targets, extended Kalman filter, name-
 pre-generated R3C2/R4C3 models (`tutorials/models/house/`). Note for Day 8: trano's window
 validator rejects surfaces whose square root does not square back exactly (3.0 m2); the
 tutorial YAMLs give width and height explicitly, fix it in trano with the district PR.
-Next: Day 4 (`mpctrano.notebook`, the reference notebook 01, caches).
+Day 4 done on 2026-10-07: `mpctrano.notebook` (pre-generated models, parquet result cache,
+live plan and cached closed-loop widgets), shared plot palette, the house study
+(`tutorials/_house.py`, 72 cached runs of 3 days in `tutorials/cache/house/`, 4 MB, no solver
+failure) and the reference notebook `01_house_heat_pump` (55 s under nbmake in quick mode).
+Measured: one open-loop solve 0.1 to 0.3 s, one 3-day closed loop with the EKF about 18 s.
+Next: Day 5 (flexibility metrics and use cases, capacity tariff, notebook 02).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

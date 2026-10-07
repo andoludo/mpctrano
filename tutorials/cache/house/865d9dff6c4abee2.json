@@ -1,0 +1,35 @@
+{
+ "name": "base day-ahead + evening spike wide mismatch",
+ "metrics": {
+  "energy_kwh": 28.719253438031636,
+  "energy_cost": 7.920195315604998,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 8.176389165465082,
+  "max_violation": 1.3250056447475345,
+  "peak_power_kw": 1.6768302473394827,
+  "low_price_share": 0.4334107060145819,
+  "mean_price": 0.2757799861578795,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 18.25507703599999,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "base",
+  "price": "day-ahead + evening spike",
+  "band": "wide",
+  "mismatch": "mismatch",
+  "days": 3.0
+ }
+}

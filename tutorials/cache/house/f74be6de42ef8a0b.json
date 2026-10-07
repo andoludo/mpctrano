@@ -1,0 +1,35 @@
+{
+ "name": "old day-ahead tight perfect",
+ "metrics": {
+  "energy_kwh": 54.90060526588524,
+  "energy_cost": 14.096205626740932,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.00038380673743176885,
+  "max_violation": 2.931115091087122e-06,
+  "peak_power_kw": 1.8535251980648504,
+  "low_price_share": 0.48311638625614844,
+  "mean_price": 0.256758656092635,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 17.24901106799996,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "old",
+  "price": "day-ahead",
+  "band": "tight",
+  "mismatch": "perfect",
+  "days": 3.0
+ }
+}

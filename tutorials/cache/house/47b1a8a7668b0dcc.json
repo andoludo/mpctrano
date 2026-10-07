@@ -1,0 +1,35 @@
+{
+ "name": "radiators day-ahead + evening spike tight perfect",
+ "metrics": {
+  "energy_kwh": 93.43579550848212,
+  "energy_cost": 25.245640733870687,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.0003589199137650212,
+  "max_violation": 2.9509004662031657e-06,
+  "peak_power_kw": 2.200000021974721,
+  "low_price_share": 0.47499525623302885,
+  "mean_price": 0.2701923882221229,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 17.627408208000134,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "radiators",
+  "price": "day-ahead + evening spike",
+  "band": "tight",
+  "mismatch": "perfect",
+  "days": 3.0
+ }
+}

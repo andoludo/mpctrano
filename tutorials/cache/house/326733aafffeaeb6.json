@@ -1,0 +1,35 @@
+{
+ "name": "big_heat_pump day-ahead tight perfect",
+ "metrics": {
+  "energy_kwh": 41.875797704318,
+  "energy_cost": 10.741754219600843,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.00037327673209119894,
+  "max_violation": 2.931073083800584e-06,
+  "peak_power_kw": 1.602159002795636,
+  "low_price_share": 0.494058248553511,
+  "mean_price": 0.25651461723660995,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 17.77494491000016,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "variant": "big_heat_pump",
+  "price": "day-ahead",
+  "band": "tight",
+  "mismatch": "perfect",
+  "days": 3.0
+ }
+}

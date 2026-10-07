@@ -228,9 +228,12 @@ display(table)
 #   CasADi-ready RC model with its heat pump, tank and interface.
 # * A heat pump on floor heating is a large, slow thermal battery: pre-heating pays when the price
 #   spread is a few times, and the compressor limit, not the comfort band, often binds on cold days.
-# * The closed loop with a different plant structure and noisy sensors costs a few percent more
-#   than the perfect model and violates the band where the controller was over-confident; the
-#   state estimator removes most of that gap, the R4C3 controller a little more at a solve-time cost.
+# * Against the R4C3 plant with a perturbed envelope and noisy sensors, the R3C2 controller of
+#   the base house pays about 2 % more over three days and misses the band by some 11 K.h (up
+#   to 1 K) where it was over-confident; whether the mismatch costs or saves depends on the
+#   direction of the perturbation (the `old` and `radiators` variants show both), the violations
+#   are the robust symptom. The state estimator removes most of the gap, the R4C3 controller a
+#   little more at a solve-time cost.
 #
 # ## Further reading
 #

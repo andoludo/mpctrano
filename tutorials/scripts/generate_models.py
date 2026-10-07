@@ -167,7 +167,7 @@ def generate(typology: str) -> list[Path]:
         for structure in STRUCTURES:
             model = RCModel.from_yaml(variant_path, model_type=structure, name=f"{typology}_{variant.name}")
             stem = f"{variant.name}_{structure.value.lower()}"
-            modelica, interface = model.write(output, stem)
+            modelica, interface = model.write(output, stem, relative_weather=True)
             rumoca.Session().loads(modelica.read_text(), model=model.interface.model).to_casadi()
             written += [modelica, interface]
             typer.echo(

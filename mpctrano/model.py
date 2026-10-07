@@ -10,6 +10,7 @@ which is what calibration, state estimation and MPC need.
 from __future__ import annotations
 
 import fnmatch
+import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -198,14 +199,21 @@ class RCModel:
             return cls.from_source(building.to_modelica(network.name), interface, base_dir=path.parent)
         return cls.from_network(network, base_dir=path.parent)
 
-    def write(self, directory: Path | str, stem: str | None = None) -> tuple[Path, Path]:
-        """Write ``<stem>.mo`` and ``<stem>.mpc.json`` (with the current parameters)."""
+    def write(
+        self, directory: Path | str, stem: str | None = None, relative_weather: bool = False
+    ) -> tuple[Path, Path]:
+        """Write ``<stem>.mo`` and ``<stem>.mpc.json`` (with the current parameters).
+
+        The weather file is stored as an absolute path, or relative to ``directory`` with
+        ``relative_weather`` (for files committed to a repository).
+        """
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         stem = stem or self.interface.package
         modelica_path = directory / f"{stem}.mo"
         modelica_path.write_text(self.source)
-        return modelica_path, self.portable_interface().write(directory / f"{stem}.mpc.json")
+        interface = self.portable_interface(relative_to=directory if relative_weather else None)
+        return modelica_path, interface.write(directory / f"{stem}.mpc.json")
 
     # ----------------------------------------------------------------- names and indices
     @property
@@ -501,12 +509,14 @@ class RCModel:
         ]
         return self.interface.model_copy(update={"parameters": parameters})
 
-    def portable_interface(self) -> MPCModelInterface:
-        """:meth:`calibrated_interface` with the weather file as an absolute path, if it exists."""
+    def portable_interface(self, relative_to: Path | None = None) -> MPCModelInterface:
+        """:meth:`calibrated_interface` with the weather file as an absolute path (or relative to
+        ``relative_to``), if it exists."""
         interface = self.calibrated_interface()
         weather = self.weather_path
         if weather is not None and weather.exists():
-            interface = interface.model_copy(update={"weather_file": str(weather)})
+            path = os.path.relpath(weather, Path(relative_to).resolve()) if relative_to else str(weather)
+            interface = interface.model_copy(update={"weather_file": str(path)})
         return interface
 
     # ----------------------------------------------------------------- dynamics

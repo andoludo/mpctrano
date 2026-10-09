@@ -269,3 +269,50 @@ def plot_envelope(envelope: FlexibilityEnvelope, title: str | None = None) -> An
     figure.update_xaxes(title_text="Duration", row=1, col=1)
     figure.update_xaxes(title_text="Duration", row=1, col=2)
     return _style(figure, title or "Flexibility envelope", 420)
+
+
+def plot_dispatch(result: ClosedLoopResult, model: RCModel, title: str | None = None) -> Any:  # noqa: ANN401
+    """How the shared compressor is dispatched: stacked electrical inputs, the storage temperatures, the price."""
+    go, make_subplots = _plotly()
+    frame = result.frame
+    figure = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, row_heights=[0.42, 0.38, 0.2])
+    electrical = [model.control_names[i] for i in model.consumption_control_indices]
+    for i, name in enumerate(electrical):
+        figure.add_trace(
+            go.Scatter(
+                x=frame.index,
+                y=frame[name] / 1000,
+                name=name,
+                mode="lines",
+                stackgroup="compressor",
+                line={"width": 0.5, "shape": "hv", "color": SERIES[i % len(SERIES)]},
+            ),
+            row=1,
+            col=1,
+        )
+    for group in model.control_groups:
+        figure.add_hline(y=group.max_power / 1000, line={"dash": "dot", "color": MUTED}, row=1, col=1)
+    for i, band in enumerate(model.storage_bands):
+        state = model.state_names[band.state_index]
+        figure.add_trace(
+            _line(go, frame.index, frame[f"{state}_end"] - KELVIN, state, SERIES[i % len(SERIES)]), row=2, col=1
+        )
+        figure.add_hline(y=band.lower - KELVIN, line={"dash": "dot", "color": MUTED}, row=2, col=1)
+    for i, zone in enumerate(result.zones):
+        figure.add_trace(
+            _line(
+                go,
+                frame.index,
+                frame[f"{zone}_Ti_end"] - KELVIN,
+                zone,
+                SERIES[(i + 2) % len(SERIES)],
+                line={"dash": "dash"},
+            ),
+            row=2,
+            col=1,
+        )
+    figure.add_trace(_line(go, frame.index, frame["price"], "price", SERIES[7], line={"shape": "hv"}), row=3, col=1)
+    figure.update_yaxes(title_text="Electrical power [kW]", row=1, col=1)
+    figure.update_yaxes(title_text="Temperature [degC]", row=2, col=1)
+    figure.update_yaxes(title_text="Price [EUR/kWh]", row=3, col=1)
+    return _style(figure, title or f"Dispatch: {result.name}", 800)

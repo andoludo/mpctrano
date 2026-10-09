@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from mpctrano.model import RCModel
 
 
 class FitMetrics(BaseModel):
@@ -124,3 +129,27 @@ class ControlMetrics(BaseModel):
 
     def frame(self) -> pd.DataFrame:
         return pd.DataFrame({"value": self.model_dump()})
+
+
+def compressor_load(frame: pd.DataFrame, model: RCModel, margin: float = 0.02) -> pd.DataFrame:
+    """Use of the shared compressors of a closed-loop or open-loop frame, one row per control group.
+
+    ``mean_load`` is the average of the summed electrical inputs of the group over its limit,
+    ``binding_share`` the share of steps within ``margin`` of the limit (where the compressor,
+    not the price, decides the dispatch), ``peak_kw`` the highest summed input; the share of the
+    group's electricity drawn by each input follows (``share_<input>``).
+    """
+    rows = {}
+    for group in model.control_groups:
+        names = [model.control_names[i] for i in group.indices]
+        total = frame[names].sum(axis=1)
+        row: dict[str, float] = {
+            "limit_kw": group.max_power / 1000,
+            "peak_kw": float(total.max()) / 1000,
+            "mean_load": float(total.mean()) / group.max_power,
+            "binding_share": float((total >= (1 - margin) * group.max_power).mean()),
+        }
+        energy = frame[names].sum()
+        row |= {f"share_{name}": float(energy[name] / energy.sum()) if energy.sum() > 0 else 0.0 for name in names}
+        rows[group.system] = row
+    return pd.DataFrame(rows).T

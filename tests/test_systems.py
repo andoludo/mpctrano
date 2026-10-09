@@ -179,3 +179,13 @@ def test_run_scenario_with_mismatch_uses_a_perturbed_plant(house: RCModel) -> No
     result = run_scenario(house, scenario)
     assert result.failures == 0
     assert result.metrics.energy_kwh > 0
+
+
+def test_storage_band_can_lock_the_tank(house: RCModel) -> None:
+    locked = house.with_storage_band("tank_001", 327.15, 328.15)
+    band = locked.storage_bands[0]
+    assert (band.lower, band.upper) == (327.15, 328.15)
+    assert house.storage_bands[0].lower == 318.15  # the original model is untouched
+    assert locked.state_names == house.state_names
+    with pytest.raises(KeyError):
+        house.with_storage_band("nope", 1.0, 2.0)

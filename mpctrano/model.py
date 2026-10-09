@@ -318,6 +318,17 @@ class RCModel:
             if signal.source is not None and signal.source.kind == "photovoltaic"
         ]
 
+    def consumption_capacity(self, upper_bounds: np.ndarray) -> float:
+        """Largest electricity draw [W] the control bounds allow, with the shared compressor limits applied."""
+        grouped: set[int] = set()
+        capacity = 0.0
+        for group in self.control_groups:
+            members = [i for i in group.indices if i in self.consumption_control_indices]
+            capacity += min(group.max_power, float(upper_bounds[members].sum())) if members else 0.0
+            grouped |= set(members)
+        capacity += float(sum(upper_bounds[i] for i in self.consumption_control_indices if i not in grouped))
+        return capacity
+
     @property
     def has_meter(self) -> bool:
         """Whether electricity is exchanged with the grid (electrical inputs or PV)."""
@@ -499,6 +510,31 @@ class RCModel:
                 raise ModelError(f"Expected {self.n_parameters} parameters, got {vector.size}.")
         return RCModel(
             interface=self.interface, source=self.source, parameters=vector, base_dir=self.base_dir, _rhs=self._rhs
+        )
+
+    def with_storage_band(self, system: str, lower: float, upper: float) -> RCModel:
+        """Copy of the model whose tank ``system`` keeps its temperature in ``[lower, upper]`` [K].
+
+        Narrowing the band to the set temperature locks the storage: the tank is kept full and
+        offers no flexibility, which isolates the contribution of the other storages.
+        """
+        systems = []
+        found = False
+        for spec in self.interface.systems:
+            if spec.name == system and spec.kind == "dhw_tank":
+                systems.append(spec.model_copy(update={"min_temperature": lower, "set_temperature": upper}))
+                found = True
+            else:
+                systems.append(spec)
+        if not found:
+            raise KeyError(f"No hot water tank named {system}.")
+        interface = self.interface.model_copy(update={"systems": systems})
+        return RCModel(
+            interface=interface,
+            source=self.source,
+            parameters=self.parameters.copy(),
+            base_dir=self.base_dir,
+            _rhs=self._rhs,
         )
 
     def calibrated_interface(self) -> MPCModelInterface:

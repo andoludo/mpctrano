@@ -9,7 +9,7 @@ inputs, PV adds a generation disturbance. `mpctrano.meter.Meter` builds the bala
 
 ```
 P_net    = Σ electrical inputs − Σ battery discharge − Σ PV generation
-P_import − P_export = P_net,  P_import, P_export ≥ 0
+P_import − P_export = P_net,  P_import, P_export ≥ 0,  P_export ≤ Σ battery discharge + Σ PV generation
 P_meter  = P_heat + P_import          # billed at the tariff; P_heat = ideal thermal inputs
 P_gas    = Σ Q_boiler / efficiency    # billed at MPCSettings.gas_price
 ```
@@ -17,7 +17,10 @@ P_gas    = Σ Q_boiler / efficiency    # billed at MPCSettings.gas_price
 The interface also gives what the ODE cannot carry: the compressor limit shared by the zones (and
 tanks) of one heat pump, the state of charge bounds, the tank temperature band and the sessions of
 the vehicles. `RCModel.control_groups`, `storage_bands`, `vehicles`, `control_bounds()` and
-`state_bounds()` expose them.
+`state_bounds()` expose them. `RCModel.with_storage_band(tank, lower, upper)` returns a copy with
+another band for a tank (a one-kelvin band at the set temperature locks it), `compressor_load`
+reads how a run used the shared compressors (mean load, share of the steps at the limit, share of
+the electricity per input) and `plot_dispatch` draws the dispatch against the limit.
 
 ## Optimisation problem
 
@@ -134,4 +137,6 @@ delivery ratio, the rebound energy, peak, duration and ratio, the cost and comfo
 `FlexibilityEnvelope.compute(controller, x0, forecast, durations)` finds, for each duration, the
 largest constant change of the billed power the controller can hold from the current state while
 its plan keeps the comfort violations below a tolerance (bisection on a per-solve cap or floor,
-`solve(power_limits=..., power_floors=...)`), with the energy and the extra cost of that plan.
+`solve(power_limits=..., power_floors=...)`), with the energy and the extra cost of that plan. The
+upward search is bounded by `RCModel.consumption_capacity`, the largest draw the control bounds
+and the shared compressor limits allow.

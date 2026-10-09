@@ -14,7 +14,8 @@ where ``P_meter = P_heat + P_import`` is what the tariff bills: the ideal therma
 zones without system (``P_heat``, costed at the tariff price as before) plus the electricity
 imported from the grid. The import and the export are split from the net power at the meter
 (``consumption - battery discharge - PV generation``) with two non-negative variables, which is
-exact as long as the import price is not lower than the export price. Gas boilers are costed with
+exact as long as the import price is not lower than the export price; the export is
+bounded by the on-site generation and discharge. Gas boilers are costed with
 their efficiency at ``gas_price``.
 
 Constraints: the ODE of the model, the bounds of every control input (design heating power of a
@@ -216,6 +217,9 @@ class ModelPredictiveController:
             opti.subject_to(ca.vec(P_imp) >= 0)
             opti.subject_to(ca.vec(P_exp) >= 0)
             opti.subject_to(ca.vec(P_imp - P_exp) == ca.vec(self.meter.net(U, D)))
+            # Export is bounded by the on-site sources (PV, battery discharge): without the bound a power
+            # floor could be met by importing and exporting at the same time.
+            opti.subject_to(ca.vec(P_exp) <= ca.vec(self.meter.discharge(U) + self.meter.generation(D)))
             metered = heat + P_imp
             export_cost = -ca.sum2(export_price * P_exp) * dt / WATT_HOUR_TO_JOULE
         else:

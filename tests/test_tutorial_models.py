@@ -26,3 +26,16 @@ def test_house_variants_cover_the_notebook_grid() -> None:
     names = {path.name.removesuffix(".mpc.json") for path in MODELS if path.parent.name == "house"}
     for variant in ("base", "old", "radiators", "big_heat_pump", "pv", "pv_battery_ev"):
         assert {f"{variant}_r3c2", f"{variant}_r4c3"} <= names
+
+
+def test_apartment_variants_cover_the_notebook_grid() -> None:
+    names = {path.name.removesuffix(".mpc.json") for path in MODELS if path.parent.name == "apartments"}
+    for variant in ("base", "floor_heating", "high_temperature", "big_tank", "small_heat_pump"):
+        assert {f"{variant}_r3c2", f"{variant}_r4c3"} <= names
+    block = RCModel.from_files(
+        MODELS[0].parent.parent / "apartments" / "base_r3c2.mo",
+        MODELS[0].parent.parent / "apartments" / "base_r3c2.mpc.json",
+    )
+    assert len(block.zone_names) == 6
+    assert [band.system for band in block.storage_bands] == ["tank_001"]
+    assert len(block.control_groups) == 1 and len(block.control_groups[0].indices) == 7

@@ -35,7 +35,7 @@ from mpctrano.forecast import (
     WeatherFile,
     WeatherForecaster,
 )
-from mpctrano.metrics import ControlMetrics, FitMetrics
+from mpctrano.metrics import ControlMetrics, FitMetrics, compressor_load
 from mpctrano.model import RCModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
@@ -107,6 +107,7 @@ __all__ = [
     "__version__",
     "build_plant",
     "compare",
+    "compressor_load",
     "evaluate",
     "flexibility_function",
     "generate_monitoring_data",

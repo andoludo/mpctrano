@@ -189,6 +189,27 @@ def test_flexibility_envelope(building: TutorialBuilding) -> None:
     assert plan_comfort_violation(solution, model) < 0.5
 
 
+APARTMENTS = HOUSE.parent / "apartments"
+
+
+def test_power_floor_cannot_be_met_by_exporting(building: TutorialBuilding) -> None:
+    """Without PV or a battery the meter never exports, so a floor above the compressor capacity is infeasible."""
+    block = TutorialBuilding(APARTMENTS, "base")
+    model = block.control
+    controller = ModelPredictiveController(model, MPCSettings(horizon=24), ComfortSpec(), FlatTariff(price=0.25))
+    forecast = block.forecaster.forecast(START + pd.Timedelta(hours=6), 24, 3600.0)
+    capacity = model.consumption_capacity(controller.upper_bounds)
+    assert capacity == pytest.approx(8000.0)  # one compressor shared by six apartments and the tank
+    floors = np.zeros(24)
+    floors[:2] = 50_000.0
+    solution = controller.solve(model.initial_state, forecast, power_floors=floors)
+    assert solution.meter is not None
+    assert solution.meter["P_export"].max() < 1.0
+    assert solution.meter["P_meter"].max() <= capacity + 1.0
+    envelope = FlexibilityEnvelope.compute(controller, model.initial_state, forecast, durations=(2.0,), iterations=3)
+    assert envelope.frame.loc[2.0, "up_kw"] <= capacity / 1000 + 1e-6
+
+
 def test_compare_reports_peak_reduction(building: TutorialBuilding) -> None:
     model = building.control
     flat = run_scenario(model, Scenario(name="flat", description="", tariff=FlatTariff(price=0.25), days=0.5))

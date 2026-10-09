@@ -8,6 +8,27 @@ release pipeline.
 
 ### Added
 
+- Tutorial `03_apartment_block` with its study (`tutorials/_apartments.py`, cache in
+  `tutorials/cache/apartments/`): six apartments on one heat pump with radiators and a 1 m3
+  domestic hot water tank; the dispatch of the shared compressor, emitter temperature and heat
+  pump size (`floor_heating`, `high_temperature`, `small_heat_pump`, `big_tank` variants), the
+  tank free or locked during an evening shed and in the envelope.
+- Apartment block typology: `tutorials/buildings/apartments.yaml` and its variants, generated as
+  R3C2 and R4C3 models in `tutorials/models/apartments/`.
+- `compressor_load`: use of the shared compressors of a run (mean load, share of the steps at the
+  limit, share of the electricity per input); `plot_dispatch` (stacked electrical inputs against
+  the compressor limit, storage temperatures with their band, zone temperatures, price).
+- `RCModel.with_storage_band` (a copy of the model with another band for a tank, to lock it or
+  widen it) and `RCModel.consumption_capacity` (largest draw the bounds and the compressor
+  limits allow).
+
+### Fixed
+
+- The import / export split of the meter is bounded by the on-site sources (PV generation and
+  battery discharge): a power floor (upward activation, envelope) could previously be met by
+  importing and exporting at the same time on a building without any source. The upward bound of
+  `FlexibilityEnvelope` respects the shared compressor limits.
+
 - Explicit flexibility: `ActivationRequest` (shed or absorb a power during a window, expressed
   as a soft cap or floor on the billed power against the baseline), `respond` (baseline and
   response from the same plant state) and `ActivationResult.metrics` (delivered energy and

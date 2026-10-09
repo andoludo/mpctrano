@@ -78,6 +78,15 @@ def set_emitter(supply: float, return_: float) -> Override:
     return apply
 
 
+def set_tank(**parameters: float) -> Override:
+    def apply(data: dict[str, Any]) -> None:
+        for system in data["systems"]:
+            if "dhw_tank" in system:
+                system["dhw_tank"]["parameters"].update(parameters)
+
+    return apply
+
+
 def add_pv(area: float, efficiency: float = 0.19, azimuth: float = 0.0, tilt: float = 35.0) -> Override:
     def apply(data: dict[str, Any]) -> None:
         parameters = {"area": area, "efficiency": efficiency, "azimuth": azimuth, "tilt": tilt}
@@ -99,6 +108,17 @@ def add_storage(battery_kwh: float, ev_kwh: float) -> Override:
 
 
 TYPOLOGIES: dict[str, list[Variant]] = {
+    "apartments": [
+        Variant("base", "six apartments, radiators at 55/45 degC, 24 kW central heat pump, 1 m3 DHW tank"),
+        Variant("floor_heating", "floor heating at 35/30 degC in every apartment", [set_emitter(308.15, 303.15)]),
+        Variant("high_temperature", "old radiators at 70/55 degC", [set_emitter(343.15, 328.15)]),
+        Variant("big_tank", "2 m3 DHW tank (more storage for the same demand)", [set_tank(volume=2.0)]),
+        Variant(
+            "small_heat_pump",
+            "16 kW heat pump at 5.5 kW electrical (the compressor binds on cold days)",
+            [set_heat_pump(nominal_heating_power=16000, max_electrical_power=5500)],
+        ),
+    ],
     "house": [
         Variant("base", "cavity walls with 10 cm of insulation, floor heating, 7 kW heat pump, DHW tank"),
         Variant(

@@ -338,9 +338,7 @@ class FlexibilityEnvelope:
             raise ValueError("The envelope needs a model with a meter (electrical inputs).")
         billed = baseline.meter["P_meter"].to_numpy(dtype=float)
         n = len(billed)
-        capacity = float(controller.upper_bounds[model.consumption_control_indices].sum()) or float(
-            controller.upper_bounds.sum()
-        )
+        capacity = model.consumption_capacity(controller.upper_bounds) or float(controller.upper_bounds.sum())
         rows = []
         for duration in durations:
             first = round(offset_hours * 3600 / dt)

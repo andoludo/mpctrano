@@ -10,7 +10,7 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 | `00_setup_check` | toolchain check, first CasADi model from a YAML | ready |
 | `01_house_heat_pump` | single-family house, heat pump + floor heating (reference implementation) | ready |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | ready |
-| `03_apartment_block` | central heat pump, radiators, DHW tank | planned |
+| `03_apartment_block` | central heat pump, radiators, DHW tank, shared compressor | ready |
 | `04_office_cooling` | AHU + chiller, occupancy schedule, summer week | planned |
 | `05_pv_battery_ev` | PV, battery and EV charger next to the thermal storage | planned |
 | `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |

@@ -19,9 +19,9 @@ import typer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tutorials import _flexibility, _house
+from tutorials import _apartments, _flexibility, _house
 
-STUDIES = {"house": _house, "flexibility": _flexibility}
+STUDIES = {"house": _house, "flexibility": _flexibility, "apartments": _apartments}
 app = typer.Typer(add_completion=False, help=__doc__)
 
 

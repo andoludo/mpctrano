@@ -24,10 +24,10 @@ release pipeline.
 
 ### Fixed
 
-- The import / export split of the meter is bounded by the on-site sources (PV generation and
-  battery discharge): a power floor (upward activation, envelope) could previously be met by
-  importing and exporting at the same time on a building without any source. The upward bound of
-  `FlexibilityEnvelope` respects the shared compressor limits.
+- The export of the meter is bounded by the on-site sources (PV generation and battery
+  discharge), and the import / export split is skipped on a building without any source: a power
+  floor (upward activation, envelope) could previously be met by importing and exporting at the
+  same time. The upward bound of `FlexibilityEnvelope` respects the shared compressor limits.
 
 - Explicit flexibility: `ActivationRequest` (shed or absorb a power during a window, expressed
   as a soft cap or floor on the billed power against the baseline), `respond` (baseline and

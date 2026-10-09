@@ -15,8 +15,8 @@ zones without system (``P_heat``, costed at the tariff price as before) plus the
 imported from the grid. The import and the export are split from the net power at the meter
 (``consumption - battery discharge - PV generation``) with two non-negative variables, which is
 exact as long as the import price is not lower than the export price; the export is
-bounded by the on-site generation and discharge. Gas boilers are costed with
-their efficiency at ``gas_price``.
+bounded by the on-site generation and discharge (the split is skipped when there is none). Gas
+boilers are costed with their efficiency at ``gas_price``.
 
 Constraints: the ODE of the model, the bounds of every control input (design heating power of a
 thermal input, compressor, charger and tank limits from the interface), the compressor limit
@@ -210,20 +210,28 @@ class ModelPredictiveController:
         # ---- the meter: import / export split, metered power, gas
         heat = self.meter.heat(U)
         export_cost: Any = ca.DM(0)
-        if model.has_meter:
+        exchange: dict[str, Any] = {}
+        if model.has_meter and model.has_sources:
+            # Import / export split, the export bounded by the on-site sources (PV, battery discharge):
+            # without the bound a power floor could be met by importing and exporting at the same time.
             P_imp = opti.variable(1, N)
             P_exp = opti.variable(1, N)
             variables |= {"P_imp": P_imp, "P_exp": P_exp}
             opti.subject_to(ca.vec(P_imp) >= 0)
             opti.subject_to(ca.vec(P_exp) >= 0)
             opti.subject_to(ca.vec(P_imp - P_exp) == ca.vec(self.meter.net(U, D)))
-            # Export is bounded by the on-site sources (PV, battery discharge): without the bound a power
-            # floor could be met by importing and exporting at the same time.
             opti.subject_to(ca.vec(P_exp) <= ca.vec(self.meter.discharge(U) + self.meter.generation(D)))
             metered = heat + P_imp
             export_cost = -ca.sum2(export_price * P_exp) * dt / WATT_HOUR_TO_JOULE
+            exchange = {"P_import": P_imp, "P_export": P_exp}
+        elif model.has_meter:
+            # Nothing can feed the grid: the net power is the import (the inputs are non-negative), and a
+            # split would only add a degenerate pair of variables pinned at zero.
+            metered = heat + self.meter.net(U, D)
+            exchange = {"P_import": self.meter.net(U, D)}
         else:
             metered = heat
+        self._exchange = exchange
         gas_cost = settings.gas_price * ca.sum2(self.meter.gas(U)) * dt / WATT_HOUR_TO_JOULE
         opti.subject_to(ca.vec(metered - S_lim) <= ca.vec(limit))
         opti.subject_to(ca.vec(metered + S_floor) >= ca.vec(floor))
@@ -332,11 +340,11 @@ class ModelPredictiveController:
         meter = pd.DataFrame(
             {
                 "P_meter": np.asarray(solution.value(self._metered), dtype=float).reshape(-1),
-                "P_import": np.asarray(solution.value(variables["P_imp"]), dtype=float).reshape(-1)
-                if "P_imp" in variables
+                "P_import": np.asarray(solution.value(self._exchange["P_import"]), dtype=float).reshape(-1)
+                if "P_import" in self._exchange
                 else np.zeros(N),
-                "P_export": np.asarray(solution.value(variables["P_exp"]), dtype=float).reshape(-1)
-                if "P_exp" in variables
+                "P_export": np.asarray(solution.value(self._exchange["P_export"]), dtype=float).reshape(-1)
+                if "P_export" in self._exchange
                 else np.zeros(N),
                 "P_gas": np.asarray(solution.value(self.meter.gas(variables["U"])), dtype=float).reshape(-1),
             },

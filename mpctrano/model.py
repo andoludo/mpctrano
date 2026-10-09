@@ -330,6 +330,11 @@ class RCModel:
         return capacity
 
     @property
+    def has_sources(self) -> bool:
+        """Whether something on site can feed the grid (battery discharge, PV generation)."""
+        return bool(self.discharge_control_indices or self.generation_indices)
+
+    @property
     def has_meter(self) -> bool:
         """Whether electricity is exchanged with the grid (electrical inputs or PV)."""
         return bool(self.consumption_control_indices or self.discharge_control_indices or self.generation_indices)

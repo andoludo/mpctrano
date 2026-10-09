@@ -10,6 +10,7 @@ inputs, PV adds a generation disturbance. `mpctrano.meter.Meter` builds the bala
 ```
 P_net    = Σ electrical inputs − Σ battery discharge − Σ PV generation
 P_import − P_export = P_net,  P_import, P_export ≥ 0,  P_export ≤ Σ battery discharge + Σ PV generation
+                                      # no split without a source: P_import = P_net
 P_meter  = P_heat + P_import          # billed at the tariff; P_heat = ideal thermal inputs
 P_gas    = Σ Q_boiler / efficiency    # billed at MPCSettings.gas_price
 ```

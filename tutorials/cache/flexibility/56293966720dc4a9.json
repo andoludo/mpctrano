@@ -1,0 +1,34 @@
+{
+ "name": "base activation (down 1 kW)",
+ "metrics": {
+  "energy_kwh": 49.3546305269401,
+  "energy_cost": 12.629164676679068,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 13.432530784221512,
+  "max_violation": 0.9868057093931384,
+  "peak_power_kw": 2.199999986172974,
+  "low_price_share": 0.49291216127629667,
+  "mean_price": 0.2558861152812292,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 27.549157396000055,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "activation",
+  "variant": "base",
+  "activation": "shed 1 kW, 2 h at 17h",
+  "days": 3.0
+ }
+}

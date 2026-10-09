@@ -1,0 +1,34 @@
+{
+ "name": "radiators capacity 50",
+ "metrics": {
+  "energy_kwh": 55.721812114680425,
+  "energy_cost": 13.904279318489571,
+  "capacity_cost": 8.166658001156708,
+  "comfort_violation_kh": 3.6358517012066045,
+  "max_violation": 0.42512755744405695,
+  "peak_power_kw": 1.9599979202776099,
+  "low_price_share": 0.5741035855346646,
+  "mean_price": 0.2495302789125618,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 27.72416751800006,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "capacity",
+  "variant": "radiators",
+  "capacity_price": 50.0,
+  "days": 3.0
+ }
+}

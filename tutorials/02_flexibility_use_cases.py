@@ -148,14 +148,14 @@ display(plot_envelope(envelope, "base house at 6h, day-ahead prices"))
 # hours and the change of the billed power is read like an activation.
 
 # %%
-run = study.scenario("day-ahead", tariffs["day-ahead"], study.comfort_spec(*study.BAND), START, study.days(study.DAYS))
+run = study.scenario("day-ahead", tariffs["day-ahead"], study.comfort_spec(*study.BAND), START, study.LIVE_DAYS)
 with timed("flexibility function"):
     response = flexibility_function(
-        model, run, START + pd.Timedelta(days=1, hours=17), 3.0, price_factor=3.0,
+        model, run, START + pd.Timedelta(hours=17), 3.0, price_factor=3.0,
         plant=lambda: build_plant(model, PERFECT, 3600.0),
     )  # fmt: skip
 display(pd.Series(response.metrics).round(2).to_frame("price step x3, 3 h"))
-display(plot_activation(response, "flexibility function: price x3 for 3 h at 17h"))
+display(plot_activation(response, "flexibility function: price x3 for 3 h at 17h on the first day"))
 
 # %% [markdown]
 # ## 5. Negative prices and PV self-consumption

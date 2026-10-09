@@ -14,7 +14,7 @@ import pandas as pd
 
 from mpctrano import ActivationRequest, CapacityTariff, respond, run_scenario
 from mpctrano.flexibility import ActivationResult
-from mpctrano.notebook import ResultCache, TutorialBuilding, comfort_spec, price_options, scenario
+from mpctrano.notebook import ResultCache, TutorialBuilding, comfort_spec, days, price_options, scenario
 from mpctrano.prices import RetailComponents
 from mpctrano.simulation import ClosedLoopResult
 from tutorials._house import MISMATCH, MODELS, PERFECT, START
@@ -22,6 +22,9 @@ from tutorials._house import MISMATCH, MODELS, PERFECT, START
 HERE = Path(__file__).parent
 CACHE = ResultCache(HERE / "cache" / "flexibility")
 DAYS = 3.0
+"""Period of the cached runs."""
+LIVE_DAYS = days(DAYS)
+"""Period of the runs the notebook computes live (one day in quick mode)."""
 COMPONENTS = RetailComponents(grid_fee=0.10, taxes=0.03, vat=0.06, export_share=0.4)
 BAND = (21.0, 24.0, 3.0)
 CAPACITY_PRICES = (0.0, 50.0, 150.0)

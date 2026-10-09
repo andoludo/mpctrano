@@ -1,0 +1,34 @@
+{
+ "name": "base activation (up 2 kW)",
+ "metrics": {
+  "energy_kwh": 37.56901139797319,
+  "energy_cost": 9.902720950103411,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 11.758228771922404,
+  "max_violation": 1.0364806839509697,
+  "peak_power_kw": 2.1608656012371497,
+  "low_price_share": 0.447032426107204,
+  "mean_price": 0.263587477594304,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 24.060914347000107,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "activation",
+  "variant": "base",
+  "activation": "absorb 2 kW, 1 h at 13h",
+  "days": 3.0
+ }
+}

@@ -1,0 +1,34 @@
+{
+ "name": "pv day-ahead + negative midday",
+ "metrics": {
+  "energy_kwh": 20.49953832243404,
+  "energy_cost": 5.540590600552118,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 14.485009717769628,
+  "max_violation": 1.0231699720284269,
+  "peak_power_kw": 1.3761079373137652,
+  "low_price_share": 0.31493523799115153,
+  "mean_price": 0.2702787991322064,
+  "steps": 72,
+  "export_kwh": 2.79831354346838,
+  "export_revenue": 0.057717782793509975,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 25.52822835585625,
+  "self_consumption": 0.8903835587624537
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 28.599705771000117,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "pv",
+  "variant": "pv",
+  "price": "day-ahead + negative midday",
+  "days": 3.0
+ }
+}

@@ -1,0 +1,34 @@
+{
+ "name": "big_heat_pump activation (down 0.5 kW)",
+ "metrics": {
+  "energy_kwh": 49.0975886978786,
+  "energy_cost": 12.511508435283098,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 13.26608104248919,
+  "max_violation": 1.357373284300877,
+  "peak_power_kw": 2.36691099749927,
+  "low_price_share": 0.5000309718801854,
+  "mean_price": 0.25482938708604425,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 26.307895562999875,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "activation",
+  "variant": "big_heat_pump",
+  "activation": "shed 0.5 kW, 4 h at 17h",
+  "days": 3.0
+ }
+}

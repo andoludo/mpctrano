@@ -1,0 +1,34 @@
+{
+ "name": "pv_battery_ev day-ahead",
+ "metrics": {
+  "energy_kwh": 54.0821525930346,
+  "energy_cost": 10.131132291260514,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 11.480673111305123,
+  "max_violation": 1.0241410260089197,
+  "peak_power_kw": 11.645108201995182,
+  "low_price_share": 0.9977718697747346,
+  "mean_price": 0.1873285696946414,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 25.52822835585625,
+  "self_consumption": 1.0
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 103.16438439900003,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "pv",
+  "variant": "pv_battery_ev",
+  "price": "day-ahead",
+  "days": 3.0
+ }
+}

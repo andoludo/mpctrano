@@ -19,7 +19,7 @@ import typer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tutorials import _flexibility, _house  # noqa: E402
+from tutorials import _flexibility, _house
 
 STUDIES = {"house": _house, "flexibility": _flexibility}
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -28,7 +28,7 @@ app = typer.Typer(add_completion=False, help=__doc__)
 @app.command()
 def main(
     study: str | None = typer.Argument(None, help="Study to build (all when omitted): " + ", ".join(STUDIES)),
-    force: bool = typer.Option(False, help="Recompute the runs already cached"),  # noqa: FBT001, FBT003
+    force: bool = typer.Option(False, help="Recompute the runs already cached"),
 ) -> None:
     for name in [study] if study else list(STUDIES):
         module = STUDIES[name]

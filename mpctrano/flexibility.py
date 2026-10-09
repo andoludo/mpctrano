@@ -286,9 +286,10 @@ def flexibility_function(
         update={"name": f"{scenario.name} (price x{price_factor:g})", "tariff": scenario.tariff.with_events([event])}
     )
     response = run_scenario(model, stepped, plant=plant() if plant else None, forecaster=forecaster)
-    window = baseline.frame.loc[
-        (baseline.frame.index >= pd.Timestamp(step_start)) & (baseline.frame.index < end), "P_meter"
-    ]
+    in_step = (baseline.frame.index >= pd.Timestamp(step_start)) & (baseline.frame.index < end)
+    window = baseline.frame.loc[in_step, "P_meter"]
+    if window.empty:
+        raise ValueError(f"The price step {step_start} .. {end} is outside the baseline run.")
     request = ActivationRequest(
         start=step_start, duration_hours=step_hours, direction="down", power=max(float(window.mean()), 1.0)
     )

@@ -22,7 +22,14 @@ live plan and cached closed-loop widgets), shared plot palette, the house study
 (`tutorials/_house.py`, 72 cached runs of 3 days in `tutorials/cache/house/`, 4 MB, no solver
 failure) and the reference notebook `01_house_heat_pump` (55 s under nbmake in quick mode).
 Measured: one open-loop solve 0.1 to 0.3 s, one 3-day closed loop with the EKF about 18 s.
-Next: Day 5 (flexibility metrics and use cases, capacity tariff, notebook 02).
+Day 5 done on 2026-10-09: explicit flexibility (`ActivationRequest`, `respond`, rebound
+metrics, `flexibility_function`), `FlexibilityEnvelope`, `CapacityTariff` with the running
+monthly peak, per-solve power caps and floors, activation and envelope plots, the flexibility
+study (`tutorials/_flexibility.py`, 29 cached runs plus 2 baselines in
+`tutorials/cache/flexibility/`, 2 MB, 25 min to build, no solver failure) and notebook
+`02_flexibility_use_cases` (55 s under nbmake in quick mode). Measured: a 3-day 15-minute closed
+loop takes about 2 min (3.5 min with battery and EV); the envelope (2 directions, 4 durations,
+6 bisection steps) about 20 s. Next: Day 6 (apartment block: DHW tank, radiators, notebook 03).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

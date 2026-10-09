@@ -1,0 +1,34 @@
+{
+ "name": "radiators capacity 150",
+ "metrics": {
+  "energy_kwh": 55.22169915452842,
+  "energy_cost": 13.81412849532281,
+  "capacity_cost": 24.048706500615612,
+  "comfort_violation_kh": 4.021055313789589,
+  "max_violation": 0.4175533868909156,
+  "peak_power_kw": 1.9238965200492488,
+  "low_price_share": 0.5713641314946364,
+  "mean_price": 0.2501576138877282,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 28.31697493599995,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "capacity",
+  "variant": "radiators",
+  "capacity_price": 150.0,
+  "days": 3.0
+ }
+}

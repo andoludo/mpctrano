@@ -1,0 +1,34 @@
+{
+ "name": "big_heat_pump activation (up 2 kW)",
+ "metrics": {
+  "energy_kwh": 37.56900675040141,
+  "energy_cost": 9.902721298331873,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 11.758220411559932,
+  "max_violation": 1.0364798000190376,
+  "peak_power_kw": 2.160865633762656,
+  "low_price_share": 0.447032455608871,
+  "mean_price": 0.26358751947111475,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 24.96050031699997,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "activation",
+  "variant": "big_heat_pump",
+  "activation": "absorb 2 kW, 1 h at 13h",
+  "days": 3.0
+ }
+}

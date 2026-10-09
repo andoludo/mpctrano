@@ -1,0 +1,38 @@
+{
+ "name": "big_tank day-ahead + evening spike",
+ "metrics": {
+  "energy_kwh": 146.1147412618474,
+  "energy_cost": 39.77723576785237,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 13.25984079222934,
+  "max_violation": 0.440601955877014,
+  "peak_power_kw": 8.000000016980707,
+  "low_price_share": 0.49588694228894203,
+  "mean_price": 0.27223287277064606,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 83.57301639699972,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea",
+  "space_003_PHea",
+  "space_004_PHea",
+  "space_005_PHea",
+  "space_006_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "block",
+  "variant": "big_tank",
+  "price": "day-ahead + evening spike",
+  "days": 3.0
+ }
+}

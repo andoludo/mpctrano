@@ -22,6 +22,13 @@ release pipeline.
   widen it) and `RCModel.consumption_capacity` (largest draw the bounds and the compressor
   limits allow).
 
+### Changed
+
+- `ActivationRequest.notice_hours` is now honoured: the controller plans with the cap or floor of
+  the request from the notification on (one hour before the window by default, `None` for the
+  whole horizon) instead of from the moment the window entered its horizon. The activation runs
+  of tutorial 02 were recomputed; `DemandResponseEvent.notice_hours` carries it.
+
 ### Fixed
 
 - The export of the meter is bounded by the on-site sources (PV generation and battery

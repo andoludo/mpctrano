@@ -154,7 +154,12 @@ class ActivationRequest(BaseModel):
     duration_hours: float = Field(gt=0)
     direction: Direction = "down"
     power: float = Field(gt=0, description="Requested change of the billed power [W]")
-    notice_hours: float = Field(1.0, ge=0, description="Time between the notification and the start [h]")
+    notice_hours: float | None = Field(
+        1.0,
+        ge=0,
+        description="Time between the notification and the start [h]: the controller plans with the cap or "
+        "floor from then on (None: from the moment the window enters its horizon)",
+    )
 
     @property
     def end(self) -> pd.Timestamp:
@@ -166,11 +171,12 @@ class ActivationRequest(BaseModel):
 
     def event(self, baseline_power: float) -> DemandResponseEvent:
         """The demand response event implementing the request around ``baseline_power`` [W]."""
+        notice = {"notice_hours": self.notice_hours}
         if self.direction == "down":
             return DemandResponseEvent(
-                start=self.start, end=self.end, power_limit=max(baseline_power - self.power, 0.0)
+                start=self.start, end=self.end, power_limit=max(baseline_power - self.power, 0.0), **notice
             )
-        return DemandResponseEvent(start=self.start, end=self.end, power_floor=baseline_power + self.power)
+        return DemandResponseEvent(start=self.start, end=self.end, power_floor=baseline_power + self.power, **notice)
 
     def window(self, index: pd.DatetimeIndex) -> np.ndarray:
         return np.asarray((index >= pd.Timestamp(self.start)) & (index < self.end), dtype=bool)

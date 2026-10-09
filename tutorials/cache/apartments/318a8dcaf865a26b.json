@@ -1,0 +1,38 @@
+{
+ "name": "high_temperature day-ahead + evening spike",
+ "metrics": {
+  "energy_kwh": 203.2582214422463,
+  "energy_cost": 56.22682995270158,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 24.382877002100997,
+  "max_violation": 1.0285643497692263,
+  "peak_power_kw": 8.000000079965556,
+  "low_price_share": 0.4578668167136803,
+  "mean_price": 0.27662758019693606,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 95.5732557199999,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea",
+  "space_003_PHea",
+  "space_004_PHea",
+  "space_005_PHea",
+  "space_006_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "block",
+  "variant": "high_temperature",
+  "price": "day-ahead + evening spike",
+  "days": 3.0
+ }
+}

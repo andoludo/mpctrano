@@ -1,0 +1,38 @@
+{
+ "name": "small_heat_pump day-ahead + evening spike",
+ "metrics": {
+  "energy_kwh": 163.37320966168397,
+  "energy_cost": 44.85568990425151,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 14.592676538836145,
+  "max_violation": 0.6172738344787376,
+  "peak_power_kw": 5.500000054999047,
+  "low_price_share": 0.4706656072418997,
+  "mean_price": 0.2745596416764991,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 81.93784081700005,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea",
+  "space_003_PHea",
+  "space_004_PHea",
+  "space_005_PHea",
+  "space_006_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "block",
+  "variant": "small_heat_pump",
+  "price": "day-ahead + evening spike",
+  "days": 3.0
+ }
+}

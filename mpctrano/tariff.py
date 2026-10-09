@@ -209,9 +209,21 @@ class DemandResponseEvent(BaseModel):
     price_multiplier: float = Field(1.0, ge=0, description="Multiplies the base price during the event")
     power_limit: float | None = Field(None, ge=0, description="Maximum billed power during the event [W]")
     power_floor: float | None = Field(None, ge=0, description="Minimum billed power during the event [W]")
+    notice_hours: float | None = Field(
+        None,
+        ge=0,
+        description="Hours before the start from which the controller knows the cap or floor "
+        "(None: over its whole horizon); the price multiplier is always known",
+    )
 
     def active(self, index: pd.DatetimeIndex) -> np.ndarray:
         return np.asarray((index >= pd.Timestamp(self.start)) & (index < pd.Timestamp(self.end)), dtype=bool)
+
+    def known(self, index: pd.DatetimeIndex) -> bool:
+        """Whether a controller planning from ``index[0]`` has been notified of the cap or floor."""
+        if self.notice_hours is None or len(index) == 0:
+            return True
+        return bool(pd.Timestamp(index[0]) >= pd.Timestamp(self.start) - pd.Timedelta(hours=self.notice_hours))
 
 
 class DemandResponseTariff(Tariff):
@@ -230,14 +242,14 @@ class DemandResponseTariff(Tariff):
     def power_limit(self, index: pd.DatetimeIndex) -> np.ndarray:
         limits = self.base.power_limit(index).astype(float)
         for event in self.events:
-            if event.power_limit is not None:
+            if event.power_limit is not None and event.known(index):
                 limits = np.where(event.active(index), np.minimum(limits, event.power_limit), limits)
         return limits
 
     def power_floor(self, index: pd.DatetimeIndex) -> np.ndarray:
         floors = self.base.power_floor(index).astype(float)
         for event in self.events:
-            if event.power_floor is not None:
+            if event.power_floor is not None and event.known(index):
                 floors = np.where(event.active(index), np.maximum(floors, event.power_floor), floors)
         return floors
 

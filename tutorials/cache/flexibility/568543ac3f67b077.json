@@ -1,14 +1,14 @@
 {
  "name": "big_heat_pump activation",
  "metrics": {
-  "energy_kwh": 37.187570476495125,
-  "energy_cost": 9.836010948478322,
+  "energy_kwh": 37.187566042905694,
+  "energy_cost": 9.836011160363537,
   "capacity_cost": 0.0,
-  "comfort_violation_kh": 11.428104229076212,
-  "max_violation": 1.0386771019887533,
-  "peak_power_kw": 1.6320523793483817,
-  "low_price_share": 0.4354463945245168,
-  "mean_price": 0.26449727213815427,
+  "comfort_violation_kh": 11.42808594387219,
+  "max_violation": 1.0386778138110913,
+  "peak_power_kw": 1.632050979955237,
+  "low_price_share": 0.4354462727343593,
+  "mean_price": 0.26449730936988713,
   "steps": 72,
   "export_kwh": 0.0,
   "export_revenue": 0.0,
@@ -19,7 +19,7 @@
  },
  "time_step": 3600.0,
  "failures": 0,
- "elapsed": 24.249912931000154,
+ "elapsed": 19.20064351100018,
  "heating_columns": [
   "space_001_PHea",
   "space_002_PHea"

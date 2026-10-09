@@ -1,0 +1,38 @@
+{
+ "name": "big_tank day-ahead",
+ "metrics": {
+  "energy_kwh": 144.37825567950304,
+  "energy_cost": 37.25640280737397,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 12.657638490353406,
+  "max_violation": 0.4257030684508436,
+  "peak_power_kw": 8.000000068291788,
+  "low_price_share": 0.47926894391654007,
+  "mean_price": 0.25804718745236344,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 80.45886102099985,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea",
+  "space_003_PHea",
+  "space_004_PHea",
+  "space_005_PHea",
+  "space_006_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "block",
+  "variant": "big_tank",
+  "price": "day-ahead",
+  "days": 3.0
+ }
+}

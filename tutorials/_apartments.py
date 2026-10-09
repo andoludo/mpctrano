@@ -31,8 +31,8 @@ PRICES = ("day-ahead", "day-ahead + evening spike")
 TANK = "tank_001"
 LOCKED_BAND = (327.15, 328.15)
 """A one-kelvin band at the set temperature: the tank is kept full and offers no flexibility."""
-REQUEST = {"hour": 18.0, "duration": 2.0, "power": 3000.0}
-"""The evening shed of the activation study: 3 kW for two hours on the second day."""
+REQUEST = {"hour": 18.0, "duration": 2.0, "power": 1500.0, "notice": 2.0}
+"""The evening shed of the activation study: 1.5 kW for two hours on the second day, notified two hours ahead."""
 
 
 def building(variant: str = "base") -> TutorialBuilding:
@@ -66,7 +66,8 @@ def compute_block(variant: str, price: str, days: float, **_: Any) -> ClosedLoop
 # --------------------------------------------------------------------------- the tank in an activation
 def activation_runs() -> dict[str, dict[str, Any]]:
     return {
-        f"activation | tank {tank}": {"study": "activation", "tank": tank, "days": DAYS} for tank in ("free", "locked")
+        f"activation | tank {tank}": {"study": "activation", "tank": tank, "role": "response", "days": DAYS}
+        for tank in ("free", "locked")
     }
 
 
@@ -76,6 +77,7 @@ def _request(days_: float) -> ActivationRequest:
         duration_hours=REQUEST["duration"],
         direction="down",
         power=REQUEST["power"],
+        notice_hours=REQUEST["notice"],
     )
 
 

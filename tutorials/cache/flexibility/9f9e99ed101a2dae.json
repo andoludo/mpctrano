@@ -1,14 +1,14 @@
 {
  "name": "base activation (up 1 kW)",
  "metrics": {
-  "energy_kwh": 37.95653498360662,
-  "energy_cost": 10.009293098194668,
+  "energy_kwh": 37.95798661581394,
+  "energy_cost": 10.009630865081801,
   "capacity_cost": 0.0,
-  "comfort_violation_kh": 11.91146616453426,
-  "max_violation": 1.0344272996546806,
-  "peak_power_kw": 1.6808330073494795,
-  "low_price_share": 0.4590464717382779,
-  "mean_price": 0.26370407895551234,
+  "comfort_violation_kh": 11.924858993933867,
+  "max_violation": 1.0344121415676,
+  "peak_power_kw": 1.6808238712488845,
+  "low_price_share": 0.4590951745075894,
+  "mean_price": 0.2637028925267501,
   "steps": 72,
   "export_kwh": 0.0,
   "export_revenue": 0.0,
@@ -19,7 +19,7 @@
  },
  "time_step": 3600.0,
  "failures": 0,
- "elapsed": 24.651929292999966,
+ "elapsed": 18.833642286000213,
  "heating_columns": [
   "space_001_PHea",
   "space_002_PHea"

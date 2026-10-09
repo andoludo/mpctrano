@@ -29,7 +29,21 @@ study (`tutorials/_flexibility.py`, 29 cached runs plus 2 baselines in
 `tutorials/cache/flexibility/`, 2 MB, 25 min to build, no solver failure) and notebook
 `02_flexibility_use_cases` (55 s under nbmake in quick mode). Measured: a 3-day 15-minute closed
 loop takes about 2 min (3.5 min with battery and EV); the envelope (2 directions, 4 durations,
-6 bisection steps) about 20 s. Next: Day 6 (apartment block: DHW tank, radiators, notebook 03).
+6 bisection steps) about 20 s.
+Day 6 done on 2026-10-09: the apartment block (`tutorials/buildings/apartments.yaml`: six
+apartments, one 24 kW heat pump on radiators, a 1 m3 DHW tank; variants `floor_heating`,
+`high_temperature`, `big_tank`, `small_heat_pump`; R3C2 13 states / 7 controls, R4C3 19 states),
+`compressor_load`, `plot_dispatch`, `RCModel.with_storage_band` and `consumption_capacity`, the
+block study (`tutorials/_apartments.py`, 12 runs in `tutorials/cache/apartments/`, 1.5 MB,
+about 20 min to build, no solver failure) and notebook `03_apartment_block` (33 s under nbmake
+in quick mode). Measured: one open-loop solve about 1.2 s, a 3-day hourly closed loop 75 to 95 s.
+Two defects found on the way and fixed: a power floor could be met by importing and exporting at
+the same time (the export is now bounded by the on-site sources, no split without a source), and
+`ActivationRequest.notice_hours` was not wired into the events (the controller planned every
+activation from the moment it entered the horizon, which made it pre-charge the block for 20
+hours; the activation runs of the flexibility study were rebuilt with the one-hour notice and the
+text of notebook 02 revised). Next: Day 7 (office with chiller and occupancy, notebook 04; house
+with PV, battery and EV, notebook 05).
 Decision taken on 2026-10-06: **the energy systems are described in the trano `mpc` Modelica
 library, generated from the YAML, so that the YAML is the single source of truth.** mpctrano
 contains no building or system physics; it consumes the Modelica model (via Rumoca) and the

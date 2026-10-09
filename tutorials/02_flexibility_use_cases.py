@@ -92,11 +92,12 @@ display(closed_loop_explorer(study.CACHE, study.capacity_runs(), study.compute, 
 #
 # An aggregator or the DSO asks for a change of the billed power during a window against a
 # baseline (here the plan of the same controller without the request). The controller receives
-# the request as a soft cap (down) or floor (up) on the billed power, delivers what the comfort
-# band allows and **rebounds** afterwards: the heat not delivered during a shed has to be
-# delivered later, the heat absorbed during an upward activation is saved later. The metrics
-# (`ActivationResult.metrics`) give the delivered energy, the rebound energy and peak and their
-# ratio, in the spirit of the available storage capacity and storage efficiency of Reynders et al.
+# the request as a soft cap (down) or floor (up) on the billed power one hour before the window
+# (`ActivationRequest.notice_hours`), delivers what the comfort band allows and **rebounds**
+# afterwards: the heat not delivered during a shed has to be delivered later, the heat absorbed
+# during an upward activation is saved later. The metrics (`ActivationResult.metrics`) give the
+# delivered energy, the rebound energy and peak and their ratio, in the spirit of the available
+# storage capacity and storage efficiency of Reynders et al.
 
 # %%
 results = {label: study.activation("base", label) for label in study.ACTIVATIONS}
@@ -105,9 +106,13 @@ display(metrics.round(2))
 display(plot_activation(results["shed 1 kW, 2 h at 17h"], "base house: shed 1 kW for 2 h at 17h, second day"))
 
 # %% [markdown]
-# Notice the **rebound peak** after a shed and the lower consumption after an absorption, and
-# how the delivery ratio drops when the request exceeds what the comfort band leaves (long sheds
-# in the evening). The `big_heat_pump` variant delivers more because its compressor limit is higher:
+# The sheds deliver only a fifth to a third of the request: 1 kW is more than the 0.6 kW the house
+# draws at those hours, so the cap is zero, and with one hour of notice the controller keeps a few
+# hundred watts running rather than let the air temperature fall out of the band. The absorptions
+# are delivered up to the compressor limit, and about half of the absorbed energy is saved in the
+# following hours (`rebound_ratio`), which is the **rebound** the DSO has to expect. The
+# `big_heat_pump` variant only differs where the 3 kW limit of the base house binds, the 2 kW
+# absorption:
 
 # %%
 big = {label: study.activation("big_heat_pump", label) for label in study.ACTIVATIONS}
@@ -194,9 +199,11 @@ display(
 # * Under the capacity tariff the controller flattens the morning boost: the peak reduction is
 #   worth about 4 EUR per kW and month, which competes with the energy saving of concentrating
 #   the heating in the cheap hours.
-# * Explicit activations are delivered as long as the comfort band and the compressor leave room;
-#   the rebound returns a large share of the shed energy within a few hours, with a peak that the
-#   DSO must expect, which is the argument for coordinating the activations (tutorial 06).
+# * Explicit activations are delivered as long as the comfort band and the compressor leave room:
+#   a shed larger than the running power is cut to what the band tolerates, an absorption is
+#   delivered up to the compressor limit and about half of it comes back as a lower consumption
+#   within a few hours, a rebound the DSO must expect, which is the argument for coordinating the
+#   activations (tutorial 06).
 # * The envelope is asymmetric: the house absorbs more than it sheds in the morning (cold slab,
 #   compressor headroom) and the reverse in the evening.
 # * Negative prices reward absorption, and the storage order follows the round-trip efficiency:

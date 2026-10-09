@@ -1,0 +1,38 @@
+{
+ "name": "base activation tank locked",
+ "metrics": {
+  "energy_kwh": 159.60179348810976,
+  "energy_cost": 43.44482527855392,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 12.616097092625239,
+  "max_violation": 0.43655617722635043,
+  "peak_power_kw": 6.970601396417124,
+  "low_price_share": 0.3470104710235866,
+  "mean_price": 0.27220762579833124,
+  "steps": 72,
+  "export_kwh": 0.0,
+  "export_revenue": 0.0,
+  "gas_kwh": 0.0,
+  "gas_cost": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN
+ },
+ "time_step": 3600.0,
+ "failures": 0,
+ "elapsed": 68.92186725399961,
+ "heating_columns": [
+  "space_001_PHea",
+  "space_002_PHea",
+  "space_003_PHea",
+  "space_004_PHea",
+  "space_005_PHea",
+  "space_006_PHea"
+ ],
+ "gas_price": 0.08,
+ "parts": {
+  "study": "activation",
+  "tank": "locked",
+  "role": "baseline",
+  "days": 3.0
+ }
+}

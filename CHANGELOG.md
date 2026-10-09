@@ -8,6 +8,24 @@ release pipeline.
 
 ### Added
 
+- Explicit flexibility: `ActivationRequest` (shed or absorb a power during a window, expressed
+  as a soft cap or floor on the billed power against the baseline), `respond` (baseline and
+  response from the same plant state) and `ActivationResult.metrics` (delivered energy and
+  power, delivery ratio, rebound energy, peak, duration and ratio, cost and comfort changes);
+  `flexibility_function` (response to a price step, Junker et al.).
+- `FlexibilityEnvelope`: the power the building can shed or absorb for a duration without
+  leaving the comfort band, and the cost of that plan, by bisection on constrained MPC solves;
+  `plan_comfort_violation`.
+- `CapacityTariff`: a capacity charge on the monthly peak as the Flemish *capaciteitstarief*
+  (price per kW and year on the average of the monthly peaks floored at 2.5 kW); the controller
+  carries the peak of the month so far (`ModelPredictiveController.solve(peak_so_far=...)`, the
+  closed loop tracks `running_peak_kw`). `DemandResponseEvent.power_floor` for upward
+  activations; `solve()` accepts per-call `power_limits` and `power_floors`.
+- `compare` reports `peak_reduction_pct`; `plot_activation`, `plot_envelope`.
+- Tutorial `02_flexibility_use_cases` with its study (`tutorials/_flexibility.py`, cache in
+  `tutorials/cache/flexibility/`): implicit flexibility at hourly and 15-minute resolution, peak
+  shaving under the capacity tariff, activations with rebound, envelope and flexibility function,
+  negative prices with PV, battery and EV.
 - `mpctrano.notebook`: helpers of the interactive tutorials: `TutorialBuilding` (pre-generated
   control and plant models), `ResultCache` (closed-loop results as parquet, keyed by the run
   parameters), `price_options`, `comfort_spec`, `scenario`, `kpi_table`, the `plan_explorer`

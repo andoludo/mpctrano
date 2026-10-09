@@ -168,15 +168,22 @@ def run_closed_loop(
     started = time.perf_counter()
     end_states = model.measured_states
     end_indices = model.measured_indices
+    meter = Meter(model)
+    running_peak = bool(getattr(controller.tariff, "running_peak", False))
+    peak_so_far, peak_month = 0.0, start.month
     for k in range(steps):
         now = start + pd.Timedelta(seconds=k * dt)
+        if running_peak and now.month != peak_month:
+            peak_so_far, peak_month = 0.0, now.month
         measurement = plant.measure()
         estimate = estimator.correct(measurement)
         forecast = forecaster.forecast(now, settings.horizon, dt)
-        solution = controller.solve(estimate, forecast, previous_control)
+        solution = controller.solve(estimate, forecast, previous_control, peak_so_far=peak_so_far)
         failures += not solution.success
         control = solution.first_control
         disturbance = forecaster.realisation(now, 1, dt).iloc[0].to_numpy(dtype=float)
+        if running_peak:
+            peak_so_far = max(peak_so_far, _billed_power(meter, control, disturbance))
         true_before = plant.state
         true_after = plant.step(control, disturbance)
         estimator.predict(control, disturbance)
@@ -199,11 +206,11 @@ def run_closed_loop(
             "iterations": solution.iterations,
             "success": float(solution.success),
             "status": solution.status,
+            "running_peak_kw": peak_so_far / 1000,
         }
         rows.append(row)
     frame = pd.DataFrame(rows).set_index("time")
-    meter = Meter(model).evaluate(frame)
-    frame = pd.concat([frame, meter], axis=1)
+    frame = pd.concat([frame, meter.evaluate(frame)], axis=1)
     frame["P_meter"] = frame["P_heat"] + frame["P_import"]
     index = pd.DatetimeIndex(frame.index)
     temperatures = frame[[f"{name_}_end" for name_ in model.comfort_states]].to_numpy(dtype=float).T
@@ -234,6 +241,15 @@ def run_closed_loop(
         heating_columns=[model.control_names[index] for index in model.zone_heating_indices],
         gas_price=settings.gas_price,
     )
+
+
+def _billed_power(meter: Meter, control: np.ndarray, disturbance: np.ndarray) -> float:
+    """Billed power [W] of one step: ideal heating plus grid import of the applied inputs."""
+    model = meter.model
+    names = model.control_names + model.disturbance_names
+    applied = pd.DataFrame([dict(zip(names, [*control, *disturbance], strict=True))])
+    step = meter.evaluate(applied)
+    return float(step["P_heat"].iloc[0] + step["P_import"].iloc[0])
 
 
 def _plant_model(plant: Plant) -> RCModel | None:

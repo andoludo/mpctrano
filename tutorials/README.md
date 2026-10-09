@@ -9,7 +9,7 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 |---|---|---|
 | `00_setup_check` | toolchain check, first CasADi model from a YAML | ready |
 | `01_house_heat_pump` | single-family house, heat pump + floor heating (reference implementation) | ready |
-| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | planned |
+| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | ready |
 | `03_apartment_block` | central heat pump, radiators, DHW tank | planned |
 | `04_office_cooling` | AHU + chiller, occupancy schedule, summer week | planned |
 | `05_pv_battery_ev` | PV, battery and EV charger next to the thermal storage | planned |
@@ -64,11 +64,12 @@ uv run python tutorials/scripts/generate_models.py house    # one typology
 The closed-loop runs the notebooks show are pre-computed and committed in `tutorials/cache/`
 (parquet frames keyed by the run parameters, see `mpctrano.notebook.ResultCache`). The widgets read
 them in milliseconds; the **Recompute** button runs the closed loop again. To rebuild the cache after
-a change of the models or of the study definition (`tutorials/_house.py`):
+a change of the models or of the study definitions (`tutorials/_house.py`, `tutorials/_flexibility.py`):
 
 ```bash
-uv run python tutorials/scripts/build_cache.py            # only the missing runs
-uv run python tutorials/scripts/build_cache.py --force    # everything (about 6 min for the house)
+uv run python tutorials/scripts/build_cache.py                 # only the missing runs of every study
+uv run python tutorials/scripts/build_cache.py flexibility     # one study
+uv run python tutorials/scripts/build_cache.py --force         # everything (about 20 min per study)
 ```
 
 ## Price data

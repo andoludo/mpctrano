@@ -16,7 +16,17 @@ from mpctrano.calibration import CalibrationResult, CalibrationSettings, Calibra
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
 from mpctrano.estimation import KalmanFilter, MovingHorizonEstimator, StateEstimator
-from mpctrano.flexibility import compare, price_response, shifted_energy, value_of_flexibility
+from mpctrano.flexibility import (
+    ActivationRequest,
+    ActivationResult,
+    FlexibilityEnvelope,
+    compare,
+    flexibility_function,
+    price_response,
+    respond,
+    shifted_energy,
+    value_of_flexibility,
+)
 from mpctrano.forecast import (
     DataForecaster,
     Forecaster,
@@ -35,6 +45,7 @@ from mpctrano.scenarios import Mismatch, Scenario, build_plant, run_scenario, sc
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_closed_loop
 from mpctrano.synthetic import ExcitationSettings, SyntheticData, generate_monitoring_data, perturb
 from mpctrano.tariff import (
+    CapacityTariff,
     DemandResponseEvent,
     DemandResponseTariff,
     DynamicTariff,
@@ -50,9 +61,12 @@ except PackageNotFoundError:  # pragma: no cover - source checkout without insta
     __version__ = "0.0.0"
 
 __all__ = [
+    "ActivationRequest",
+    "ActivationResult",
     "CalibrationResult",
     "CalibrationSettings",
     "Calibrator",
+    "CapacityTariff",
     "ClosedLoopResult",
     "ComfortSchedule",
     "ComfortSpec",
@@ -65,6 +79,7 @@ __all__ = [
     "ExcitationSettings",
     "FitMetrics",
     "FlatTariff",
+    "FlexibilityEnvelope",
     "ForecastNoise",
     "Forecaster",
     "KalmanFilter",
@@ -93,9 +108,11 @@ __all__ = [
     "build_plant",
     "compare",
     "evaluate",
+    "flexibility_function",
     "generate_monitoring_data",
     "perturb",
     "price_response",
+    "respond",
     "run_closed_loop",
     "run_scenario",
     "scenario_catalogue",

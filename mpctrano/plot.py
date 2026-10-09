@@ -16,6 +16,7 @@ from mpctrano.model import KELVIN
 if TYPE_CHECKING:
     from trano.mpc import HeatPumpSpec
 
+    from mpctrano.flexibility import ActivationResult, FlexibilityEnvelope
     from mpctrano.model import RCModel
     from mpctrano.mpc import MPCSolution
     from mpctrano.simulation import ClosedLoopResult
@@ -219,3 +220,52 @@ def plot_comparison(
         )
     figure.update_layout(showlegend=False)
     return _style(figure, "Scenario comparison", 400)
+
+
+def plot_activation(result: ActivationResult, title: str | None = None) -> Any:  # noqa: ANN401
+    """Billed power of the baseline and of the response around an activation, and their difference."""
+    go, make_subplots = _plotly()
+    frame = result.frame
+    request = result.request
+    figure = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.6, 0.4])
+    figure.add_vrect(
+        x0=pd.Timestamp(request.start), x1=request.end, fillcolor="rgba(82, 81, 78, 0.12)", line_width=0, row=1, col=1
+    )
+    figure.add_vrect(
+        x0=pd.Timestamp(request.start), x1=request.end, fillcolor="rgba(82, 81, 78, 0.12)", line_width=0, row=2, col=1
+    )
+    figure.add_trace(
+        _line(go, frame.index, frame["baseline"] / 1000, "baseline", MUTED, line={"shape": "hv"}), row=1, col=1
+    )
+    figure.add_trace(
+        _line(go, frame.index, frame["response"] / 1000, "response", SERIES[0], line={"shape": "hv"}), row=1, col=1
+    )
+    figure.add_trace(
+        go.Bar(x=frame.index, y=frame["delta"] / 1000, name=f"change ({request.direction})", marker_color=SERIES[1]),
+        row=2,
+        col=1,
+    )
+    figure.update_yaxes(title_text="Billed power [kW]", row=1, col=1)
+    figure.update_yaxes(title_text="Change [kW]", row=2, col=1)
+    metrics = result.metrics
+    subtitle = (
+        f"delivered {metrics['delivered_energy_kwh']:.1f} kWh, rebound {metrics['rebound_energy_kwh']:.1f} kWh "
+        f"(peak {metrics['rebound_peak_kw']:.1f} kW)"
+    )
+    return _style(figure, f"{title or 'Activation'}: {subtitle}", 620)
+
+
+def plot_envelope(envelope: FlexibilityEnvelope, title: str | None = None) -> Any:  # noqa: ANN401
+    """Power that can be shed (negative) or absorbed (positive) against the duration, with the cost of each plan."""
+    go, make_subplots = _plotly()
+    frame = envelope.frame
+    figure = make_subplots(rows=1, cols=2, subplot_titles=("Power [kW]", "Extra cost of the plan [EUR]"))
+    durations = [f"{duration:g} h" for duration in frame.index]
+    figure.add_trace(go.Bar(x=durations, y=frame["up_kw"], name="absorb (up)", marker_color=SERIES[0]), row=1, col=1)
+    figure.add_trace(go.Bar(x=durations, y=-frame["down_kw"], name="shed (down)", marker_color=SERIES[1]), row=1, col=1)
+    figure.add_trace(go.Bar(x=durations, y=frame["up_cost"], name="absorb cost", marker_color=SERIES[0]), row=1, col=2)
+    figure.add_trace(go.Bar(x=durations, y=frame["down_cost"], name="shed cost", marker_color=SERIES[1]), row=1, col=2)
+    figure.update_layout(barmode="relative")
+    figure.update_xaxes(title_text="Duration", row=1, col=1)
+    figure.update_xaxes(title_text="Duration", row=1, col=2)
+    return _style(figure, title or "Flexibility envelope", 420)

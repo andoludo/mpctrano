@@ -79,6 +79,15 @@ it is respected unless comfort would collapse.
 `ComfortSpec` assigns a schedule per zone (`default` otherwise) and `map("widen", delta)` or
 `map("constant")` transforms all of them.
 
+## Capacity tariff
+
+`CapacityTariff(base=..., capacity_price=50.0)` bills, like the Flemish distribution tariff, the
+average of the monthly peaks (highest quarter-hour average power of the month, floored at
+`minimum_peak_kw`) at `capacity_price` EUR/kW/year. One kilowatt of monthly peak costs
+`capacity_price / 12`, the `capacity_charge` the controller applies to the larger of the peak of
+the month so far (`peak_so_far`, carried by the closed loop) and the peak of its horizon. With
+hourly steps the peak is an hourly average, which underestimates the quarter-hour peak.
+
 ## Flexibility
 
 The flexibility of a building is what the thermal mass allows between the bounds: with a cheap
@@ -109,3 +118,20 @@ comparable):
 * `comfort_violation_kh`, `max_violation`, `peak_power_kw`.
 
 `price_response(run)` gives the energy consumed at each price level.
+
+### Explicit flexibility
+
+`ActivationRequest(start, duration_hours, direction, power)` asks to shed (`down`) or absorb
+(`up`) a power against the baseline; `respond(model, scenario, request, plant=factory)` runs the
+baseline and the response from the same plant state (the request becomes a soft cap or floor on
+the billed power relative to the mean baseline power of the window, as a baseline-settled
+aggregator would do) and `ActivationResult.metrics` reports the delivered energy and power, the
+delivery ratio, the rebound energy, peak, duration and ratio, the cost and comfort changes.
+`flexibility_function` reads the response to a price step the same way (Junker et al., 2018).
+
+### Flexibility envelope
+
+`FlexibilityEnvelope.compute(controller, x0, forecast, durations)` finds, for each duration, the
+largest constant change of the billed power the controller can hold from the current state while
+its plan keeps the comfort violations below a tolerance (bisection on a per-solve cap or floor,
+`solve(power_limits=..., power_floors=...)`), with the energy and the extra cost of that plan.

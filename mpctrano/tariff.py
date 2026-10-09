@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 HOURS_PER_DAY = 24
 
@@ -35,10 +35,16 @@ class TariffSignal:
     """Price of the peak power over the horizon [EUR/kW]."""
     export_prices: np.ndarray | None = None
     """Remuneration of the exported energy [EUR/kWh] (zeros when the tariff has none)."""
+    power_floors: np.ndarray | None = None
+    """Minimum billed power of each step [W] (upward activations; zeros when none)."""
 
     @property
     def export(self) -> np.ndarray:
         return np.zeros(len(self.index)) if self.export_prices is None else self.export_prices
+
+    @property
+    def floors(self) -> np.ndarray:
+        return np.zeros(len(self.index)) if self.power_floors is None else self.power_floors
 
     @property
     def frame(self) -> pd.DataFrame:
@@ -65,6 +71,10 @@ class Tariff(BaseModel, ABC):
         """Remuneration of the energy exported to the grid [EUR/kWh] (none by default)."""
         return np.zeros(len(index))
 
+    def power_floor(self, index: pd.DatetimeIndex) -> np.ndarray:
+        """Minimum billed power of each step [W] (an upward activation request)."""
+        return np.zeros(len(index))
+
     def signal(self, index: pd.DatetimeIndex) -> TariffSignal:
         return TariffSignal(
             index=index,
@@ -72,6 +82,7 @@ class Tariff(BaseModel, ABC):
             power_limits=np.asarray(self.power_limit(index), dtype=float),
             capacity_charge=self.capacity_charge,
             export_prices=np.asarray(self.export_price(index), dtype=float),
+            power_floors=np.asarray(self.power_floor(index), dtype=float),
         )
 
     def cost(self, index: pd.DatetimeIndex, total_power: np.ndarray, time_step: float) -> float:
@@ -189,14 +200,15 @@ def _held(series: pd.Series, index: pd.DatetimeIndex) -> np.ndarray:
 
 
 class DemandResponseEvent(BaseModel):
-    """A period where the grid asks for flexibility: a price multiplier and/or a power cap."""
+    """A period where the grid asks for flexibility: a price multiplier, a power cap or a power floor."""
 
     model_config = ConfigDict(frozen=True)
 
     start: datetime
     end: datetime
     price_multiplier: float = Field(1.0, ge=0, description="Multiplies the base price during the event")
-    power_limit: float | None = Field(None, ge=0, description="Maximum total heating power during the event [W]")
+    power_limit: float | None = Field(None, ge=0, description="Maximum billed power during the event [W]")
+    power_floor: float | None = Field(None, ge=0, description="Minimum billed power during the event [W]")
 
     def active(self, index: pd.DatetimeIndex) -> np.ndarray:
         return np.asarray((index >= pd.Timestamp(self.start)) & (index < pd.Timestamp(self.end)), dtype=bool)
@@ -222,8 +234,74 @@ class DemandResponseTariff(Tariff):
                 limits = np.where(event.active(index), np.minimum(limits, event.power_limit), limits)
         return limits
 
+    def power_floor(self, index: pd.DatetimeIndex) -> np.ndarray:
+        floors = self.base.power_floor(index).astype(float)
+        for event in self.events:
+            if event.power_floor is not None:
+                floors = np.where(event.active(index), np.maximum(floors, event.power_floor), floors)
+        return floors
+
     def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
         return self.base.export_price(index)
 
 
-AnyTariff = Annotated[FlatTariff | TimeOfUseTariff | DynamicTariff | DemandResponseTariff, Field(discriminator="kind")]
+MONTHS_PER_YEAR = 12
+
+
+class CapacityTariff(Tariff):
+    """A base tariff plus a capacity charge on the monthly peak, as the Flemish ``capaciteitstarief``.
+
+    The distribution tariff bills ``capacity_price`` [EUR/kW/year] on the average of the last twelve
+    monthly peaks, each the highest quarter-hour average power of the month floored at
+    ``minimum_peak_kw`` (Vlaamse Nutsregulator, in force since 2023; 2025 levels between 48.9 and
+    56.9 EUR/kW/year depending on the area, see ``tutorials/references.md``). Raising the peak of
+    one month by one kilowatt therefore costs ``capacity_price / 12``, which is the
+    ``capacity_charge`` the controller applies to the peak of the month so far and of its horizon
+    (``running_peak``).
+    """
+
+    kind: Literal["capacity"] = "capacity"
+    base: Annotated[FlatTariff | TimeOfUseTariff | DynamicTariff | DemandResponseTariff, Field(discriminator="kind")]
+    capacity_price: float = Field(50.0, ge=0, description="Price of the average monthly peak [EUR/kW/year]")
+    minimum_peak_kw: float = Field(2.5, ge=0, description="Floor of each monthly peak [kW]")
+    running_peak: bool = Field(True, description="The controller carries the peak of the month so far")
+
+    @model_validator(mode="after")
+    def _monthly_charge(self) -> CapacityTariff:
+        object.__setattr__(self, "capacity_charge", self.capacity_price / MONTHS_PER_YEAR)
+        return self
+
+    def energy_price(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return self.base.energy_price(index)
+
+    def power_limit(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return self.base.power_limit(index)
+
+    def power_floor(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return self.base.power_floor(index)
+
+    def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
+        return self.base.export_price(index)
+
+    def with_events(self, events: list[DemandResponseEvent]) -> CapacityTariff:  # type: ignore[override]
+        base = (
+            self.base.with_events(events)
+            if not isinstance(self.base, DemandResponseTariff)
+            else (self.base.model_copy(update={"events": [*self.base.events, *events]}))
+        )
+        return self.model_copy(update={"base": base})
+
+    def monthly_peaks(self, index: pd.DatetimeIndex, power: np.ndarray) -> pd.Series:
+        """Highest average power of each month [kW] (at the resolution of ``index``), floored."""
+        series = pd.Series(np.asarray(power, dtype=float) / 1000, index=index)
+        peaks = series.groupby(index.to_period("M")).max()
+        return peaks.clip(lower=self.minimum_peak_kw)
+
+    def capacity_cost(self, index: pd.DatetimeIndex, power: np.ndarray) -> float:
+        """Capacity charge [EUR] of a power profile: the monthly peaks at the monthly price."""
+        return float(self.monthly_peaks(index, power).sum() * self.capacity_price / MONTHS_PER_YEAR)
+
+
+AnyTariff = Annotated[
+    FlatTariff | TimeOfUseTariff | DynamicTariff | DemandResponseTariff | CapacityTariff, Field(discriminator="kind")
+]

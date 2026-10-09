@@ -146,8 +146,11 @@ class ModelPredictiveController:
         S_lo = opti.variable(model.n_zones, N)
         S_hi = opti.variable(model.n_zones, N)
         S_lim = opti.variable(1, N)
+        S_floor = opti.variable(1, N)
         peak = opti.variable()
-        variables: dict[str, Any] = {"X": X, "U": U, "S_lo": S_lo, "S_hi": S_hi, "S_lim": S_lim, "peak": peak}
+        variables: dict[str, Any] = {
+            "X": X, "U": U, "S_lo": S_lo, "S_hi": S_hi, "S_lim": S_lim, "S_floor": S_floor, "peak": peak,
+        }  # fmt: skip
 
         x0 = opti.parameter(model.n_states)
         D = opti.parameter(model.n_disturbances, N)
@@ -156,11 +159,14 @@ class ModelPredictiveController:
         lower = opti.parameter(model.n_zones, N)
         upper = opti.parameter(model.n_zones, N)
         limit = opti.parameter(1, N)
+        floor = opti.parameter(1, N)
         capacity = opti.parameter()
+        peak_so_far = opti.parameter()
         u_previous = opti.parameter(model.n_controls)
         parameters: dict[str, Any] = {
             "x0": x0, "D": D, "price": price, "export_price": export_price, "lower": lower, "upper": upper,
-            "limit": limit, "capacity": capacity, "u_previous": u_previous,
+            "limit": limit, "floor": floor, "capacity": capacity, "peak_so_far": peak_so_far,
+            "u_previous": u_previous,
         }  # fmt: skip
 
         # ---- dynamics and bounds
@@ -175,6 +181,7 @@ class ModelPredictiveController:
         opti.subject_to(ca.vec(S_lo) >= 0)
         opti.subject_to(ca.vec(S_hi) >= 0)
         opti.subject_to(ca.vec(S_lim) >= 0)
+        opti.subject_to(ca.vec(S_floor) >= 0)
 
         # ---- comfort of the zones and of the hot water tanks
         comfort = X[model.comfort_indices, 1:]
@@ -215,7 +222,9 @@ class ModelPredictiveController:
             metered = heat
         gas_cost = settings.gas_price * ca.sum2(self.meter.gas(U)) * dt / WATT_HOUR_TO_JOULE
         opti.subject_to(ca.vec(metered - S_lim) <= ca.vec(limit))
+        opti.subject_to(ca.vec(metered + S_floor) >= ca.vec(floor))
         opti.subject_to(ca.vec(metered) <= peak)
+        opti.subject_to(peak >= peak_so_far)
 
         # ---- electric vehicles: plug-in windows and departure targets
         vehicle_cost: Any = ca.DM(0)
@@ -235,7 +244,7 @@ class ModelPredictiveController:
 
         energy_cost = ca.sum2(price * metered) * dt / WATT_HOUR_TO_JOULE
         capacity_cost = capacity * peak / 1000
-        limit_cost = settings.power_limit_penalty * ca.sum2(S_lim) * dt / WATT_HOUR_TO_JOULE
+        limit_cost = settings.power_limit_penalty * (ca.sum2(S_lim) + ca.sum2(S_floor)) * dt / WATT_HOUR_TO_JOULE
         ramp = ca.horzcat(U[:, 0] - u_previous, U[:, 1:] - U[:, :-1]) / 1000
         ramp_cost = settings.ramp_weight * ca.sumsqr(ramp)
         objective = (
@@ -253,8 +262,23 @@ class ModelPredictiveController:
             "comfort": comfort_cost, "power_limit": limit_cost, "ramp": ramp_cost, "vehicle": vehicle_cost,
         }  # fmt: skip
 
-    def solve(self, x0: np.ndarray, forecast: pd.DataFrame, u_previous: np.ndarray | None = None) -> MPCSolution:
-        """Optimal plan from the state ``x0`` with the disturbance ``forecast`` (``horizon`` rows)."""
+    def solve(
+        self,
+        x0: np.ndarray,
+        forecast: pd.DataFrame,
+        u_previous: np.ndarray | None = None,
+        *,
+        power_limits: np.ndarray | None = None,
+        power_floors: np.ndarray | None = None,
+        peak_so_far: float = 0.0,
+    ) -> MPCSolution:
+        """Optimal plan from the state ``x0`` with the disturbance ``forecast`` (``horizon`` rows).
+
+        ``power_limits`` and ``power_floors`` [W] (``horizon`` values) override the demand response
+        events of the tariff for this solve (flexibility envelopes); ``peak_so_far`` [W] is the
+        billed peak of the current month, which a capacity charge applies to together with the
+        peak of the horizon.
+        """
         settings, model = self.settings, self.model
         N, dt = settings.horizon, settings.time_step
         if len(forecast) < N:
@@ -264,7 +288,10 @@ class ModelPredictiveController:
         end_of_steps = forecast_index(index[0] + pd.Timedelta(seconds=dt), N, dt)
         signal = self.tariff.signal(index)
         bounds = self.comfort.bounds(model, end_of_steps)
-        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 10 * self.upper_bounds.sum())
+        unbounded = 10 * self.upper_bounds.sum()
+        raw_limits = signal.power_limits if power_limits is None else np.asarray(power_limits, dtype=float)
+        limits = np.where(np.isfinite(raw_limits), raw_limits, unbounded)
+        floors = signal.floors if power_floors is None else np.asarray(power_floors, dtype=float)
 
         opti, parameters = self._opti, self._parameters
         opti.set_value(parameters["x0"], np.asarray(x0, dtype=float))
@@ -274,7 +301,9 @@ class ModelPredictiveController:
         opti.set_value(parameters["lower"], bounds.lower)
         opti.set_value(parameters["upper"], bounds.upper)
         opti.set_value(parameters["limit"], limits.reshape(1, -1))
+        opti.set_value(parameters["floor"], floors.reshape(1, -1))
         opti.set_value(parameters["capacity"], signal.capacity_charge)
+        opti.set_value(parameters["peak_so_far"], float(peak_so_far))
         opti.set_value(parameters["u_previous"], np.zeros(model.n_controls) if u_previous is None else u_previous)
         if model.vehicles:
             opti.set_value(

@@ -36,6 +36,11 @@ release pipeline.
   `run_rule_based` (the closed-loop `FastModel` with the controllers of the YAML as the baseline),
   costed from the meters of the plant (`FastControlMetrics`). `FastModel.from_yaml(..., library=
   "FastModel")` builds the closed-loop model.
+- `FastMovingHorizonEstimator` and `FastEstimatorSettings`: the full state of a `FastModel` from its
+  zone air temperatures, by moving horizon estimation (`trano.optimization`) over a sliding window;
+  `run_fast_closed_loop` takes any state estimator and records the estimates.
+- `FastModel` restores the unit of the temperature states whose unit rumoca drops (array states: wall
+  layers, radiator water), so that the collocation scales and bounds them as temperatures.
 - `make rumoca-fastmodel`: installs the rumoca commit that exports the FastModel models (`c74cddf`,
   not released on PyPI); the FastModel tests are skipped without it.
 

@@ -17,6 +17,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from mpctrano.comfort import ComfortSpec
+from mpctrano.estimation import StateEstimator
 from mpctrano.fast_model import FastModel
 from mpctrano.fast_mpc import FastModelPredictiveController
 from mpctrano.forecast import Forecaster, forecast_index, seconds_of_year
@@ -264,7 +265,7 @@ def _result(
 
 def run_fast_closed_loop(
     controller: FastModelPredictiveController,
-    estimator: PerfectEstimator,
+    estimator: StateEstimator,
     plant: FastModelPlant,
     forecaster: Forecaster,
     steps: int,
@@ -296,6 +297,7 @@ def run_fast_closed_loop(
         row |= {
             f"{state}_measured": value for state, value in zip(model.comfort_states, measurement.tolist(), strict=True)
         }
+        row |= {f"{state}_estimate": value for state, value in zip(model.state_names, estimate.tolist(), strict=True)}
         row |= {
             "planned_cost": solution.total_cost,
             "solve_time": solution.solve_time,

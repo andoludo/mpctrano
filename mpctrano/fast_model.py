@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 FAST_MODEL_LIBRARY = "FastModelMPC"
 CLOSED_LOOP_LIBRARY = "FastModel"
 COMFORT_SUFFIX = ".TAir"
+_TEMPERATURE_STATE = re.compile(r"\.T(\[\d+\])?$")
 _WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
 RUMOCA_COMMIT = "c74cddf"
 """Last rumoca commit known to export the connected FastModel models (later ones stop at residual equations)."""
@@ -110,6 +111,7 @@ class FastModel:
                     f"{RUMOCA_COMMIT} (make rumoca-fastmodel)."
                 ) from error
             raise
+        casadi_model = with_temperature_units(casadi_model)
         roles = roles or Roles.infer(casadi_model.description)
         roles.check(casadi_model.description)
         return cls(
@@ -358,3 +360,26 @@ def network_occupancy(network: Network) -> dict[str, OccupancySchedule]:
         for space in network.graph.nodes
         if isinstance(space, Space) and space.occupancy is not None
     }
+
+
+def with_temperature_units(model: CasadiModel) -> CasadiModel:
+    """The model with the unit ``K`` restored on its temperature states that lost it.
+
+    rumoca does not report the unit of array states (the layers ``T[i]`` of the walls, the water of the radiators);
+    the collocation then leaves them in kelvin instead of shifting them to degrees Celsius, and the temperature
+    bounds miss them. A state without a unit named ``...T`` or ``...T[i]`` and starting at a temperature in kelvin
+    is a temperature.
+    """
+    low, high = STATE_BOUNDS
+    states = tuple(
+        variable.model_copy(update={"unit": "K"})
+        if not variable.unit
+        and _TEMPERATURE_STATE.search(variable.name)
+        and variable.value is not None
+        and low <= variable.value <= high
+        else variable
+        for variable in model.description.states
+    )
+    if states == model.description.states:
+        return model
+    return CasadiModel(rhs=model.rhs, description=model.description.model_copy(update={"states": states}))

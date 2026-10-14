@@ -146,7 +146,8 @@ from mpctrano import (
     FastWeatherForecaster,
     TimeOfUseTariff,
 )
-from mpctrano.fast_simulation import FastModelPlant, PerfectEstimator, run_fast_closed_loop, run_rule_based
+from mpctrano import FastMovingHorizonEstimator
+from mpctrano.fast_simulation import FastModelPlant, run_fast_closed_loop, run_rule_based
 
 house = FastModel.from_yaml("house.yaml")  # trano, FastModelMPC library
 house.control_names, house.disturbance_names, house.meters  # read from the Modelica model
@@ -158,7 +159,8 @@ plan.controls, plan.costs, controller.energy
 
 # one day in closed loop, and the controllers of the YAML (the closed-loop FastModel) as the baseline
 plant = FastModelPlant(house, 3600, start)
-mpc = run_fast_closed_loop(controller, PerfectEstimator(plant), plant, forecaster, steps=24)
+estimator = FastMovingHorizonEstimator(house, 3600, start)  # walls and water from the air temperatures
+mpc = run_fast_closed_loop(controller, estimator, plant, forecaster, steps=24)
 closed_loop = FastModel.from_yaml("house.yaml", library="FastModel")
 baseline = run_rule_based(
     closed_loop, FastWeatherForecaster.from_model(closed_loop), start, 24, 3600, comfort, tariff, fuel_price=0.08
@@ -181,10 +183,20 @@ under a flat and under a time-of-use tariff, with almost no discomfort (0.05 K.h
 warm-up of the rule-based controllers), and buys 30 % of its energy off-peak against 10 %. Each hourly
 solve takes 4 to 8 s.
 
+Only the zone air temperatures are measured: `FastMovingHorizonEstimator` estimates the walls, the
+water of the circuits and the buffers from them, with the moving horizon estimation of
+`trano.optimization` over a sliding window (`PerfectEstimator` gives the true state of the plant to
+study the controller alone). On the test house started 2 K colder than the estimator assumes, the
+estimation error of the 26 temperature states falls from 1.9 K to 0.05 K over a day, and the closed
+loop costs the same as with the true state (0.19 K.h of discomfort against 0.05 K.h).
+
+rumoca does not report the unit of array states (the layers of the walls, the water of the
+radiators): `FastModel` restores the kelvin on them, so that the collocation scales and bounds them
+as temperatures.
+
 The CasADi export of these models needs rumoca main up to commit `c74cddf`, which is not released on
 PyPI: `make rumoca-fastmodel` builds it (Rust toolchain needed), and the FastModel tests are skipped
-without it. State estimation (the closed loop uses the true state for now), calibration and the
-scenarios of `Project` are the next steps.
+without it. Calibration and the scenarios of `Project` are the next steps.
 
 ## Tutorials
 

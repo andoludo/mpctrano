@@ -194,9 +194,32 @@ rumoca does not report the unit of array states (the layers of the walls, the wa
 radiators): `FastModel` restores the kelvin on them, so that the collocation scales and bounds them
 as temperatures.
 
+`FastCalibrator` calibrates a FastModel on monitoring data named after the model (the controls applied,
+the measured `<zone>.TAir` [K] and, when available, the meter readings [kWh]; the disturbances come
+from the weather file unless the data has them). It adjusts groups of parameters, each by one factor
+(or one value): the conductances and the capacities of the envelope, the heat capacity of the air,
+the infiltration rate and the efficiency of the boilers (from the fuel meter), on the Radau
+collocation of the whole period with IPOPT, regularised towards the Trano values:
+
+```python
+from mpctrano import FastCalibrator
+from mpctrano.fast_calibration import synthetic_data
+
+data, truth = synthetic_data(true_building, "2023-01-02", days=6)  # or measurements
+calibrated, result = FastCalibrator(house).fit(data.iloc[:97], data.iloc[96:])  # 4 days, 2 for validation
+result.factors, result.metrics()  # RMSE of the air temperature before and after, training and validation
+```
+
+On a copy of the test house with the conductances x1.3, the capacities x0.8, the air capacity x3,
+0.5 air changes per hour and a boiler efficiency x0.9, four days recover x1.35, x0.80, x2.74, 0.47
+and x0.904; the air temperature error falls from 4.5 K to 0.06 K (0.07 K on the two validation days)
+in 30 s. Only the parameters the equations use are adjusted: the conductances and capacities trano
+computed from the layers (`G[i]`, `C[i]`), not the layer data; the heat output law of the radiators
+is settled when rumoca translates the model and cannot be calibrated.
+
 The CasADi export of these models needs rumoca main up to commit `c74cddf`, which is not released on
 PyPI: `make rumoca-fastmodel` builds it (Rust toolchain needed), and the FastModel tests are skipped
-without it. Calibration and the scenarios of `Project` are the next steps.
+without it. Wiring FastModel into `Project`, the CLI and the scenarios is the next step.
 
 ## Tutorials
 

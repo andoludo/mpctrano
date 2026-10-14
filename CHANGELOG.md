@@ -41,6 +41,12 @@ release pipeline.
   `run_fast_closed_loop` takes any state estimator and records the estimates.
 - `FastModel` restores the unit of the temperature states whose unit rumoca drops (array states: wall
   layers, radiator water), so that the collocation scales and bounds them as temperatures.
+- `FastCalibrator`, `FastCalibrationSettings`, `ParameterGroup` and `FastCalibrationResult`: least-squares
+  calibration of groups of parameters of a `FastModel` (envelope conductances and capacities, air
+  capacity, infiltration, boiler efficiency; solar transmittance and emitter capacity as optional
+  groups) on the air temperatures and the meters, on the Radau collocation of the data with IPOPT;
+  `mpctrano.fast_calibration.synthetic_data` records data on a building operated by a random-set-point
+  thermostat, `evaluate` the open-loop fit.
 - `make rumoca-fastmodel`: installs the rumoca commit that exports the FastModel models (`c74cddf`,
   not released on PyPI); the FastModel tests are skipped without it.
 

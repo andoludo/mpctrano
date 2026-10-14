@@ -138,8 +138,14 @@ between 0 and 1, or the heat of ideal emitters) and the energy is read from the 
 (fuel, electricity, PV production, in kWh), so the efficiency of the systems is part of the optimisation.
 
 ```python
-from mpctrano import (ComfortSpec, FastModel, FastModelPredictiveController, FastMPCSettings,
-                      FastWeatherForecaster, TimeOfUseTariff)
+from mpctrano import (
+    ComfortSpec,
+    FastModel,
+    FastModelPredictiveController,
+    FastMPCSettings,
+    FastWeatherForecaster,
+    TimeOfUseTariff,
+)
 from mpctrano.fast_simulation import FastModelPlant, PerfectEstimator, run_fast_closed_loop, run_rule_based
 
 house = FastModel.from_yaml("house.yaml")  # trano, FastModelMPC library
@@ -154,8 +160,9 @@ plan.controls, plan.costs, controller.energy
 plant = FastModelPlant(house, 3600, start)
 mpc = run_fast_closed_loop(controller, PerfectEstimator(plant), plant, forecaster, steps=24)
 closed_loop = FastModel.from_yaml("house.yaml", library="FastModel")
-baseline = run_rule_based(closed_loop, FastWeatherForecaster.from_model(closed_loop), start, 24, 3600, comfort,
-                          tariff, fuel_price=0.08)
+baseline = run_rule_based(
+    closed_loop, FastWeatherForecaster.from_model(closed_loop), start, 24, 3600, comfort, tariff, fuel_price=0.08
+)
 mpc.summary(), baseline.summary()  # fuel, electricity, cost, comfort, peak, off-peak share
 ```
 

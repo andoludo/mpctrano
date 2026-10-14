@@ -20,8 +20,20 @@ release pipeline.
   stack, 15-minute and hourly resampling, price spikes, negative hours, relocation in time,
   cached samples) and the parsers of the Energy-Charts and ENTSO-E responses;
   `tutorials/scripts/fetch_prices.py` downloads the cached samples.
+- `FastModel`: the building models of Trano's `FastModelMPC` library (zones close to Buildings,
+  hydronic circuits, boilers, heat pumps, ventilation, PV) as CasADi functions; the roles of the
+  variables (controls, disturbances, comfort temperatures, energy meters) are read from the Modelica
+  model, the simulation runs with CVODES.
+- `FastModelPredictiveController` and `FastMPCSettings`: economic MPC of a `FastModel` on Radau
+  collocation (`trano.optimization`), with the tariff, capacity charge, comfort band and demand
+  response limits of the RC controller applied to the metered electricity and fuel.
+- `make rumoca-fastmodel`: installs the rumoca commit that exports the FastModel models (`c74cddf`,
+  not released on PyPI); the FastModel tests are skipped without it.
 
 ### Changed
+
+- trano >= 0.48. The azimuths of the test building are in radians, as trano now requires.
+- `ComfortSpec.bounds` takes any model with `zone_names` (`RCModel` or `FastModel`).
 
 - The script tutorials of the package moved from `tutorials/` to `tutorials/package/`; the
   top-level `tutorials/` directory is reserved for the numbered interactive notebooks.

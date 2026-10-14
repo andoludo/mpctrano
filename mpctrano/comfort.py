@@ -8,7 +8,7 @@ periods (setback) is what gives the building its flexibility towards the tariff.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
@@ -16,8 +16,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mpctrano.model import KELVIN
 
-if TYPE_CHECKING:
-    from mpctrano.model import RCModel
+
+class ZonedModel(Protocol):
+    """A building model with named zones (:class:`mpctrano.RCModel`, :class:`mpctrano.FastModel`)."""
+
+    @property
+    def zone_names(self) -> list[str]: ...
 
 
 @dataclass(frozen=True)
@@ -107,7 +111,7 @@ class ComfortSpec(BaseModel):
     def schedule(self, zone: str) -> ComfortSchedule:
         return self.zones.get(zone, self.default)
 
-    def bounds(self, model: RCModel, index: pd.DatetimeIndex) -> ComfortBounds:
+    def bounds(self, model: ZonedModel, index: pd.DatetimeIndex) -> ComfortBounds:
         lower, upper = [], []
         for zone in model.zone_names:
             zone_lower, zone_upper = self.schedule(zone).bounds(index)

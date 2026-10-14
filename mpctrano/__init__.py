@@ -16,6 +16,8 @@ from mpctrano.calibration import CalibrationResult, CalibrationSettings, Calibra
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
 from mpctrano.estimation import KalmanFilter, MovingHorizonEstimator, StateEstimator
+from mpctrano.fast_model import FastModel
+from mpctrano.fast_mpc import FastModelPredictiveController, FastMPCSettings
 from mpctrano.flexibility import compare, price_response, shifted_energy, value_of_flexibility
 from mpctrano.forecast import (
     DataForecaster,
@@ -62,6 +64,9 @@ __all__ = [
     "DemandResponseTariff",
     "DynamicTariff",
     "ExcitationSettings",
+    "FastMPCSettings",
+    "FastModel",
+    "FastModelPredictiveController",
     "FitMetrics",
     "FlatTariff",
     "ForecastNoise",

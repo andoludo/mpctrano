@@ -128,6 +128,39 @@ zone; `ComfortSpec.map("widen", 1.0)` opens the band to trade comfort for flexib
 `compare(runs, baseline="flat")` reports the cost savings, the energy shifted in time, the share of
 energy bought below the median price, the comfort violations and the peak power of each run.
 
+## FastModel: the systems of the building (experimental)
+
+Trano's `FastModelMPC` library turns the same YAML into a model close to the Buildings library (layered
+walls, windows, radiators, valves, mixing valves, boilers, heat pumps, ventilation, PV) that rumoca
+still translates into a CasADi ODE. `FastModel` loads it and `FastModelPredictiveController` controls
+it: the controls are those of the systems (valve positions, boiler part load ratio, heat pump speed,
+between 0 and 1, or the heat of ideal emitters) and the energy is read from the meters of the model
+(fuel, electricity, PV production, in kWh), so the efficiency of the systems is part of the optimisation.
+
+```python
+from mpctrano import ComfortSpec, FastModel, FastModelPredictiveController, FastMPCSettings, TimeOfUseTariff
+
+house = FastModel.from_yaml("house.yaml")  # trano, FastModelMPC library
+house.control_names, house.disturbance_names, house.meters  # read from the Modelica model
+controller = FastModelPredictiveController(
+    house, FastMPCSettings(horizon=24, fuel_price=0.08), ComfortSpec(), TimeOfUseTariff()
+)
+plan = controller.solve(house.initial_state, forecast)  # forecast: the weather channels and gains, hourly
+plan.controls, plan.costs, controller.energy
+```
+
+The model is nonlinear and stiff (water nodes): it is simulated with CVODES and optimised on Radau
+collocation points (`trano.optimization`), with the same objective as the RC controller (tariff,
+capacity charge, soft comfort band, demand response limits) applied to the electricity bought from the
+grid and the fuel drawn. The solar position is computed inside the model, so the forecast holds the raw
+weather channels (`weather_inputs.TDryBul`, `.TBlaSky`, `.winSpe`, `.winDir`, `.HDirNor`, `.HDifHor`,
+`.HGloHor`) and the internal gains per floor area.
+
+The CasADi export of these models needs rumoca main up to commit `c74cddf`, which is not released on
+PyPI: `make rumoca-fastmodel` builds it (Rust toolchain needed), and the FastModel tests are skipped
+without it. Forecasters, state estimation, calibration and closed-loop scenarios of FastModel are the
+next steps.
+
 ## Tutorials
 
 The interactive notebooks on MPC and energy flexibility live in `tutorials/` (see

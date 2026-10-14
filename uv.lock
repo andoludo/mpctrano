@@ -2543,7 +2543,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'plot'", specifier = ">=5.22" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "rumoca", specifier = ">=0.10.0,<0.11" },
-    { name = "trano", specifier = ">=0.34.0" },
+    { name = "trano", specifier = ">=0.48.0" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
 provides-extras = ["plot", "notebook"]
@@ -4712,7 +4712,7 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.34.0"
+version = "0.48.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4730,9 +4730,9 @@ dependencies = [
     { name = "typer" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/25/f9/c607d1f82bfd112df757971ab1513240465c1909c736ec67eabb47387ac9/trano-0.34.0.tar.gz", hash = "sha256:40f22f3ebefee740e98c06121e280ce9c83bc005273bf15649567f7a83f72d53", size = 136762, upload-time = "2026-10-04T20:32:04.794Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/ad/3689765278a6574ab1b28cbdab98c78d9b46df5b1bca0596904e9eb233b1/trano-0.48.0.tar.gz", hash = "sha256:fd142e277420f19c0230d8bfbd07798a9f3e5252f1d6703d67d9552d6f08cc47", size = 275624, upload-time = "2026-10-14T07:14:42.991Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/fa/dac2cc5a671b0580cd8e74ddd09faa696f88987afa9c24e98b98646f1747/trano-0.34.0-py3-none-any.whl", hash = "sha256:58ba891615794f9b44ff1d13c7f984d278cee990d124b218c2ac73ad97934100", size = 183252, upload-time = "2026-10-04T20:32:03.732Z" },
+    { url = "https://files.pythonhosted.org/packages/85/e3/c7322bb50ac5eff98027c76b5a7ff1663a4e31c94bfeb755c76e7b81c528/trano-0.48.0-py3-none-any.whl", hash = "sha256:fd8f300eb28299f106a055efb2b04da70c3a1cf119c0932aef006f76e4de26ee", size = 332946, upload-time = "2026-10-14T07:14:41.682Z" },
 ]
 
 [[package]]

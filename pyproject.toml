@@ -18,7 +18,7 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 dependencies = [
-    "trano>=0.34.0",
+    "trano>=0.48.0",
     "rumoca>=0.10.0,<0.11",
     "casadi>=3.6.7,<4",
     "numpy>=1.26",

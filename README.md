@@ -138,15 +138,25 @@ between 0 and 1, or the heat of ideal emitters) and the energy is read from the 
 (fuel, electricity, PV production, in kWh), so the efficiency of the systems is part of the optimisation.
 
 ```python
-from mpctrano import ComfortSpec, FastModel, FastModelPredictiveController, FastMPCSettings, TimeOfUseTariff
+from mpctrano import (ComfortSpec, FastModel, FastModelPredictiveController, FastMPCSettings,
+                      FastWeatherForecaster, TimeOfUseTariff)
+from mpctrano.fast_simulation import FastModelPlant, PerfectEstimator, run_fast_closed_loop, run_rule_based
 
 house = FastModel.from_yaml("house.yaml")  # trano, FastModelMPC library
 house.control_names, house.disturbance_names, house.meters  # read from the Modelica model
-controller = FastModelPredictiveController(
-    house, FastMPCSettings(horizon=24, fuel_price=0.08), ComfortSpec(), TimeOfUseTariff()
-)
-plan = controller.solve(house.initial_state, forecast)  # forecast: the weather channels and gains, hourly
+forecaster = FastWeatherForecaster.from_model(house)  # weather file and occupancy of the YAML
+comfort, tariff = ComfortSpec(), TimeOfUseTariff()
+controller = FastModelPredictiveController(house, FastMPCSettings(horizon=24, fuel_price=0.08), comfort, tariff)
+plan = controller.solve(house.initial_state, forecaster.forecast(start, 24, 3600))
 plan.controls, plan.costs, controller.energy
+
+# one day in closed loop, and the controllers of the YAML (the closed-loop FastModel) as the baseline
+plant = FastModelPlant(house, 3600, start)
+mpc = run_fast_closed_loop(controller, PerfectEstimator(plant), plant, forecaster, steps=24)
+closed_loop = FastModel.from_yaml("house.yaml", library="FastModel")
+baseline = run_rule_based(closed_loop, FastWeatherForecaster.from_model(closed_loop), start, 24, 3600, comfort,
+                          tariff, fuel_price=0.08)
+mpc.summary(), baseline.summary()  # fuel, electricity, cost, comfort, peak, off-peak share
 ```
 
 The model is nonlinear and stiff (water nodes): it is simulated with CVODES and optimised on Radau
@@ -154,12 +164,20 @@ collocation points (`trano.optimization`), with the same objective as the RC con
 capacity charge, soft comfort band, demand response limits) applied to the electricity bought from the
 grid and the fuel drawn. The solar position is computed inside the model, so the forecast holds the raw
 weather channels (`weather_inputs.TDryBul`, `.TBlaSky`, `.winSpe`, `.winDir`, `.HDirNor`, `.HDifHor`,
-`.HGloHor`) and the internal gains per floor area.
+`.HGloHor`), the sky temperature computed as the Buildings weather reader does, and the radiant and
+convective gains per floor area of each occupancy model. The runs are costed from the meters of the
+plant, each carrier at its price.
+
+On the single-zone hydronic house of the tests, over a January day with the band of its emission control
+(22 degC from 10h to 20h, 18 degC otherwise), the MPC costs 12 % less than the controllers of the YAML
+under a flat and under a time-of-use tariff, with almost no discomfort (0.05 K.h against 3.7 K.h, the
+warm-up of the rule-based controllers), and buys 30 % of its energy off-peak against 10 %. Each hourly
+solve takes 4 to 8 s.
 
 The CasADi export of these models needs rumoca main up to commit `c74cddf`, which is not released on
 PyPI: `make rumoca-fastmodel` builds it (Rust toolchain needed), and the FastModel tests are skipped
-without it. Forecasters, state estimation, calibration and closed-loop scenarios of FastModel are the
-next steps.
+without it. State estimation (the closed loop uses the true state for now), calibration and the
+scenarios of `Project` are the next steps.
 
 ## Tutorials
 

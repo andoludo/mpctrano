@@ -19,8 +19,9 @@ The CasADi export of these models needs rumoca 0.10.3, which is not released yet
 from __future__ import annotations
 
 import fnmatch
+import re
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import cache, cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -29,6 +30,7 @@ import numpy as np
 from trano.optimization import CasadiModel, CollocationSettings, Roles
 from trano.optimization.collocation import Collocated
 
+from mpctrano.forecast import OccupancySchedule
 from mpctrano.model import STATE_BOUNDS, ModelError, _package_name
 
 if TYPE_CHECKING:
@@ -36,7 +38,9 @@ if TYPE_CHECKING:
     from trano.topology import Network
 
 FAST_MODEL_LIBRARY = "FastModelMPC"
+CLOSED_LOOP_LIBRARY = "FastModel"
 COMFORT_SUFFIX = ".TAir"
+_WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
 RUMOCA_COMMIT = "c74cddf"
 """Last rumoca commit known to export the connected FastModel models (later ones stop at residual equations)."""
 
@@ -76,14 +80,27 @@ class FastModel:
     source: str
     parameters: np.ndarray
     base_dir: Path | None = None
+    occupancy: dict[str, OccupancySchedule] = field(default_factory=dict)
+    """Schedule of each occupancy model (by name, the ``<name>.gai`` inputs), from the Trano network."""
+    weather_file: str | None = None
+    """Weather file of the runnable model, as written in it (a path or a ``modelica://`` URI)."""
     _collocated: dict[float, Collocated] = field(default_factory=dict, init=False, repr=False)
 
     # ----------------------------------------------------------------- constructors
     @classmethod
     def from_source(
-        cls, source: str, model: str, roles: Roles | None = None, base_dir: Path | None = None
+        cls,
+        source: str,
+        model: str,
+        roles: Roles | None = None,
+        base_dir: Path | None = None,
+        occupancy: Mapping[str, OccupancySchedule] | None = None,
     ) -> FastModel:
-        """Translate ``model`` (``<package>.building_mpc``) of the Modelica ``source`` with rumoca."""
+        """Translate ``model`` (``<package>.building_mpc``) of the Modelica ``source`` with rumoca.
+
+        The weather file is read from the weather reader of the runnable model; the ``occupancy`` schedules (by
+        occupancy model name) cannot be read from the source and default to no gains.
+        """
         try:
             casadi_model = CasadiModel.from_modelica(source, model)
         except Exception as error:
@@ -101,29 +118,56 @@ class FastModel:
             source=source,
             parameters=casadi_model.description.parameter_values,
             base_dir=base_dir,
+            occupancy=dict(occupancy or {}),
+            weather_file=match.group(1) if (match := _WEATHER_FILE.search(source)) else None,
         )
 
     @classmethod
-    def from_file(cls, modelica: Path | str, model: str | None = None, roles: Roles | None = None) -> FastModel:
+    def from_file(
+        cls,
+        modelica: Path | str,
+        model: str | None = None,
+        roles: Roles | None = None,
+        occupancy: Mapping[str, OccupancySchedule] | None = None,
+    ) -> FastModel:
         """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``."""
         path = Path(modelica)
         return cls.from_source(
-            path.read_text(), model or f"{path.stem}.building_mpc", roles=roles, base_dir=path.parent
+            path.read_text(),
+            model or f"{path.stem}.building_mpc",
+            roles=roles,
+            base_dir=path.parent,
+            occupancy=occupancy,
         )
 
     @classmethod
     def from_network(cls, network: Network, roles: Roles | None = None, base_dir: Path | None = None) -> FastModel:
-        return cls.from_source(network.model(), f"{network.name}.building_mpc", roles=roles, base_dir=base_dir)
+        """The model of a network generated with the ``FastModelMPC`` library, with its occupancy schedules."""
+        return cls.from_source(
+            network.model(),
+            f"{network.name}.building_mpc",
+            roles=roles,
+            base_dir=base_dir,
+            occupancy=network_occupancy(network),
+        )
 
     @classmethod
-    def from_yaml(cls, path: Path | str, name: str | None = None, roles: Roles | None = None) -> FastModel:
-        """Generate the model with Trano (``FastModelMPC`` library) from a building description."""
+    def from_yaml(
+        cls, path: Path | str, name: str | None = None, roles: Roles | None = None, library: str = FAST_MODEL_LIBRARY
+    ) -> FastModel:
+        """Generate the model with Trano from a building description.
+
+        ``library`` is ``FastModelMPC`` (the controls of the systems are inputs, for MPC) or ``FastModel`` (the
+        closed loop with the controllers of the YAML: the baseline of :func:`mpctrano.fast_simulation.run_rule_based`).
+        """
         from trano.data_models.conversion import convert_network
         from trano.elements.library.library import Library
 
+        if library not in (FAST_MODEL_LIBRARY, CLOSED_LOOP_LIBRARY):
+            raise ValueError(f"library must be {FAST_MODEL_LIBRARY!r} or {CLOSED_LOOP_LIBRARY!r}, not {library!r}.")
         path = Path(path).resolve()
-        library = Library.from_configuration(FAST_MODEL_LIBRARY)
-        network = convert_network(name or _package_name(path.stem), path, library=library)
+        library_ = Library.from_configuration(library)
+        network = convert_network(name or _package_name(path.stem), path, library=library_)
         return cls.from_network(network, roles=roles, base_dir=path.parent)
 
     def write(self, directory: Path | str, stem: str | None = None) -> Path:
@@ -212,6 +256,20 @@ class FastModel:
         return len(self.zone_names)
 
     @property
+    def weather_path(self) -> Path | None:
+        """The weather file of the runnable model on disk: its path, resolved against the directory of the model,
+        or, for a ``modelica://`` resource, the file of the same name in that directory."""
+        if self.weather_file is None:
+            return None
+        if self.weather_file.startswith("modelica://"):
+            path = Path(self.weather_file.rsplit("/", 1)[-1])
+        else:
+            path = Path(self.weather_file)
+        if not path.is_absolute() and self.base_dir is not None:
+            path = self.base_dir / path
+        return path.resolve() if path.exists() else None
+
+    @property
     def initial_state(self) -> np.ndarray:
         return np.asarray(self.model.description.initial_state, dtype=float)
 
@@ -241,9 +299,7 @@ class FastModel:
             vector = np.asarray(values, dtype=float).reshape(-1)
             if vector.size != self.n_parameters:
                 raise ModelError(f"Expected {self.n_parameters} parameters, got {vector.size}.")
-        return FastModel(
-            model=self.model, roles=self.roles, source=self.source, parameters=vector, base_dir=self.base_dir
-        )
+        return replace(self, parameters=vector)
 
     # ----------------------------------------------------------------- dynamics
     def collocation_settings(self, time_step: float, **settings: object) -> CollocationSettings:
@@ -291,3 +347,14 @@ class FastModel:
         start = float(seconds_of_year(index[:1])[0])
         states = self.simulate(x0, controls, disturbances, time_step_of(index), start_time=start)
         return pd.DataFrame(states.T, index=index, columns=self.state_names)
+
+
+def network_occupancy(network: Network) -> dict[str, OccupancySchedule]:
+    """Schedule of each occupancy model of a network, by name."""
+    from trano.elements import Space
+
+    return {
+        space.occupancy.name: OccupancySchedule.from_parameters(space.occupancy.processed_parameters(network.library))
+        for space in network.graph.nodes
+        if isinstance(space, Space) and space.occupancy is not None
+    }

@@ -13,13 +13,12 @@ from mpctrano import (
     FastModelPredictiveController,
     FastMPCSettings,
     FlatTariff,
+    FastWeatherForecaster,
     TimeOfUseTariff,
-    WeatherFile,
 )
 from mpctrano.fast_model import rumoca_exports_fast_models
-from mpctrano.forecast import seconds_of_year
 from mpctrano.model import ModelError
-from tests.conftest import MODELS, START, WEATHER
+from tests.conftest import MODELS, START
 
 pytestmark = pytest.mark.skipif(
     not rumoca_exports_fast_models(),
@@ -37,20 +36,7 @@ def house() -> FastModel:
 
 
 def disturbances(model: FastModel, start: str, steps: int) -> pd.DataFrame:
-    """Weather of the test file and constant gains; the sky temperature and the wind are rough stand-ins."""
-    weather = WeatherFile.read(WEATHER)
-    index = pd.date_range(start, periods=steps, freq="1h")
-    seconds = seconds_of_year(index)
-    outdoor = weather.values("TDryBul", seconds)
-    channels = {
-        "TDryBul": outdoor,
-        "TBlaSky": outdoor - 10.0,
-        "winSpe": np.full(steps, 3.0),
-        "winDir": np.zeros(steps),
-        "QCon": np.full(steps, 1.0),
-        "QRad": np.full(steps, 1.0),
-    } | {name: weather.values(name, seconds) for name in ("HGloHor", "HDirNor", "HDifHor")}
-    return pd.DataFrame({name: channels[name.rsplit(".", 1)[-1]] for name in model.disturbance_names}, index=index)
+    return FastWeatherForecaster.from_model(model).realisation(pd.Timestamp(start), steps, 3600.0)
 
 
 def test_roles_are_read_from_the_modelica_model(house: FastModel) -> None:

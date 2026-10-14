@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -31,6 +32,7 @@ DEFAULT_YEAR = 2023
 """Year used to give the typical meteorological year a calendar (2023 starts on a Sunday, like TMY3 files)."""
 SECONDS_PER_YEAR = 365 * 86400
 GROUND_REFLECTANCE = 0.2
+STEFAN_BOLTZMANN = 5.670374419e-8
 
 
 def forecast_index(start: pd.Timestamp, steps: int, time_step: float) -> pd.DatetimeIndex:
@@ -67,8 +69,9 @@ class WeatherFile:
     """TMY3 weather file in the Modelica ``.mos`` format read by ``Buildings.BoundaryConditions``.
 
     The hourly columns used here are the dry-bulb temperature, the global horizontal, direct
-    normal and diffuse horizontal irradiance. Values are linearly interpolated and wrap around
-    the year, like the Buildings reader.
+    normal and diffuse horizontal irradiance and, when the file has them, the dew point
+    temperature, the wind direction and speed and the opaque sky cover (for the sky temperature).
+    Values are linearly interpolated and wrap around the year, like the Buildings reader.
     """
 
     path: Path
@@ -90,13 +93,22 @@ class WeatherFile:
                 elif line.startswith(("#", "double")) or not line.strip():
                     continue
                 else:
-                    rows.append([float(value) for value in line.split()[:11]])
+                    rows.append([float(value) for value in line.split()[:19]])
         if location is None:
             raise ValueError(f"No #LOCATION line in the weather file {path}.")
-        table = pd.DataFrame(rows, columns=[f"c{i}" for i in range(1, 12)]).set_index("c1")
-        table = table.rename(columns={"c2": "TDryBul", "c9": "HGloHor", "c10": "HDirNor", "c11": "HDifHor"})
+        width = min(len(row) for row in rows)
+        table = pd.DataFrame([row[:width] for row in rows], columns=[f"c{i}" for i in range(1, width + 1)])
+        table = table.set_index("c1").rename(columns=_WEATHER_COLUMNS)
         table["TDryBul"] += KELVIN
-        return cls(path=path, location=location, table=table[["TDryBul", "HGloHor", "HDirNor", "HDifHor"]])
+        if "TDewPoi" in table:
+            table["TDewPoi"] += KELVIN
+        if "winDir" in table:
+            table["winDir"] = np.radians(table["winDir"])
+        if "nOpa" in table:
+            table["nOpa"] = table["nOpa"] / 10
+        return cls(
+            path=path, location=location, table=table[[name for name in _WEATHER_COLUMNS.values() if name in table]]
+        )
 
     def values(self, variable: str, seconds: np.ndarray) -> np.ndarray:
         """Linear interpolation of a variable at seconds of the year (periodic)."""
@@ -107,6 +119,20 @@ class WeatherFile:
 
     def outdoor_temperature(self, seconds: np.ndarray) -> np.ndarray:
         return self.values("TDryBul", seconds)
+
+    def sky_temperature(self, seconds: np.ndarray) -> np.ndarray:
+        """Black-body sky temperature [K], as ``Buildings.BoundaryConditions.SkyTemperature.BlackBody`` computes it
+        by default in the weather reader (from the dry-bulb and dew point temperatures and the opaque sky cover)."""
+        missing = {"TDewPoi", "nOpa"} - set(self.table.columns)
+        if missing:
+            raise ValueError(f"The weather file {self.path} has no {sorted(missing)} column for the sky temperature.")
+        dry_bulb = self.values("TDryBul", seconds)
+        dew_point = np.minimum(self.values("TDewPoi", seconds), dry_bulb)
+        cover = 10 * np.clip(self.values("nOpa", seconds), 0.0, 1.0)
+        emissivity = (0.787 + 0.764 * np.log(dew_point / KELVIN)) * (
+            1 + 0.0224 * cover - 0.0035 * cover**2 + 0.00028 * cover**3
+        )
+        return np.asarray(dry_bulb * np.clip(emissivity, 1e-3, None) ** 0.25, dtype=float)
 
     def tilted_irradiance(self, seconds: np.ndarray, azimuth: float, tilt: float) -> np.ndarray:
         """Direct + isotropic diffuse (+ ground reflected) irradiance on a surface [W/m2].
@@ -124,6 +150,19 @@ class WeatherFile:
         diffuse = self.values("HDifHor", seconds) * (1 + math.cos(math.radians(tilt))) / 2
         reflected = self.values("HGloHor", seconds) * GROUND_REFLECTANCE * (1 - math.cos(math.radians(tilt))) / 2
         return np.asarray(direct + diffuse + reflected, dtype=float)
+
+
+_WEATHER_COLUMNS = {
+    "c2": "TDryBul",
+    "c3": "TDewPoi",
+    "c9": "HGloHor",
+    "c10": "HDirNor",
+    "c11": "HDifHor",
+    "c16": "winDir",
+    "c17": "winSpe",
+    "c19": "nOpa",
+}
+"""Columns of the TMY3 ``.mos`` files: name in the Buildings weather bus (``nOpa`` the opaque sky cover)."""
 
 
 @dataclass(frozen=True)
@@ -170,17 +209,29 @@ class OccupancySchedule(BaseModel):
     end_hour: float = Field(19.0, ge=0, le=24, description="End of the occupied period")
     gain_per_area: float = Field((35 + 70) / 24, ge=0, description="Sensible gains when occupied [W/m2]")
     unoccupied_gain_per_area: float = Field(0.0, ge=0, description="Sensible gains when unoccupied [W/m2]")
+    radiant_fraction: float = Field(35 / 105, ge=0, le=1, description="Radiant share of the sensible gains")
     weekend_occupied: bool = True
 
     @classmethod
     def from_source(cls, source: OccupancySource) -> OccupancySchedule:
         """Schedule of the occupancy model declared in the interface (parsing its Modelica parameters)."""
-        parameters = {key: str(value) for key, value in source.parameters.items()}
-        start, end = cls._hours(parameters.get("occupancy", "3600 * {7, 19}"))
-        gains = [float(value) for value in re.findall(r"[-+]?\d*\.?\d+", parameters.get("gain", "[35; 70; 30]"))]
-        fraction = _evaluate_fraction(parameters.get("k", "1/6/4"))
-        sensible = sum(gains[:2]) * fraction if len(gains) >= 2 else (35 + 70) / 24
-        return cls(start_hour=start, end_hour=end, gain_per_area=sensible)
+        return cls.from_parameters(source.parameters)
+
+    @classmethod
+    def from_parameters(cls, parameters: Mapping[str, str | float]) -> OccupancySchedule:
+        """Schedule of a Trano ``SimpleOccupancy`` from its Modelica parameters (``occupancy``, ``gain``, ``k``)."""
+        values = {key: str(value) for key, value in parameters.items()}
+        start, end = cls._hours(values.get("occupancy", "3600 * {7, 19}"))
+        gains = [float(value) for value in re.findall(r"[-+]?\d*\.?\d+", values.get("gain", "[35; 70; 30]"))]
+        fraction = _evaluate_fraction(values.get("k", "1/6/4"))
+        if len(gains) < 2 or sum(gains[:2]) <= 0:
+            return cls(start_hour=start, end_hour=end)
+        return cls(
+            start_hour=start,
+            end_hour=end,
+            gain_per_area=sum(gains[:2]) * fraction,
+            radiant_fraction=gains[0] / sum(gains[:2]),
+        )
 
     @staticmethod
     def _hours(expression: str) -> tuple[float, float]:
@@ -198,8 +249,16 @@ class OccupancySchedule(BaseModel):
 
     def gains(self, index: pd.DatetimeIndex, floor_area: float) -> np.ndarray:
         """Sensible internal gains [W]."""
-        occupied = self.occupied(index)
-        return floor_area * np.where(occupied, self.gain_per_area, self.unoccupied_gain_per_area)
+        return floor_area * self.gains_per_area(index)
+
+    def gains_per_area(self, index: pd.DatetimeIndex) -> np.ndarray:
+        """Sensible internal gains per floor area [W/m2]."""
+        return np.where(self.occupied(index), self.gain_per_area, self.unoccupied_gain_per_area)
+
+    def radiant_and_convective(self, index: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
+        """Radiant and convective internal gains per floor area [W/m2] (the ``QRad`` and ``QCon`` of FastModel)."""
+        gains = self.gains_per_area(index)
+        return gains * self.radiant_fraction, gains * (1 - self.radiant_fraction)
 
 
 def _evaluate_fraction(expression: str) -> float:
@@ -222,27 +281,39 @@ class ForecastNoise(BaseModel):
     seed: int | None = None
 
     def apply(self, realisation: pd.DataFrame, model: RCModel) -> pd.DataFrame:
+        kinds = {
+            signal.name: _NOISE_KINDS.get(signal.source.kind, "gains")
+            for signal in model.interface.disturbances
+            if signal.source is not None
+        }
+        return self.perturb(realisation, kinds)
+
+    def perturb(self, realisation: pd.DataFrame, kinds: Mapping[str, str]) -> pd.DataFrame:
+        """Forecast of the columns of ``realisation`` named in ``kinds`` (``temperature``, ``irradiance`` or
+        ``gains``, in this order of draws); the other columns are kept."""
         steps = len(realisation)
         if steps == 0:
             return realisation
         generator = np.random.default_rng(self.seed)
         lead = np.linspace(1 / steps, 1.0, steps)
         forecast = realisation.copy()
-        for signal in model.interface.disturbances:
-            source = signal.source
-            if source is None:
-                continue
-            values = forecast[signal.name].to_numpy(dtype=float)
-            if source.kind == "weather":
+        for name, kind in kinds.items():
+            values = forecast[name].to_numpy(dtype=float)
+            if kind == "temperature":
                 values = values + generator.normal(0, 1, steps) * self.temperature_std * lead
-            elif source.kind == "irradiance":
+            elif kind == "irradiance":
                 values = np.clip(
                     values * (1 + generator.normal(0, 1, steps) * self.irradiance_relative_std * lead), 0, None
                 )
-            else:
+            elif kind == "gains":
                 values = np.clip(values * (1 + generator.normal(0, 1, steps) * self.gains_relative_std * lead), 0, None)
-            forecast[signal.name] = values
+            else:
+                raise ValueError(f"Unknown kind of disturbance {kind!r} for {name}.")
+            forecast[name] = values
         return forecast
+
+
+_NOISE_KINDS = {"weather": "temperature", "irradiance": "irradiance"}
 
 
 @dataclass

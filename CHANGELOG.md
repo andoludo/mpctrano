@@ -27,6 +27,15 @@ release pipeline.
 - `FastModelPredictiveController` and `FastMPCSettings`: economic MPC of a `FastModel` on Radau
   collocation (`trano.optimization`), with the tariff, capacity charge, comfort band and demand
   response limits of the RC controller applied to the metered electricity and fuel.
+- `FastWeatherForecaster`: the disturbances of a `FastModel` from the weather file of its runnable model
+  and the occupancy schedules of its YAML; `WeatherFile` reads the dew point, wind and opaque sky
+  cover and computes the sky temperature as the Buildings weather reader; `OccupancySchedule` splits
+  the radiant and convective gains (`from_parameters`, `radiant_and_convective`);
+  `ForecastNoise.perturb` applies the forecast errors to named channels.
+- `mpctrano.fast_simulation`: `FastModelPlant`, `PerfectEstimator`, `run_fast_closed_loop` and
+  `run_rule_based` (the closed-loop `FastModel` with the controllers of the YAML as the baseline),
+  costed from the meters of the plant (`FastControlMetrics`). `FastModel.from_yaml(..., library=
+  "FastModel")` builds the closed-loop model.
 - `make rumoca-fastmodel`: installs the rumoca commit that exports the FastModel models (`c74cddf`,
   not released on PyPI); the FastModel tests are skipped without it.
 

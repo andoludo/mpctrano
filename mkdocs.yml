@@ -1,5 +1,5 @@
 site_name: mpctrano
-site_description: Calibration, state estimation and economic MPC of Trano RC building models
+site_description: Calibration, state estimation and economic MPC of the FastModel building models of Trano
 repo_name: mpctrano
 repo_url: https://github.com/andoludo/mpctrano
 theme:

@@ -14,11 +14,11 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from mpctrano.model import KELVIN
+from mpctrano.units import KELVIN
 
 
 class ZonedModel(Protocol):
-    """A building model with named zones (:class:`mpctrano.RCModel`, :class:`mpctrano.FastModel`)."""
+    """A building model with named zones (:class:`mpctrano.FastModel`)."""
 
     @property
     def zone_names(self) -> list[str]: ...

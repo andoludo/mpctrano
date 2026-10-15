@@ -1,19 +1,23 @@
-"""Disturbance forecasts: outdoor temperature, solar irradiance per orientation and internal gains.
+"""Disturbance forecasts of a :class:`~mpctrano.model.FastModel`.
 
-The Trano interface tells where each disturbance of the model comes from (weather variable,
-irradiance on an orientation, occupancy of a zone). :class:`WeatherForecaster` builds the
-forecasts from the TMY3 ``.mos`` weather file of the model (the same file as the runnable Trano
-model) with the solar geometry of the Buildings library, and from an :class:`OccupancySchedule`.
-:class:`DataForecaster` replays recorded disturbances (perfect foresight from measurements).
+A FastModel computes the solar position and the irradiance on its surfaces itself, so its disturbances are the raw
+channels of the weather file, as the Buildings weather reader gives them to the runnable model, and the internal
+gains per floor area of each occupancy model:
+
+* ``weather_inputs.TDryBul``, ``.TBlaSky`` (black-body sky temperature, from the dew point and the opaque sky
+  cover), ``.winSpe``, ``.winDir`` [rad], ``.HDirNor``, ``.HDifHor``, ``.HGloHor``;
+* ``<occupancy>.gai.QRad`` and ``.QCon`` [W/m2], from the schedule of the occupancy model of the YAML.
+
+:class:`WeatherForecaster` builds them from the TMY3 ``.mos`` weather file of the model and its occupancy
+schedules, :class:`DataForecaster` replays recorded disturbances; :class:`ForecastNoise` adds forecast errors
+growing with the lead time.
 """
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -21,17 +25,14 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from mpctrano.model import KELVIN
+from mpctrano.units import KELVIN
 
 if TYPE_CHECKING:
-    from trano.mpc.interface import OccupancySource
-
-    from mpctrano.model import RCModel
+    from mpctrano.model import FastModel
 
 DEFAULT_YEAR = 2023
 """Year used to give the typical meteorological year a calendar (2023 starts on a Sunday, like TMY3 files)."""
 SECONDS_PER_YEAR = 365 * 86400
-GROUND_REFLECTANCE = 0.2
 STEFAN_BOLTZMANN = 5.670374419e-8
 
 
@@ -134,23 +135,6 @@ class WeatherFile:
         )
         return np.asarray(dry_bulb * np.clip(emissivity, 1e-3, None) ** 0.25, dtype=float)
 
-    def tilted_irradiance(self, seconds: np.ndarray, azimuth: float, tilt: float) -> np.ndarray:
-        """Direct + isotropic diffuse (+ ground reflected) irradiance on a surface [W/m2].
-
-        Same model as ``DirectTiltedSurface`` and ``DiffuseIsotropic`` of the Buildings library;
-        ``azimuth`` 0 = south, 90 = west and ``tilt`` 90 = wall, in degrees.
-        """
-        # Hourly weather values are averages over the previous hour: evaluate the sun at mid-hour.
-        geometry = SolarGeometry(self.location)
-        zenith, solar_azimuth = geometry.position(np.asarray(seconds, dtype=float) - 1800.0)
-        incidence = np.cos(zenith) * math.cos(math.radians(tilt)) + np.sin(zenith) * math.sin(
-            math.radians(tilt)
-        ) * np.cos(solar_azimuth - math.radians(azimuth))
-        direct = self.values("HDirNor", seconds) * np.clip(incidence, 0.0, None) * (np.cos(zenith) > 0)
-        diffuse = self.values("HDifHor", seconds) * (1 + math.cos(math.radians(tilt))) / 2
-        reflected = self.values("HGloHor", seconds) * GROUND_REFLECTANCE * (1 - math.cos(math.radians(tilt))) / 2
-        return np.asarray(direct + diffuse + reflected, dtype=float)
-
 
 _WEATHER_COLUMNS = {
     "c2": "TDryBul",
@@ -165,44 +149,12 @@ _WEATHER_COLUMNS = {
 """Columns of the TMY3 ``.mos`` files: name in the Buildings weather bus (``nOpa`` the opaque sky cover)."""
 
 
-@dataclass(frozen=True)
-class SolarGeometry:
-    """Solar zenith and azimuth (0 = south, west positive) as in ``Buildings.BoundaryConditions.SolarGeometry``."""
-
-    location: Location
-
-    def position(self, seconds: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        seconds = np.mod(seconds, SECONDS_PER_YEAR)
-        day = seconds / 86400.0
-        declination = math.radians(23.45) * np.sin(2 * np.pi * (284 + day) / 365)
-        b = 2 * np.pi * (day - 81) / 364
-        equation_of_time = 9.87 * np.sin(2 * b) - 7.53 * np.cos(b) - 1.5 * np.sin(b)  # minutes
-        local_hours = (seconds % 86400) / 3600
-        solar_hours = (
-            local_hours + (self.location.longitude - 15 * self.location.time_zone) / 15 + equation_of_time / 60
-        )
-        hour_angle = np.radians(15 * (solar_hours - 12))
-        latitude = math.radians(self.location.latitude)
-        cos_zenith = np.sin(latitude) * np.sin(declination) + np.cos(latitude) * np.cos(declination) * np.cos(
-            hour_angle
-        )
-        zenith = np.arccos(np.clip(cos_zenith, -1, 1))
-        sin_zenith = np.sin(zenith)
-        cos_azimuth = np.where(
-            sin_zenith > 1e-6,
-            (cos_zenith * np.sin(latitude) - np.sin(declination)) / np.maximum(sin_zenith * np.cos(latitude), 1e-9),
-            1.0,
-        )
-        azimuth = np.sign(hour_angle) * np.arccos(np.clip(cos_azimuth, -1, 1))
-        return zenith, azimuth
-
-
 # --------------------------------------------------------------------------- occupancy
 class OccupancySchedule(BaseModel):
     """Sensible internal gains of a zone, following Trano's ``SimpleOccupancy`` model.
 
-    When occupied, the gains are ``floor_area * gain_per_area`` with ``gain_per_area`` the sum of
-    the radiant and convective gains of the Trano model (``(35 + 70)/24 W/m2`` by default).
+    When occupied, the gains per floor area are ``gain_per_area``, the sum of the radiant and convective gains of
+    the Trano model (``(35 + 70)/24 W/m2`` by default), split by ``radiant_fraction``.
     """
 
     start_hour: float = Field(7.0, ge=0, le=24, description="Start of the occupied period")
@@ -211,11 +163,6 @@ class OccupancySchedule(BaseModel):
     unoccupied_gain_per_area: float = Field(0.0, ge=0, description="Sensible gains when unoccupied [W/m2]")
     radiant_fraction: float = Field(35 / 105, ge=0, le=1, description="Radiant share of the sensible gains")
     weekend_occupied: bool = True
-
-    @classmethod
-    def from_source(cls, source: OccupancySource) -> OccupancySchedule:
-        """Schedule of the occupancy model declared in the interface (parsing its Modelica parameters)."""
-        return cls.from_parameters(source.parameters)
 
     @classmethod
     def from_parameters(cls, parameters: Mapping[str, str | float]) -> OccupancySchedule:
@@ -280,14 +227,6 @@ class ForecastNoise(BaseModel):
     gains_relative_std: float = Field(0.0, ge=0, description="Relative internal gains error at the horizon end")
     seed: int | None = None
 
-    def apply(self, realisation: pd.DataFrame, model: RCModel) -> pd.DataFrame:
-        kinds = {
-            signal.name: _NOISE_KINDS.get(signal.source.kind, "gains")
-            for signal in model.interface.disturbances
-            if signal.source is not None
-        }
-        return self.perturb(realisation, kinds)
-
     def perturb(self, realisation: pd.DataFrame, kinds: Mapping[str, str]) -> pd.DataFrame:
         """Forecast of the columns of ``realisation`` named in ``kinds`` (``temperature``, ``irradiance`` or
         ``gains``, in this order of draws); the other columns are kept."""
@@ -313,72 +252,103 @@ class ForecastNoise(BaseModel):
         return forecast
 
 
-_NOISE_KINDS = {"weather": "temperature", "irradiance": "irradiance"}
+# --------------------------------------------------------------------------- forecasters
+WEATHER_CHANNELS = ("TDryBul", "TBlaSky", "winSpe", "winDir", "HDirNor", "HDifHor", "HGloHor")
+GAIN_CHANNELS = ("QRad", "QCon")
+NOISE_KINDS = {
+    "TDryBul": "temperature",
+    "TBlaSky": "temperature",
+    "HDirNor": "irradiance",
+    "HDifHor": "irradiance",
+    "HGloHor": "irradiance",
+    "QRad": "gains",
+    "QCon": "gains",
+}
+"""Kind of forecast error of each channel (the wind is kept)."""
+
+
+def channel(name: str) -> tuple[str, str]:
+    """``(owner, channel)`` of a disturbance: ``weather_inputs.TDryBul`` -> ``("weather_inputs", "TDryBul")``,
+    ``occupancy_1.gai.QCon`` -> ``("occupancy_1", "QCon")``."""
+    owner, _, name_ = name.rpartition(".")
+    return owner.removesuffix(".gai"), name_
+
+
+def noise_kinds(names: list[str]) -> dict[str, str]:
+    """Kind of forecast error of each disturbance named."""
+    return {name: NOISE_KINDS[channel(name)[1]] for name in names if channel(name)[1] in NOISE_KINDS}
 
 
 @dataclass
 class WeatherForecaster:
-    """Disturbances from the weather file of the model and an occupancy schedule per zone."""
+    """Disturbances of a FastModel from a weather file and the occupancy schedules of the model."""
 
-    model: RCModel
+    model: FastModel
     weather: WeatherFile
     occupancy: dict[str, OccupancySchedule] = field(default_factory=dict)
     noise: ForecastNoise | None = None
 
+    def __post_init__(self) -> None:
+        unknown = [
+            name for name in self.model.disturbance_names if channel(name)[1] not in (*WEATHER_CHANNELS, *GAIN_CHANNELS)
+        ]
+        if unknown:
+            raise ValueError(f"Disturbances of {self.model.name} without a forecast: {unknown}")
+
     @classmethod
     def from_model(
         cls,
-        model: RCModel,
+        model: FastModel,
         weather: WeatherFile | Path | str | None = None,
         occupancy: OccupancySchedule | dict[str, OccupancySchedule] | None = None,
         noise: ForecastNoise | None = None,
     ) -> WeatherForecaster:
-        """Weather file and occupancy schedules taken from the interface unless given."""
+        """Weather file and occupancy schedules of the model unless given (``occupancy`` one schedule for every
+        occupancy model, or schedules by occupancy model name)."""
         if weather is None:
             if model.weather_path is None:
-                raise ValueError("The model has no weather file; give one explicitly.")
+                raise ValueError(f"The weather file of the model ({model.weather_file}) is not found; give one.")
             weather = model.weather_path
         weather_file = weather if isinstance(weather, WeatherFile) else WeatherFile.read(weather)
-        schedules: dict[str, OccupancySchedule] = {}
-        for signal in model.interface.disturbances:
-            source = signal.source
-            if source is None or source.kind != "occupancy":
-                continue
+        owners = {channel(name)[0] for name in model.disturbance_names if channel(name)[1] in GAIN_CHANNELS}
+        schedules = {}
+        for owner in sorted(owners):
             if isinstance(occupancy, OccupancySchedule):
-                schedules[source.zone] = occupancy
-            elif isinstance(occupancy, dict) and source.zone in occupancy:
-                schedules[source.zone] = occupancy[source.zone]
-            elif source.model is not None:
-                schedules[source.zone] = OccupancySchedule.from_source(source)
+                schedules[owner] = occupancy
+            elif isinstance(occupancy, dict) and owner in occupancy:
+                schedules[owner] = occupancy[owner]
             else:
-                schedules[source.zone] = OccupancySchedule(gain_per_area=0.0)
+                schedules[owner] = model.occupancy.get(owner, OccupancySchedule(gain_per_area=0.0))
         return cls(model=model, weather=weather_file, occupancy=schedules, noise=noise)
 
-    @cached_property
-    def floor_areas(self) -> dict[str, float]:
-        return {zone.name: zone.floor_area for zone in self.model.interface.zones}
+    def with_noise(self, noise: ForecastNoise | None) -> WeatherForecaster:
+        return WeatherForecaster(model=self.model, weather=self.weather, occupancy=self.occupancy, noise=noise)
 
     def realisation(self, start: pd.Timestamp, steps: int, time_step: float) -> pd.DataFrame:
+        """What happens: the weather at the middle of each step (the inputs are held over the step) and the gains
+        at its start."""
         index = forecast_index(start, steps, time_step)
-        # Inputs are held over [t_k, t_k+1): evaluate the weather at the middle of the step.
         seconds = seconds_of_year(index) + time_step / 2
-        columns: dict[str, np.ndarray] = {}
-        for signal in self.model.interface.disturbances:
-            source = signal.source
-            if source is None:
-                raise ValueError(f"Disturbance {signal.name} has no source in the interface.")
-            if source.kind == "weather":
-                columns[signal.name] = self.weather.outdoor_temperature(seconds)
-            elif source.kind == "irradiance":
-                columns[signal.name] = self.weather.tilted_irradiance(seconds, source.azimuth, source.tilt)
-            else:
-                schedule = self.occupancy.get(source.zone, OccupancySchedule(gain_per_area=0.0))
-                columns[signal.name] = schedule.gains(index, self.floor_areas[source.zone])
-        return pd.DataFrame(columns, index=index)[self.model.disturbance_names]
+        weather = {
+            name: self.weather.sky_temperature(seconds) if name == "TBlaSky" else self.weather.values(name, seconds)
+            for name in WEATHER_CHANNELS
+        }
+        gains = {
+            owner: dict(zip(GAIN_CHANNELS, schedule.radiant_and_convective(index), strict=True))
+            for owner, schedule in self.occupancy.items()
+        }
+        columns = {}
+        for name in self.model.disturbance_names:
+            owner, name_ = channel(name)
+            columns[name] = gains[owner][name_] if name_ in GAIN_CHANNELS else weather[name_]
+        return pd.DataFrame(columns, index=index)
 
     def forecast(self, start: pd.Timestamp, steps: int, time_step: float) -> pd.DataFrame:
+        """What the controller expects: the realisation with the errors of :attr:`noise`."""
         realisation = self.realisation(start, steps, time_step)
-        return self.noise.apply(realisation, self.model) if self.noise else realisation
+        if self.noise is None:
+            return realisation
+        return self.noise.perturb(realisation, noise_kinds(self.model.disturbance_names))
 
 
 @dataclass
@@ -387,7 +357,6 @@ class DataForecaster:
 
     frame: pd.DataFrame
     noise: ForecastNoise | None = None
-    model: RCModel | None = None
 
     def realisation(self, start: pd.Timestamp, steps: int, time_step: float) -> pd.DataFrame:
         index = forecast_index(start, steps, time_step)
@@ -398,6 +367,6 @@ class DataForecaster:
 
     def forecast(self, start: pd.Timestamp, steps: int, time_step: float) -> pd.DataFrame:
         realisation = self.realisation(start, steps, time_step)
-        if self.noise and self.model:
-            return self.noise.apply(realisation, self.model)
-        return realisation
+        if self.noise is None:
+            return realisation
+        return self.noise.perturb(realisation, noise_kinds([str(column) for column in realisation.columns]))

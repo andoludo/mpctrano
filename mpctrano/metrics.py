@@ -1,10 +1,16 @@
-"""Performance indicators: fit of a model to data and comfort / cost of a control run."""
+"""Performance indicators: fit of a model to data and energy, cost and comfort of a control run."""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from mpctrano.tariff import Tariff
 
 
 class FitMetrics(BaseModel):
@@ -42,17 +48,54 @@ class FitMetrics(BaseModel):
         return pd.DataFrame({"rmse": self.rmse, "mae": self.mae, "max_error": self.max_error, "r2": self.r2})
 
 
-class ControlMetrics(BaseModel):
-    """Energy, cost, comfort and peak of a (closed-loop) control run."""
+@dataclass(frozen=True)
+class Prices:
+    """Prices of the carriers over the steps of a run [EUR/kWh] and the capacity charge [EUR/kW]."""
 
-    energy_kwh: float = Field(description="Total heating energy [kWh]")
-    energy_cost: float = Field(description="Energy cost at the tariff [EUR]")
-    capacity_cost: float = Field(0.0, description="Capacity charge of the peak power [EUR]")
+    electricity: np.ndarray
+    feed_in: np.ndarray
+    fuel: np.ndarray
+    capacity_charge: float = 0.0
+
+    @classmethod
+    def of(
+        cls,
+        tariff: Tariff,
+        index: pd.DatetimeIndex,
+        fuel_price: float | None = None,
+        feed_in_price: float | None = None,
+    ) -> Prices:
+        """The prices of ``tariff`` on ``index``; the fuel and the electricity sold at the tariff price unless
+        given."""
+        signal = tariff.signal(index)
+        steps = len(index)
+
+        def price(value: float | None) -> np.ndarray:
+            return signal.prices.copy() if value is None else np.full(steps, float(value))
+
+        return cls(
+            electricity=signal.prices,
+            feed_in=price(feed_in_price),
+            fuel=price(fuel_price),
+            capacity_charge=signal.capacity_charge,
+        )
+
+
+class ControlMetrics(BaseModel):
+    """Energy, cost, comfort and peak of a run, from the meters of the building."""
+
+    fuel_kwh: float = Field(description="Fuel drawn [kWh]")
+    electricity_kwh: float = Field(description="Electricity bought from the grid [kWh]")
+    sold_kwh: float = Field(description="Electricity sold to the grid [kWh]")
+    energy_kwh: float = Field(description="Energy bought: fuel and electricity [kWh]")
+    energy_cost: float = Field(description="Cost of the fuel and of the electricity bought, less the sales [EUR]")
+    capacity_cost: float = Field(0.0, description="Capacity charge of the peak electric power [EUR]")
     comfort_violation_kh: float = Field(description="Integral of the band violations over the zones [K.h]")
     max_violation: float = Field(description="Largest band violation [K]")
-    peak_power_kw: float = Field(description="Peak total heating power [kW]")
-    low_price_share: float = Field(description="Share of the energy consumed below the median price")
-    mean_price: float = Field(description="Energy-weighted average price paid [EUR/kWh]")
+    peak_power_kw: float = Field(description="Peak electric power bought [kW]")
+    peak_fuel_power_kw: float = Field(description="Peak fuel power [kW]")
+    low_price_share: float = Field(description="Share of the energy bought below the median electricity price")
+    mean_price: float = Field(description="Average price of the energy bought [EUR/kWh]")
     steps: int
 
     @property
@@ -62,32 +105,40 @@ class ControlMetrics(BaseModel):
     @classmethod
     def compute(
         cls,
-        index: pd.DatetimeIndex,
-        powers: np.ndarray,
+        energy: pd.DataFrame,
+        prices: Prices,
         temperatures: np.ndarray,
         lower: np.ndarray,
         upper: np.ndarray,
-        prices: np.ndarray,
         time_step: float,
-        capacity_charge: float = 0.0,
     ) -> ControlMetrics:
-        """``powers`` and ``temperatures`` are ``(n_zones, N)``, the temperatures at the end of each step."""
+        """``energy`` has the ``fuel``, ``bought`` and ``sold`` energy of each step [kWh]; ``temperatures``,
+        ``lower`` and ``upper`` are ``(n_zones, N)``, the temperatures at the end of each step."""
         hours = time_step / 3600
-        total = np.sum(np.atleast_2d(powers), axis=0)
-        energy = total * hours / 1000
+        fuel, bought, sold = (energy[name].to_numpy(dtype=float) for name in ("fuel", "bought", "sold"))
+        purchased = fuel + bought
+        cost_of_energy = prices.fuel * fuel + prices.electricity * bought - prices.feed_in * sold
         violation = np.maximum(lower - temperatures, 0) + np.maximum(temperatures - upper, 0)
-        median = float(np.median(prices))
-        total_energy = float(energy.sum())
+        total = float(purchased.sum())
+        steps = len(energy)
+        cheap = prices.electricity < float(np.median(prices.electricity)) if steps else np.zeros(0, dtype=bool)
+        peak = float(bought.max() / hours) if steps else 0.0
         return cls(
-            energy_kwh=total_energy,
-            energy_cost=float(np.sum(prices * energy)),
-            capacity_cost=float(capacity_charge * total.max() / 1000) if len(total) else 0.0,
+            fuel_kwh=float(fuel.sum()),
+            electricity_kwh=float(bought.sum()),
+            sold_kwh=float(sold.sum()),
+            energy_kwh=total,
+            energy_cost=float(cost_of_energy.sum()),
+            capacity_cost=prices.capacity_charge * peak,
             comfort_violation_kh=float(np.sum(violation) * hours),
             max_violation=float(np.max(violation)) if violation.size else 0.0,
-            peak_power_kw=float(total.max() / 1000) if len(total) else 0.0,
-            low_price_share=float(energy[prices < median].sum() / total_energy) if total_energy > 0 else 0.0,
-            mean_price=float(np.sum(prices * energy) / total_energy) if total_energy > 0 else float("nan"),
-            steps=len(index),
+            peak_power_kw=peak,
+            peak_fuel_power_kw=float(fuel.max() / hours) if steps else 0.0,
+            low_price_share=float(purchased[cheap].sum() / total) if total > 0 else 0.0,
+            mean_price=float((prices.fuel * fuel + prices.electricity * bought).sum() / total)
+            if total > 0
+            else float("nan"),
+            steps=steps,
         )
 
     def frame(self) -> pd.DataFrame:

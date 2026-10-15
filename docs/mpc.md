@@ -2,28 +2,42 @@
 
 ## Optimisation problem
 
-At every step, from the estimated state `x0` and the forecasts over `N` steps of `dt` seconds:
+At every step, from the estimated state `x0`, the time `t0` and the forecasts over `N` steps of `dt`
+seconds, `ModelPredictiveController` solves with IPOPT:
 
 ```
-min   Σ_k π_k · (Σ_z u_{z,k}) · dt / 3.6e6              energy cost [EUR], π in EUR/kWh
-    + c_cap · P_peak / 1000                              capacity charge [EUR/kW] on the horizon peak
-    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600     comfort violations [K·h]
-    + w_lim · Σ_k s_lim,k · dt / 3.6e6                   energy above a demand response power limit
-    + w_ramp · Σ_k |u_k - u_{k-1}|²                       optional smoothing
-s.t.  x_{k+1} = F(x_k, u_k, d_k, p)
-      min_power ≤ u ≤ max_power (design power of each zone from the Trano interface by default)
-      T_lower,k - s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k     soft comfort band on every zone
-      Σ_z u_{z,k} ≤ limit_k + s_lim,k,     Σ_z u_{z,k} ≤ P_peak
+min   Σ_k (π_k b_k − π^in_k (b_k − e_k) + π^fuel_k f_k)    energy cost [EUR], prices in EUR/kWh
+    + c_cap · P_peak / 1000                                 capacity charge [EUR/kW] on the peak electric power
+    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600       comfort violations [K·h]
+    + w_lim · Σ_k s_lim,k · dt / 3.6e6                      electricity above a demand response power limit
+    + w_move · Σ_k |v_k − v_{k−1}|² + w_effort · Σ_k |v_k|²   moves and effort of the controls (scaled to [0, 1])
+s.t.  the FastModel collocated on Radau IIA points in each step
+      the bounds of each control (0-1 for the valves, the heat pump speed and the boiler load)
+      T_lower,k − s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k        soft comfort band on every zone
+      P_k ≤ limit_k + s_lim,k,     P_k ≤ P_peak                electric power bought from the grid
 ```
 
-`MPCSettings` holds the horizon, the time step, the penalties and the power bounds. The problem
-is built once (`casadi.Opti` with parameters) and every `solve()` only updates the initial state,
-the disturbance forecast, the prices, the comfort bounds and the power limits, with a shifted warm
-start. If IPOPT does not converge the last iterate is returned with `success=False` (the closed
-loop keeps running and counts the failures).
+`e_k` is the net electricity of step `k` [kWh], read from the meters of the model (the electricity
+of the heat pumps and fans, the heat of the ideal emitters, minus the PV production), `b_k` its
+smooth positive part (bought, the rest is sold at the feed-in price), `f_k` the fuel the boilers drew
+and `P_k = b_k / dt` the electric power. Since the energy comes from the meters, the efficiency of the
+systems is part of the plan: the COP of a heat pump is better in the mild afternoon than in the cold
+night, the efficiency of a boiler depends on its load and its water temperature.
+
+`MPCSettings` holds the horizon, the time step, the penalties, `fuel_price` and `feed_in_price` (the
+tariff price when not given) and the IPOPT options. The problem is built once (`casadi.Opti` with the
+time, the forecasts, the prices and the bounds as parameters) and every `solve()` updates them and
+warm starts IPOPT from a CVODES simulation of the previous plan shifted by one step, with a small
+initial barrier parameter (`warm_mu_init`), which halves the iterations of the receding-horizon
+solves. If IPOPT does not converge the last iterate is returned with `success=False` (the closed loop
+keeps running and counts the failures), and the next solve starts cold.
 
 Comfort bounds apply at the end of each step (the occupied band starting at 7h constrains the
-temperature reached at 7h); prices apply to the energy of the step.
+temperature reached at 7h); prices apply to the energy of the step. `controller.energy` gives the
+electricity bought and net, the fuel and the electric power of each step of the last plan.
+
+On the heat pump house of the tests (27 states), a 24-hour plan with hourly steps solves in 5 to 20 s;
+the six-zone heat pump house of the Trano test suite (111 states) takes over a minute.
 
 ## Tariffs
 
@@ -34,9 +48,11 @@ temperature reached at 7h); prices apply to the energy of the step.
 | `DynamicTariff`        | a price series (`from_csv`, `synthetic_day_ahead`), held between samples |
 | `DemandResponseTariff` | any tariff + `DemandResponseEvent`s: price multiplier and/or power cap |
 
-Every tariff can carry a `capacity_charge` [EUR/kW] on the peak power of the horizon. A
-`DemandResponseEvent` power cap is a soft constraint with a high penalty (`power_limit_penalty`):
-it is respected unless comfort would collapse.
+The tariffs price the electricity; the fuel has its own price (`MPCSettings.fuel_price`). Every
+tariff can carry a `capacity_charge` [EUR/kW] on the peak electric power of the horizon. A
+`DemandResponseEvent` power cap applies to the electric power bought from the grid; it is a soft
+constraint with a high penalty (`power_limit_penalty`): it is respected unless comfort would
+collapse.
 
 ## Comfort
 
@@ -46,22 +62,26 @@ it is respected unless comfort would collapse.
 
 ## Flexibility
 
-The flexibility of a building is what the thermal mass allows between the bounds: with a cheap
-night the controller pre-heats and lets the temperature float during the expensive hours; with a
-capacity charge it spreads the morning boost; during a demand response event it sheds load. The
-comfort band is the lever: `wide_comfort_band` in the scenario catalogue widens it by 1 K.
+The flexibility of a building is what the thermal mass and the buffers allow between the bounds:
+with a cheap night the controller pre-heats and lets the temperature float during the expensive
+hours; with a capacity charge it spreads the morning boost; during a demand response event it sheds
+load. The comfort band is the lever: `wide_comfort_band` in the scenario catalogue raises its upper
+bound by 2 K.
 
 Costs are only comparable under the same tariff. `value_of_flexibility(model, scenario)` runs the
 scenario twice, with the price-aware MPC and with a price-agnostic one (flat price, same comfort
 band and model), costs both runs with the tariff of the scenario and reports the saving, the
-energy shifted and the share of energy bought at low prices. For the three-zone test building the
-envelope time constant is about 40 h: part of the heat stored at night pays back after the
-expensive hours, so the controller starts pre-heating when the price spread exceeds roughly four
-(e.g. 0.40 / 0.10 EUR/kWh), and more when the upper bound leaves room (`widen(2.0, "upper")`).
+energy shifted and the share of energy bought at low prices.
+
+The reference of a building is its own control: `run_rule_based` (or `Project.run_rule_based`)
+simulates the controllers of the YAML on the same building. On the boiler house of the tests, over a
+January day with the band of its thermostat, the MPC costs 12 % less than the controllers of the YAML
+under a flat and under a time-of-use tariff, with almost no discomfort (0.05 K·h against 3.7 K·h, the
+warm-up of the thermostat), and buys 30 % of its energy off-peak against 10 %.
 
 The controller can only exploit the storage it believes in: with the uncalibrated Trano
 parameters against a different real building, the pre-heating is mis-sized and the comfort band
-is missed (tutorial 5 shows both cases). Calibrate before trusting the price response.
+is missed (tutorial 5 shows it). Calibrate before trusting the price response.
 
 `compare(runs, baseline="flat")` puts several runs side by side (same tariff for the costs to be
 comparable):
@@ -73,4 +93,4 @@ comparable):
 * `low_price_share`, `mean_price` - share of the energy bought below the median price, average price paid,
 * `comfort_violation_kh`, `max_violation`, `peak_power_kw`.
 
-`price_response(run)` gives the energy consumed at each price level.
+`price_response(run)` gives the energy bought at each price level.

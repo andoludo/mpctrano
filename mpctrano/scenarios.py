@@ -8,11 +8,11 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
-from mpctrano.estimation import KalmanFilter, MovingHorizonEstimator, StateEstimator
+from mpctrano.estimation import MovingHorizonEstimator, PerfectEstimator, StateEstimator
 from mpctrano.forecast import ForecastNoise, Forecaster, WeatherForecaster
-from mpctrano.model import RCModel
+from mpctrano.model import FastModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based
 from mpctrano.tariff import AnyTariff, DemandResponseEvent, DynamicTariff, FlatTariff, TimeOfUseTariff
 
 DEFAULT_START = "2023-01-16"
@@ -30,7 +30,9 @@ class Scenario(BaseModel):
     start: str = DEFAULT_START
     days: float = Field(2.0, gt=0)
     forecast_noise: ForecastNoise | None = None
-    estimator: Literal["kalman", "mhe"] = "kalman"
+    estimator: Literal["mhe", "perfect"] = Field(
+        "mhe", description="Moving horizon estimation from the air temperatures, or the true state of the plant"
+    )
 
     @property
     def steps(self) -> int:
@@ -56,7 +58,7 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         start=timestamp + pd.Timedelta(hours=17),
         end=timestamp + pd.Timedelta(hours=20),
         price_multiplier=3.0,
-        power_limit=4000.0,
+        power_limit=800.0,
     )
     scenarios = [
         Scenario(
@@ -97,7 +99,7 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         ),
         Scenario(
             name="imperfect_forecast",
-            description="Time-of-use tariff with forecast errors and a moving horizon estimator.",
+            description="Time-of-use tariff with forecast errors (2 K on the temperatures, 30 % on the irradiance).",
             tariff=time_of_use,
             comfort=comfort,
             forecast_noise=ForecastNoise(temperature_std=2.0, irradiance_relative_std=0.3, seed=1),
@@ -110,35 +112,56 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
     }
 
 
-def build_estimator(scenario: Scenario, model: RCModel, x0: object = None) -> StateEstimator:
-    if scenario.estimator == "mhe":
-        return MovingHorizonEstimator(model, scenario.settings.time_step, x0=x0)  # type: ignore[arg-type]
-    return KalmanFilter(model, scenario.settings.time_step, x0=x0)  # type: ignore[arg-type]
+def build_estimator(scenario: Scenario, model: FastModel, plant: Plant) -> StateEstimator:
+    if scenario.estimator == "perfect":
+        return PerfectEstimator(plant)
+    return MovingHorizonEstimator(model, scenario.settings.time_step, plant.time)
 
 
 def run_scenario(
-    model: RCModel,
+    model: FastModel,
     scenario: Scenario,
-    plant: Plant | RCModel | None = None,
+    plant: Plant | FastModel | None = None,
     forecaster: Forecaster | None = None,
     estimator: StateEstimator | None = None,
 ) -> ClosedLoopResult:
     """Closed loop of the scenario with ``model`` in the controller and ``plant`` as the building.
 
-    ``plant`` defaults to ``model`` itself (perfect model); an :class:`RCModel` is wrapped into a
-    :class:`ModelPlant`. The forecaster defaults to the weather file of the model.
+    ``plant`` defaults to ``model`` itself (perfect model); a :class:`FastModel` is wrapped into a
+    :class:`ModelPlant` starting at the start of the scenario. The forecaster defaults to the weather file of the
+    model, with the forecast errors of the scenario.
     """
     settings = scenario.settings
     if forecaster is None:
         forecaster = WeatherForecaster.from_model(model, noise=scenario.forecast_noise)
     if plant is None:
-        plant = ModelPlant(model, settings.time_step)
-    elif isinstance(plant, RCModel):
-        plant = ModelPlant(plant, settings.time_step)
+        plant = ModelPlant(model, settings.time_step, scenario.start)
+    elif isinstance(plant, FastModel):
+        plant = ModelPlant(plant, settings.time_step, scenario.start)
     if estimator is None:
-        estimator = build_estimator(scenario, model, plant.state)
+        estimator = build_estimator(scenario, model, plant)
     controller = ModelPredictiveController(model, settings, scenario.comfort, scenario.tariff)
-    return run_closed_loop(controller, estimator, plant, forecaster, scenario.start, scenario.steps, name=scenario.name)
+    return run_closed_loop(controller, estimator, plant, forecaster, scenario.steps, name=scenario.name)
+
+
+def run_scenario_rule_based(
+    closed_loop: FastModel, scenario: Scenario, forecaster: Forecaster | None = None
+) -> ClosedLoopResult:
+    """The controllers of the YAML (the closed-loop ``FastModel``) over the period of the scenario, costed with its
+    tariff and assessed against its comfort band: the reference of the MPC runs."""
+    settings = scenario.settings
+    return run_rule_based(
+        closed_loop,
+        forecaster or WeatherForecaster.from_model(closed_loop),
+        scenario.start,
+        scenario.steps,
+        settings.time_step,
+        scenario.comfort,
+        scenario.tariff,
+        fuel_price=settings.fuel_price,
+        feed_in_price=settings.feed_in_price,
+        name=f"{scenario.name} (rule based)",
+    )
 
 
 __all__ = [
@@ -147,5 +170,6 @@ __all__ = [
     "Scenario",
     "build_estimator",
     "run_scenario",
+    "run_scenario_rule_based",
     "scenario_catalogue",
 ]

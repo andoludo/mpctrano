@@ -1,7 +1,4 @@
-"""Forecasts, closed loop and rule-based baseline of Trano's single-zone hydronic house as a FastModel.
-
-Skipped unless rumoca exports connected Modelica models to CasADi (``make rumoca-fastmodel``).
-"""
+"""Forecasts, closed loop and rule-based baseline of Trano's single-zone hydronic house as a FastModel."""
 
 import numpy as np
 import pandas as pd
@@ -11,24 +8,19 @@ from mpctrano import (
     ComfortSchedule,
     ComfortSpec,
     FastModel,
-    FastModelPredictiveController,
-    FastMPCSettings,
-    FastWeatherForecaster,
+    ModelPredictiveController,
+    MPCSettings,
+    WeatherForecaster,
     FlatTariff,
     ForecastNoise,
     TimeOfUseTariff,
 )
-from mpctrano.fast_model import rumoca_exports_fast_models
-from mpctrano.fast_simulation import FastModelPlant, PerfectEstimator, run_fast_closed_loop, run_rule_based
-from mpctrano.model import KELVIN
-from tests.conftest import MODELS, START, WEATHER
+from mpctrano.estimation import PerfectEstimator
+from mpctrano.simulation import ModelPlant, run_closed_loop, run_rule_based
+from mpctrano.units import KELVIN
+from tests.conftest import BOILER_HOUSE, START, WEATHER
 
-pytestmark = pytest.mark.skipif(
-    not rumoca_exports_fast_models(),
-    reason="the CasADi export of FastModel models needs rumoca main at c74cddf (make rumoca-fastmodel)",
-)
-
-HOUSE = MODELS / "single_zone_hydronic.yaml"
+HOUSE = BOILER_HOUSE
 STEP = 3600.0
 # the band of the emission control of the YAML: 22 degC from 10h to 20h, 18 degC otherwise
 COMFORT = ComfortSpec(
@@ -58,7 +50,7 @@ def test_the_model_knows_its_weather_file_and_occupancy(house: FastModel) -> Non
 
 
 def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
-    forecaster = FastWeatherForecaster.from_model(house)
+    forecaster = WeatherForecaster.from_model(house)
     frame = forecaster.realisation(pd.Timestamp(START), 24, STEP)
     assert frame.columns.tolist() == house.disturbance_names
     assert frame.notna().all().all()
@@ -68,7 +60,7 @@ def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
     assert np.all(frame["weather_inputs.TBlaSky"] < frame["weather_inputs.TDryBul"])
     assert frame["weather_inputs.TDryBul"].between(KELVIN - 20, KELVIN + 20).all()
 
-    noisy = FastWeatherForecaster.from_model(house, noise=ForecastNoise(temperature_std=2.0, seed=0))
+    noisy = WeatherForecaster.from_model(house, noise=ForecastNoise(temperature_std=2.0, seed=0))
     forecast = noisy.forecast(pd.Timestamp(START), 24, STEP)
     assert not np.allclose(forecast["weather_inputs.TDryBul"], frame["weather_inputs.TDryBul"])
     pd.testing.assert_series_equal(forecast["weather_inputs.winSpe"], frame["weather_inputs.winSpe"])
@@ -76,13 +68,11 @@ def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
 
 def test_closed_loop_meters_the_energy_of_the_plant(house: FastModel) -> None:
     steps = 6
-    plant = FastModelPlant(house, STEP, START)
-    controller = FastModelPredictiveController(
-        house, FastMPCSettings(horizon=12, fuel_price=0.08), COMFORT, FlatTariff(price=0.3)
+    plant = ModelPlant(house, STEP, START)
+    controller = ModelPredictiveController(
+        house, MPCSettings(horizon=12, fuel_price=0.08), COMFORT, FlatTariff(price=0.3)
     )
-    result = run_fast_closed_loop(
-        controller, PerfectEstimator(plant), plant, FastWeatherForecaster.from_model(house), steps
-    )
+    result = run_closed_loop(controller, PerfectEstimator(plant), plant, WeatherForecaster.from_model(house), steps)
     assert result.failures == 0
     assert len(result.frame) == steps
     assert plant.time == pd.Timestamp(START) + pd.Timedelta(hours=steps)
@@ -97,7 +87,7 @@ def test_rule_based_baseline_runs_the_controllers_of_the_yaml(closed_loop_house:
     assert closed_loop_house.control_names == []
     result = run_rule_based(
         closed_loop_house,
-        FastWeatherForecaster.from_model(closed_loop_house),
+        WeatherForecaster.from_model(closed_loop_house),
         START,
         24,
         STEP,
@@ -109,7 +99,7 @@ def test_rule_based_baseline_runs_the_controllers_of_the_yaml(closed_loop_house:
     assert result.metrics.fuel_kwh > 5.0
     assert result.metrics.energy_cost == pytest.approx(0.08 * result.metrics.fuel_kwh)
     with pytest.raises(ValueError, match="closed-loop"):
-        run_rule_based(house, FastWeatherForecaster.from_model(house), START, 1, STEP, COMFORT, FlatTariff())
+        run_rule_based(house, WeatherForecaster.from_model(house), START, 1, STEP, COMFORT, FlatTariff())
 
 
 @pytest.mark.slow
@@ -119,13 +109,11 @@ def test_mpc_beats_the_rule_based_controllers_under_a_time_of_use_tariff(
     """The MPC keeps the band of the rule-based controllers for less, buying more energy off-peak."""
     tariff, steps = TimeOfUseTariff(peak_price=0.12, off_peak_price=0.05), 24
     baseline = run_rule_based(
-        closed_loop_house, FastWeatherForecaster.from_model(closed_loop_house), START, steps, STEP, COMFORT, tariff
+        closed_loop_house, WeatherForecaster.from_model(closed_loop_house), START, steps, STEP, COMFORT, tariff
     )
-    plant = FastModelPlant(house, STEP, START)
-    controller = FastModelPredictiveController(house, FastMPCSettings(horizon=24), COMFORT, tariff)
-    mpc = run_fast_closed_loop(
-        controller, PerfectEstimator(plant), plant, FastWeatherForecaster.from_model(house), steps
-    )
+    plant = ModelPlant(house, STEP, START)
+    controller = ModelPredictiveController(house, MPCSettings(horizon=24), COMFORT, tariff)
+    mpc = run_closed_loop(controller, PerfectEstimator(plant), plant, WeatherForecaster.from_model(house), steps)
     assert mpc.failures == 0
     assert mpc.metrics.total_cost < 0.95 * baseline.metrics.total_cost
     assert mpc.metrics.comfort_violation_kh < baseline.metrics.comfort_violation_kh

@@ -1,52 +1,51 @@
 """Tutorial 3 - State estimation.
 
-The MPC needs the full state of the RC model but only the zone air temperatures are measured.
-The envelope (or mass, or emitter) temperatures are estimated with a Kalman filter (the model is
-linear) or a moving horizon estimator (IPOPT, with bounds). Both start from a wrong guess and
-converge on the true envelope temperatures of the synthetic building.
+The MPC needs the full state of the FastModel (the air, the layers of the walls, the radiator and buffer water) but
+only the zone air temperatures are measured. The moving horizon estimator finds the trajectory of the model closest
+to the measurements over a sliding window of the past; here it starts 3 K off on every temperature and converges on
+the states of the synthetic building, where an uncorrected simulation keeps the initial error for days.
 """
 
 import numpy as np
 import pandas as pd
 
-from mpctrano import KalmanFilter, MovingHorizonEstimator, Project
-from tutorials._common import MODEL, days, save_figure
+from mpctrano import EstimatorSettings, ModelPlant, MovingHorizonEstimator, Project
+from tutorials._common import MODEL, data_days, save_figure
 
 project = Project.from_yaml(MODEL)
-building = project.true_building()
-synthetic = project.synthetic_data(days=days(4), start="2023-01-02", building=building)
-frame = synthetic.data.frame
-steps = len(frame) - 1
+model = project.model
+building = project.true_building(seed=4)
+temperatures = [i for i, state in enumerate(model.model.description.states) if state.unit == "K"]
+true_start = model.initial_state.copy()
+true_start[temperatures] -= 3.0  # the building is colder than the estimator believes
 
-wrong_start = building.initial_state + np.array([0, 4, 0, -4, 0, 3])  # 4 K off on the envelope nodes
-estimators = {
-    "kalman": KalmanFilter(building, 3600.0, x0=wrong_start, process_std=0.05, measurement_std=0.1),
-    "mhe": MovingHorizonEstimator(building, 3600.0, x0=wrong_start, window=24),
-}
-estimates = {name: [] for name in estimators}
+start = pd.Timestamp("2023-01-16")
+steps = int(data_days(2) * 24)
+plant = ModelPlant(building, 3600.0, start, x0=true_start, measurement_std=0.05)
+open_loop = ModelPlant(model, 3600.0, start, measurement_std=0.0)  # the model alone, never corrected
+estimator = MovingHorizonEstimator(model, 3600.0, start, settings=EstimatorSettings(window=12))
+disturbances = project.forecaster.realisation(start, steps, 3600.0).to_numpy()
+rows = []
 for k in range(steps):
-    measurement = frame[building.comfort_states].iloc[k].to_numpy()
-    control = frame[building.control_names].iloc[k].to_numpy()
-    disturbance = frame[building.disturbance_names].iloc[k].to_numpy()
-    for name, estimator in estimators.items():
-        estimates[name].append(estimator.correct(measurement))  # use the state here (MPC)
-        estimator.predict(control, disturbance)  # then propagate with the applied inputs
+    estimate = estimator.correct(plant.measure())  # use the state here (MPC)
+    errors = np.abs(estimate[temperatures] - plant.state[temperatures])
+    open_errors = np.abs(open_loop.state[temperatures] - plant.state[temperatures])
+    rows.append({"time": plant.time, "estimation": errors.mean(), "open loop": open_errors.mean()})
+    control = np.array([1.0, 0.5, 1.0]) if (k // 4) % 2 == 0 else np.zeros(3)  # heating on and off every 4 h
+    plant.step(control, disturbances[k])
+    estimator.predict(control, disturbances[k])  # then propagate with the applied inputs
+    open_loop.step(control, disturbances[k])
 
-truth = synthetic.states.iloc[:steps]
-comparison = pd.DataFrame({"true": truth["space_001_Te"]})
-for name, values in estimates.items():
-    comparison[name] = np.array(values)[:, building.state_names.index("space_001_Te")]
-errors = (comparison[["kalman", "mhe"]].sub(comparison["true"], axis=0)).abs()
-print("absolute error on space_001_Te [K]:")
-print(pd.DataFrame({"first 6 h": errors.iloc[:6].mean(), "last 24 h": errors.iloc[-24:].mean()}).round(3).to_string())
+errors = pd.DataFrame(rows).set_index("time")
+print("mean absolute error over the temperature states [K]:")
+print(errors.iloc[:: max(1, steps // 8)].round(3).to_string())
+print("estimations:", pd.Series(estimator.statuses).value_counts().to_dict())
 
 try:
     import plotly.graph_objects as go
 
-    figure = go.Figure()
-    for column in comparison.columns:
-        figure.add_trace(go.Scatter(x=comparison.index, y=comparison[column] - 273.15, name=column))
-    figure.update_layout(title="Envelope temperature of space_001: truth vs estimates", yaxis_title="degC")
+    figure = go.Figure([go.Scatter(x=errors.index, y=errors[column], name=column) for column in errors.columns])
+    figure.update_layout(title="Mean error of the temperature states", yaxis_title="K")
     save_figure(figure, "03_state_estimation")
 except ImportError:
     pass

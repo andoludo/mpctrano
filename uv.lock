@@ -2542,7 +2542,7 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'notebook'", specifier = ">=5.22" },
     { name = "plotly", marker = "extra == 'plot'", specifier = ">=5.22" },
     { name = "pydantic", specifier = ">=2.7,<3" },
-    { name = "rumoca", specifier = ">=0.10.0,<0.11" },
+    { name = "rumoca", git = "https://github.com/CogniPilot/rumoca?subdirectory=crates%2Frumoca-bind-python&rev=c74cddff6d7669fc2c3603d43529ab62e0964072" },
     { name = "trano", specifier = ">=0.48.0" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
@@ -4164,16 +4164,8 @@ wheels = [
 
 [[package]]
 name = "rumoca"
-version = "0.10.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c1/30/465fffc12f61dbe18c6fb80c72712eed2ba898c535ce9b94ae2e8067360b/rumoca-0.10.2.tar.gz", hash = "sha256:54e0c1b9527df87f6542f1b4755732792bd59394cc5217c12a540d83ca538205", size = 6536272, upload-time = "2026-10-04T19:34:23.956Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/37/2810de38080b44cba90fc7968b55e302f1d6bc60490fa250db92c941fac5/rumoca-0.10.2-cp310-abi3-macosx_14_0_arm64.whl", hash = "sha256:759ac1ffbb65e06c114194c6caeb561ec91871a3d3f782b0afdf234ec1785491", size = 25250915, upload-time = "2026-10-04T19:34:07.603Z" },
-    { url = "https://files.pythonhosted.org/packages/ba/ac/887003a4dc6c694314af74a1425c302f8560946720611b86e1a600920e8b/rumoca-0.10.2-cp310-abi3-macosx_14_0_x86_64.whl", hash = "sha256:07eeefab932a53bf17288887c7b046519c169adafc0cbda18168d8a95afd17f1", size = 27310684, upload-time = "2026-10-04T19:34:11.252Z" },
-    { url = "https://files.pythonhosted.org/packages/d9/f3/4512f2ce3f58105ed6cfc9f1f0e97d66239f7a30dc065cf3a934bd789bee/rumoca-0.10.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:f704e9779d7e9b19a0ff497ec6902074fa95437e821495b507ebe275cc93f2f5", size = 23152948, upload-time = "2026-10-04T19:34:14.566Z" },
-    { url = "https://files.pythonhosted.org/packages/e7/80/7a0e85361997e27b24b370a8081f4ea7a1bf3a00029069ff3c18eb27602a/rumoca-0.10.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:ca7edbf65c577d83819726f373a3ecce2c05d635472e2ab7d5ed8450c39fe18b", size = 25550614, upload-time = "2026-10-04T19:34:17.923Z" },
-    { url = "https://files.pythonhosted.org/packages/d5/bc/fab154b9da9c0ba062e34f360370699313827deb1514cbdd31952f18ce08/rumoca-0.10.2-cp310-abi3-win_amd64.whl", hash = "sha256:10beda04b928bef73ff49319b46b25048e09d421fa88010795164e0ad651d917", size = 26135677, upload-time = "2026-10-04T19:34:21.49Z" },
-]
+version = "0.10.3"
+source = { git = "https://github.com/CogniPilot/rumoca?subdirectory=crates%2Frumoca-bind-python&rev=c74cddff6d7669fc2c3603d43529ab62e0964072#c74cddff6d7669fc2c3603d43529ab62e0964072" }
 
 [[package]]
 name = "scipy"

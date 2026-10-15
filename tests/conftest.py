@@ -1,43 +1,43 @@
-"""Shared fixtures: the three-zone test building of Trano and synthetic data of a perturbed copy."""
+"""Shared fixtures: the heat pump house of the Trano test suite, a perturbed copy and its monitoring data.
+
+Two buildings of Trano's FastModel tests serve the suite: a single-zone house heated by an air-to-water heat pump
+(the electricity metered, the reference building of the tutorials) and the same house with a gas boiler (the fuel
+metered), in ``tests/models`` next to the weather file both use.
+"""
 
 from pathlib import Path
 
 import pytest
-from trano.mpc import RCModelType
 
-from mpctrano import Project, RCModel, SyntheticData, WeatherForecaster
+from mpctrano import FastModel, Project, SyntheticData, WeatherForecaster
 
 MODELS = Path(__file__).parent / "models"
-THREE_ZONES = MODELS / "three_zones.yaml"
+HEAT_PUMP_HOUSE = MODELS / "single_zone_air_water_heat_pump.yaml"
+BOILER_HOUSE = MODELS / "single_zone_hydronic.yaml"
 WEATHER = MODELS / "BEL_VLG_Uccle.064470_TMYx.2007-2021.mos"
 START = "2023-01-16"
 
 
 @pytest.fixture(scope="session")
-def model() -> RCModel:
-    return RCModel.from_yaml(THREE_ZONES)
+def project() -> Project:
+    return Project.from_yaml(HEAT_PUMP_HOUSE)
 
 
 @pytest.fixture(scope="session")
-def models() -> dict[RCModelType, RCModel]:
-    return {model_type: RCModel.from_yaml(THREE_ZONES, model_type=model_type) for model_type in RCModelType}
+def heat_pump(project: Project) -> FastModel:
+    return project.model
 
 
 @pytest.fixture(scope="session")
-def project(model: RCModel) -> Project:
-    return Project.from_model(model)
+def forecaster(project: Project) -> WeatherForecaster:
+    return project.forecaster
 
 
 @pytest.fixture(scope="session")
-def true_building(project: Project) -> RCModel:
+def true_building(project: Project) -> FastModel:
     return project.true_building(seed=0)
 
 
 @pytest.fixture(scope="session")
-def forecaster(model: RCModel) -> WeatherForecaster:
-    return WeatherForecaster.from_model(model)
-
-
-@pytest.fixture(scope="session")
-def synthetic(project: Project, true_building: RCModel) -> SyntheticData:
-    return project.synthetic_data(days=6, start="2023-01-02", building=true_building)
+def synthetic(project: Project, true_building: FastModel) -> SyntheticData:
+    return project.synthetic_data(days=3, start="2023-01-02", building=true_building)

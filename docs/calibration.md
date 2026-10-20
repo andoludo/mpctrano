@@ -1,55 +1,48 @@
 # Calibration
 
-## Problem
+A FastModel has hundreds of parameters, most of them settled by the YAML (areas, orientations, the
+optical fits of the glazing) or not identifiable from a few air temperatures. `Calibrator` adjusts
+**groups** of parameters instead, each by one decision variable:
 
-Given monitoring data with `N` steps of length `dt`, measured zone temperatures `y_k` (a subset of
-the states), heating powers `u_k` and disturbances `d_k`, the calibrator solves
+| Group                   | Parameters                                                    | Mode, range        |
+|-------------------------|---------------------------------------------------------------|--------------------|
+| `envelope_conductance`  | conductances of the wall, floor and roof layers (`G[i]`), of the glazing gaps and frames | factor 0.25-4 |
+| `envelope_capacity`     | capacities of the layers (`C[i]`) and of the panes            | factor 0.25-4      |
+| `air_capacity`          | the heat capacity factor of the air of each zone (`mSenFac`, furniture) | factor 1-10 |
+| `infiltration`          | the air changes per hour of each zone (`ACH`, 0 in Trano)     | value 0-3 1/h      |
+| `boiler_efficiency`     | the nominal efficiency of the boilers (from the fuel meter)   | factor 0.7-1.1     |
 
-```
-min_{X, z}   1/(N+1) Σ_k Σ_m ((X[m,k] - y[m,k]) / σ)²  +  λ Σ_j z_j²
-s.t.         X[:, k+1] = F(X[:, k], u_k, d_k, p(z))        k = 0..N-1     (multiple shooting)
-             p_j = p0_j · exp(z_j),   log(lower_factor) ≤ z_j ≤ log(upper_factor)
-             243 K ≤ X ≤ 373 K
-```
-
-* `σ` (`measurement_std`) normalises the residuals, `λ` (`regularisation`) pulls the parameters
-  towards the Trano initial guess `p0` in log space;
-* the multiple-shooting formulation keeps the problem well conditioned for long periods and poor
-  initial parameters; IPOPT starts from the simulated trajectory of the initial model, which is
-  feasible, so no restoration phase is needed;
-* the unmeasured states (envelope, mass, emitter temperatures) are free (`free_initial_states`),
-  their trajectories are identified with the parameters;
-* fractions (unit `1`, ISO 13790 models) are kept below one; `TGro` is fixed unless requested.
-
-`CalibrationSettings.parameters` selects the parameters with `fnmatch` patterns
-(`["*_Ci", "*_Ria", "H_*"]`); by default every parameter but the ground temperature is calibrated.
-
-## Result
-
-`CalibrationResult` holds the parameter values before and after, the IPOPT status and the
-`FitMetrics` (RMSE, MAE, maximum error, R² per zone) on the training period and, when given, on a
-validation period. The validation fit is an open-loop simulation whose unmeasured initial states
-are fitted by linear least squares with the parameters fixed (`evaluate(..., fit_initial_state=True)`).
+`OPTIONAL_GROUPS` adds the solar transmittance of the windows and the capacity of the radiators,
+which the air temperatures hardly identify on their own. A `ParameterGroup` is a set of regular
+expressions on the parameter names, a mode (`scale`: the Trano values times a common factor; `value`:
+one common value) and bounds; only the parameters the equations depend on are adjusted (the
+conductances and capacities trano computed from the layers, not the layer data). The heat output of
+the radiators and the performance maps of the heat pumps are settled when rumoca translates the model
+and cannot be calibrated.
 
 ```python
-calibrated, result = Calibrator(model, settings).fit(train, validation)
-result.metrics()                      # rmse / mae: training and validation, initial and calibrated
-result.summary(0.2, 5.0)              # initial, calibrated, ratio, at_bound per parameter
-simulate_fit(calibrated, validation)  # measured vs simulated frame for plots
+from mpctrano import Calibrator, CalibrationSettings
+
+calibrator = Calibrator(model, CalibrationSettings(temperature_std=0.1, meter_std=0.05))
+calibrated, result = calibrator.fit(training, validation)
+result.factors       # the value of each group
+result.metrics()     # RMSE and MAE of the air temperatures, training and validation, before and after
 ```
 
-## Identifiability
+The problem is solved with IPOPT on the Radau collocation of the model over the whole period, the
+parameters symbolic: the states of every step are decision variables bound by the dynamics, so that a
+long period and poor initial parameters stay well conditioned, and the unmeasured states (walls,
+water) are free at the start. The objective weighs the errors of the air temperatures
+(`temperature_std`), of the energy metered over each step (`meter_std`) and the deviation of each
+group from the Trano value (`prior_std`, `regularization`). The validation period is simulated from
+where the training ends.
 
-Zone air temperatures identify the parameters that shape their fast response: air capacities
-(`Ci`), direct losses (`Ria`), solar apertures (`gA_*`), couplings (`H_*`). The envelope capacity
-and the envelope-to-ground resistance (`Ce`, `Reg`) act on time scales of days and are correlated:
-with a week of data they stay close to the prior, which is the purpose of the regularisation. Use
-`summary()` to see which parameters moved; a parameter at a bound usually means a structural
-mismatch (a missing gain, a wrong floor area) rather than a wrong bound.
+On the boiler house of the tests, with the conductances x1.3, the capacities x0.8, the air capacity
+x3, 0.5 air changes per hour and the boiler efficiency x0.9, four days recover x1.35, x0.80, x2.74,
+0.47 and x0.904 in about 30 s; the air temperature error falls from 4.5 K to 0.06 K (0.07 K on two
+validation days). With a single day, the conductances and the infiltration trade with each other:
+both are losses to the outdoor air.
 
-Practical advice:
-
-* at least one week of data with varying setpoints (night setback helps a lot) and some sunny days;
-* hourly or 15-minute samples; `MonitoringData.resample()` averages finer data;
-* keep 25 % of the data for validation (`MonitoringData.split`);
-* with `hessian="limited-memory"` the problem needs more iterations but less memory.
+`evaluate(model, data, x0)` and `simulate_fit(model, data, x0)` give the open-loop fit of any model;
+`Project.save()` writes the calibration to `<stem>.calibration.json` and `Project.load_calibrated()`
+reads it back.

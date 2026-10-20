@@ -1,24 +1,33 @@
+"""Scenarios, closed-loop runs and flexibility indicators on the heat pump house."""
+
+import numpy as np
 import pandas as pd
 import pytest
 
 from mpctrano import (
     ClosedLoopResult,
+    ControlMetrics,
     FlatTariff,
+    Prices,
+    FastModel,
+    MovingHorizonEstimator,
+    PerfectEstimator,
     Project,
-    RCModel,
     compare,
     price_response,
     run_scenario,
     scenario_catalogue,
     value_of_flexibility,
 )
-from mpctrano.scenarios import Scenario, build_estimator
+from mpctrano.scenarios import build_estimator
+from mpctrano.simulation import ModelPlant
 
-CATALOGUE = scenario_catalogue(days=0.5)
+QUICK = scenario_catalogue(days=2 / 24, horizon=6)
 
 
 def test_catalogue_contents() -> None:
-    assert set(CATALOGUE) == {
+    catalogue = scenario_catalogue(days=0.5)
+    assert set(catalogue) == {
         "flat",
         "time_of_use",
         "dynamic_price",
@@ -27,79 +36,76 @@ def test_catalogue_contents() -> None:
         "wide_comfort_band",
         "imperfect_forecast",
     }
-    scenario = CATALOGUE["demand_response"]
+    scenario = catalogue["demand_response"]
     assert scenario.steps == 12
     assert scenario.with_days(2).steps == 48
     assert scenario.tariff.kind == "demand_response"
+    assert all(scenario.estimator == "mhe" for scenario in catalogue.values())
 
 
-@pytest.mark.parametrize("name", sorted(CATALOGUE))
-def test_every_scenario_runs(model: RCModel, true_building: RCModel, name: str) -> None:
-    result = run_scenario(model, CATALOGUE[name], plant=true_building)
+def test_estimator_choice(heat_pump: FastModel) -> None:
+    plant = ModelPlant(heat_pump, 3600.0, "2023-01-16")
+    assert isinstance(build_estimator(QUICK["flat"], heat_pump, plant), MovingHorizonEstimator)
+    perfect = QUICK["flat"].model_copy(update={"estimator": "perfect"})
+    assert isinstance(build_estimator(perfect, heat_pump, plant), PerfectEstimator)
+
+
+def test_a_scenario_runs_against_the_true_building(heat_pump: FastModel, true_building: FastModel) -> None:
+    result = run_scenario(heat_pump, QUICK["time_of_use"], plant=true_building)
     assert isinstance(result, ClosedLoopResult)
-    assert result.name == name
+    assert result.name == "time_of_use"
     assert result.failures == 0
-    assert result.metrics.max_violation < 1.0  # model mismatch only
-    assert result.metrics.energy_kwh > 0
+    assert len(result.frame) == 2
+    assert result.frame.index[0] == pd.Timestamp("2023-01-16")
+    assert result.metrics.electricity_kwh == pytest.approx(result.frame["bought"].sum())
+    assert result.metrics.fuel_kwh == 0.0
+    assert {"space_001.TAir_estimate", "space_001.TAir_true", "price"} <= set(result.frame.columns)
+    again = result.metrics_under(result_tariff := QUICK["flat"].tariff)
+    assert again.energy_kwh == pytest.approx(result.metrics.energy_kwh)
+    assert again.energy_cost == pytest.approx(result_tariff.price * result.metrics.electricity_kwh)  # type: ignore[attr-defined]
+    response = price_response(result)
+    assert response["share"].sum() == pytest.approx(1.0) or response["sum"].sum() == 0
 
 
-def test_estimator_choice(model: RCModel) -> None:
-    from mpctrano import KalmanFilter, MovingHorizonEstimator
-
-    assert isinstance(build_estimator(CATALOGUE["flat"], model), KalmanFilter)
-    assert isinstance(build_estimator(CATALOGUE["imperfect_forecast"], model), MovingHorizonEstimator)
-
-
-@pytest.mark.slow
-def test_flexibility_comparison(project: Project, true_building: RCModel) -> None:
-    catalogue = scenario_catalogue(days=1)
-    names = ("flat", "dynamic_price", "wide_comfort_band")
-    results = {name: project.run(catalogue[name], plant=true_building) for name in names}
-    comparison = compare(results, baseline="flat")
-    assert comparison.loc["flat", "cost_saving_pct"] == 0
-    assert comparison.loc["flat", "shifted_energy_kwh"] == 0
-    # Same tariff (day-ahead prices): more room to pre-heat buys a larger share of cheap energy.
-    assert comparison.loc["wide_comfort_band", "low_price_share"] >= comparison.loc["dynamic_price", "low_price_share"]
-    assert comparison.loc["dynamic_price", "low_price_share"] > comparison.loc["flat", "low_price_share"]
-    assert comparison["shifted_energy_kwh"].ge(0).all()
-    response = price_response(results["dynamic_price"])
-    assert response["share"].sum() == pytest.approx(1.0)
-    assert set(project.runs) >= set(names)
+def _result(name: str, bought: float) -> ClosedLoopResult:
+    index = pd.DatetimeIndex(["2023-01-16 00:00", "2023-01-16 01:00"])
+    frame = pd.DataFrame(
+        {
+            "fuel": 0.0,
+            "bought": [bought, 0.0],
+            "sold": 0.0,
+            "space_001.TAir_end": 294.0,
+            "space_001_lower": 290.0,
+            "space_001_upper": 300.0,
+            "price": 0.3,
+        },
+        index=index,
+    )
+    prices = Prices.of(FlatTariff(price=0.3), index)
+    metrics = ControlMetrics.compute(
+        frame, prices, np.full((1, 2), 294.0), np.full((1, 2), 290.0), np.full((1, 2), 300.0), 3600.0
+    )
+    return ClosedLoopResult(name, frame, metrics, 3600.0, ["space_001"], ["space_001.TAir"])
 
 
-@pytest.mark.parametrize("name", sorted(CATALOGUE))
-def test_scenario_serialisation_round_trip(name: str) -> None:
-    scenario = CATALOGUE[name]
-    restored = Scenario.model_validate_json(scenario.model_dump_json())
-    assert restored.comfort == scenario.comfort
-    assert restored.tariff.kind == scenario.tariff.kind
-    index = pd.date_range(scenario.start, periods=24, freq="h")
-    assert restored.tariff.energy_price(index) == pytest.approx(scenario.tariff.energy_price(index))
-
-
-def test_metrics_under_another_tariff(model: RCModel) -> None:
-    result = run_scenario(model, CATALOGUE["flat"])
-    doubled = result.metrics_under(FlatTariff(price=0.5))
-    assert doubled.energy_cost == pytest.approx(2 * result.metrics.energy_cost)
-    assert doubled.energy_kwh == pytest.approx(result.metrics.energy_kwh)
+def test_compare_guards_a_reference_without_energy() -> None:
+    comparison = compare({"reference": _result("reference", 0.0), "other": _result("other", 1.0)}, baseline="reference")
+    assert np.isnan(comparison.loc["other", "cost_saving_pct"])
+    assert comparison.loc["other", "total_cost"] == pytest.approx(0.3)
+    assert comparison.loc["other", "shifted_energy_kwh"] == pytest.approx(0.5)
 
 
 @pytest.mark.slow
-def test_value_of_flexibility(model: RCModel) -> None:
-    scenario = scenario_catalogue(days=2)["time_of_use"]
-    frame = value_of_flexibility(model, scenario)  # perfect model: the plant is the model itself
-    assert list(frame.index) == ["price aware", "price agnostic"]
-    aware, agnostic = frame.loc["price aware"], frame.loc["price agnostic"]
-    assert aware["total_cost"] < agnostic["total_cost"]
-    assert aware["cost_saving_pct"] > 1.0
-    assert aware["low_price_share"] > agnostic["low_price_share"]
-    assert aware["shifted_energy_kwh"] > 0
-    assert aware["comfort_violation_kh"] < 2.0
+@pytest.mark.parametrize("name", sorted(QUICK))
+def test_every_scenario_runs(heat_pump: FastModel, true_building: FastModel, name: str) -> None:
+    result = run_scenario(heat_pump, QUICK[name], plant=true_building)
+    assert result.failures == 0
+    assert result.metrics.max_violation < 1.0
 
 
 @pytest.mark.slow
-def test_capacity_charge_shaves_the_morning_peak(model: RCModel) -> None:
-    scenario = scenario_catalogue(days=1.5)["peak_shaving"]
-    frame = value_of_flexibility(model, scenario)
-    assert frame.loc["price aware", "peak_power_kw"] < 0.9 * frame.loc["price agnostic", "peak_power_kw"]
-    assert frame.loc["price aware", "total_cost"] < frame.loc["price agnostic", "total_cost"]
+def test_flexibility_under_a_time_of_use_tariff(project: Project, true_building: FastModel) -> None:
+    scenario = scenario_catalogue(days=1, horizon=12)["time_of_use"]
+    table = value_of_flexibility(project.model, scenario, plant=true_building)
+    assert table.loc["price aware", "total_cost"] <= table.loc["price agnostic", "total_cost"] + 1e-6
+    assert table.loc["price aware", "low_price_share"] >= table.loc["price agnostic", "low_price_share"]

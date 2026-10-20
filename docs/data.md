@@ -1,29 +1,30 @@
-# Monitoring data format
+# Monitoring data
 
-`MonitoringData` wraps a regularly sampled `pandas.DataFrame` with a `DatetimeIndex`. Columns are
-named after the signals of the Trano MPC interface (`house.mpc.json`), so the data can be bound to
-the model without any mapping:
+`MonitoringData` wraps a regularly sampled, time-indexed `DataFrame` whose columns are named after
+the variables of the `FastModel`:
 
-| Column               | Unit     | Required | Role                                                  |
-|----------------------|----------|----------|-------------------------------------------------------|
-| `<zone>_Ti`          | K (or °C)| ≥ 1 zone | measured zone air temperature                         |
-| `<zone>_QHea`        | W        | yes      | heating power delivered to the zone                   |
-| `TOut`               | K (or °C)| no       | outdoor temperature (else from the weather file)      |
-| `HSol_<orientation>` | W/m²     | no       | irradiance on an orientation (else computed)          |
-| `<zone>_QInt`        | W        | no       | internal gains (else from the occupancy schedule)     |
+| Column                          | Unit | Role                                                            |
+|---------------------------------|------|-----------------------------------------------------------------|
+| `time`                          |      | timestamp (first column of the CSV by default)                  |
+| `<zone>.TAir`                   | K/°C | measured air temperature of a zone (at least one zone)          |
+| `valve_001_y.y`, `boiler_001_y.y`, ... | - | the controls applied, held from each sample to the next   |
+| `boiler_001.EEle`, `boiler_001.EFue`, ... | kWh | readings of the energy meters, cumulative (optional)  |
+| `weather_inputs.TDryBul`, ...   | K, W/m², m/s, rad | the weather channels (optional)                     |
+| `occupancy_1_gai.QCon`, `.QRad` | W/m² | internal gains per floor area (optional; `occupancy_1.gai.*` before Trano 0.57) |
 
 ```python
-data = MonitoringData.from_csv("bms_export.csv", time_column="timestamp", temperature_unit="C",
-                               rename={"T_living": "living_Ti", "P_living": "living_QHea"})
-report = data.validate(model)        # missing columns, gaps, sampling
-data = data.resample(3600)           # average to hourly samples
-data = data.fill_disturbances(model, WeatherForecaster.from_model(model))
-train, validation = data.split(fraction=0.75)
+from mpctrano import MonitoringData
+
+data = MonitoringData.from_csv("monitoring.csv", temperature_unit="C", rename={"Living room": "space_001.TAir"})
+report = data.validate(model)              # measured zones, controls, meters, missing columns, gaps
+data = data.fill_disturbances(model, forecaster)  # weather file and occupancy schedules for the rest
+training, validation = data.split(fraction=0.75)  # the validation starts where the training ends
 ```
 
-Inputs are zero-order-hold: the value in row `k` is applied between sample `k` and `k+1`; the
-last row of the inputs is ignored. Temperatures are stored in Kelvin internally.
+`resample(dt)` averages the data on another period, `window(start, end)` cuts a period,
+`to_csv(path, temperature_unit="C")` writes it back.
 
-`Project.synthetic_data()` (or `mpctrano synthetic-data`) produces such a file from a perturbed
-copy of the Trano model driven by a randomised thermostat; `SyntheticData.states` keeps the true
-states for checks.
+Without a building at hand, `Project.synthetic_data()` (or `generate_monitoring_data`) records data on a
+copy of the model with its parameter groups at random values (`perturb`), operated by a thermostat
+with a random set point that excites the dynamics: the controls, the measured air temperatures with
+sensor noise, the meter readings and the disturbances.

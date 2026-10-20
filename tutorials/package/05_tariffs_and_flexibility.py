@@ -1,9 +1,11 @@
 """Tutorial 5 - Tariffs, prices and flexibility.
 
-The same controller follows an energy tariff: flat, time-of-use, day-ahead prices, demand
+The same controller follows an electricity tariff: flat, time-of-use, day-ahead prices, demand
 response events (price spikes and power caps) or a capacity charge on the peak power. The
-thermal mass and the comfort band are what make the building flexible: the MPC pre-heats when
-the energy is cheap and lets the temperature float when it is expensive.
+thermal mass, the buffer of the heat pump and the comfort band are what make the building
+flexible: the MPC pre-heats when the electricity is cheap and lets the temperature float when it
+is expensive. The energy is read from the meter of the heat pump, so the COP (better in the warm
+afternoon than in the cold night) is part of the trade-off.
 
 Costs are only comparable under the same tariff, so the value of the flexibility is measured
 against a *price-agnostic* controller (same model, same comfort band, flat price) costed with
@@ -28,7 +30,7 @@ from mpctrano import (
     value_of_flexibility,
 )
 from mpctrano.plot import plot_closed_loop, plot_comparison
-from tutorials._common import MODEL, OUTPUT, days, save_figure
+from tutorials._common import MODEL, OUTPUT, QUICK, data_days, days, horizon, save_figure
 
 pd.set_option("display.width", 200)
 columns = [
@@ -42,17 +44,29 @@ columns = [
 ]
 
 project = Project.from_yaml(MODEL)
-building = project.true_building()
-project.calibrate(project.synthetic_data(days=days(7), building=building).data)
+building = project.true_building(seed=4)
+project.calibrate(project.synthetic_data(days=data_days(7), building=building).data)
 model = project.calibrated
-catalogue = scenario_catalogue(start="2023-01-16", days=days(2))
+assert model is not None
+catalogue = scenario_catalogue(start="2023-01-16", days=days(2), horizon=horizon(24))
 
 # --- 1. What is the flexibility worth under each tariff? Price-aware vs price-agnostic MPC.
-for name in ("time_of_use", "dynamic_price", "wide_comfort_band", "demand_response", "peak_shaving"):
+names = (
+    ("time_of_use", "demand_response")
+    if QUICK
+    else (
+        "time_of_use",
+        "dynamic_price",
+        "wide_comfort_band",
+        "demand_response",
+        "peak_shaving",
+    )
+)
+for name in names:
     print(f"\n=== {name}: {catalogue[name].description}")
     print(value_of_flexibility(model, catalogue[name], plant=building)[columns].astype(float).round(2).to_string())
 
-# --- 2. Why calibrate first: the uncalibrated Trano model mis-sizes the pre-heating and misses the comfort band.
+# --- 2. Why calibrate first: the uncalibrated Trano model mis-sizes the pre-heating and the comfort band.
 print("\n=== time_of_use with the uncalibrated Trano model")
 print(
     value_of_flexibility(project.model, catalogue["time_of_use"], plant=building)[columns]
@@ -69,13 +83,14 @@ print(price_response(dynamic).round(3).tail(6).to_string())
 # --- 4. The same tariff, more or less room to pre-heat: the upper bound of the comfort band is the lever.
 tariff = TimeOfUseTariff(peak_price=0.40, off_peak_price=0.10)
 runs = {}
-for delta in (0.0, 1.0, 2.0, 3.0):
+for delta in (0.0, 2.0) if QUICK else (0.0, 1.0, 2.0, 3.0):
     scenario = Scenario(
         name=f"upper+{delta:.0f}K",
         description="",
         tariff=tariff,
         comfort=ComfortSpec().map("widen", delta, "upper"),
         days=days(2),
+        settings=catalogue["flat"].settings,
     )
     runs[scenario.name] = project.run(scenario, plant=building)
 comparison = compare(runs, baseline="upper+0K")
@@ -85,13 +100,14 @@ save_figure(plot_comparison(comparison), "05_comfort_band_vs_cost")
 # --- 5. Peak shaving: a deep night setback creates a morning boost that a capacity charge spreads out.
 setback = ComfortSpec(default=ComfortSchedule(unoccupied_lower=15.0))
 peaks = {}
-for charge in (0.0, 4.0, 8.0):
+for charge in (0.0, 8.0) if QUICK else (0.0, 4.0, 8.0):
     scenario = Scenario(
         name=f"charge {charge:.0f} EUR/kW",
         description="",
         tariff=FlatTariff(price=0.25, capacity_charge=charge),
         comfort=setback,
         days=days(2),
+        settings=catalogue["flat"].settings,
     )
     peaks[scenario.name] = project.run(scenario, plant=building)
 print(
@@ -105,7 +121,7 @@ OUTPUT.mkdir(exist_ok=True)
 prices = DynamicTariff.synthetic_day_ahead("2023-01-15", days=5, base=0.18, amplitude=0.18, seed=3).series
 prices.rename("price").to_csv(OUTPUT / "day_ahead_prices.csv", index_label="time")
 custom_tariff = DynamicTariff.from_csv(OUTPUT / "day_ahead_prices.csv", capacity_charge=2.0).with_events(
-    [DemandResponseEvent(start="2023-01-16 18:00", end="2023-01-16 20:00", price_multiplier=2.0, power_limit=3000.0)]
+    [DemandResponseEvent(start="2023-01-16 18:00", end="2023-01-16 20:00", price_multiplier=2.0, power_limit=500.0)]
 )
 custom = Scenario(
     name="my_tariff",
@@ -113,5 +129,6 @@ custom = Scenario(
     tariff=custom_tariff,
     comfort=ComfortSpec().map("widen", 2.0, "upper"),
     days=days(2),
+    settings=catalogue["flat"].settings,
 )
 print(value_of_flexibility(model, custom, plant=building)[columns].astype(float).round(2).to_string())

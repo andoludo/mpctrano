@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,12 +11,12 @@ from mpctrano import (
     DemandResponseEvent,
     DynamicTariff,
     FlatTariff,
-    RCModel,
     TimeOfUseTariff,
 )
 from mpctrano.scenarios import Scenario
 
 INDEX = pd.date_range("2023-01-16", periods=48, freq="h")  # Monday and Tuesday
+THREE_ZONES = SimpleNamespace(zone_names=["space_001", "space_002", "space_003"])
 
 
 def test_flat_tariff() -> None:
@@ -71,7 +73,7 @@ def test_demand_response_events() -> None:
     )
 
 
-def test_comfort_schedule_bounds_and_transforms(model: RCModel) -> None:
+def test_comfort_schedule_bounds_and_transforms() -> None:
     schedule = ComfortSchedule(occupied_lower=21, occupied_upper=24, unoccupied_lower=17, unoccupied_upper=27)
     lower, upper = schedule.bounds(INDEX)
     assert lower[7] == pytest.approx(294.15) and lower[6] == pytest.approx(290.15)
@@ -85,7 +87,7 @@ def test_comfort_schedule_bounds_and_transforms(model: RCModel) -> None:
     constant = schedule.constant()
     assert constant.unoccupied_lower == 21
     spec = ComfortSpec(default=schedule, zones={"space_003": schedule.constant()})
-    bounds = spec.bounds(model, INDEX)
+    bounds = spec.bounds(THREE_ZONES, INDEX)
     assert bounds.lower.shape == (3, 48)
     assert bounds.lower[2, 3] == pytest.approx(294.15)  # constant band in zone 3
     assert bounds.lower[0, 3] == pytest.approx(290.15)

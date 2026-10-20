@@ -1,22 +1,26 @@
-"""Economic model predictive control of the heating powers of the zones.
+"""Economic model predictive control of a Trano ``FastModelMPC`` building.
 
-Every step, the controller solves with IPOPT, over a receding horizon of ``N`` steps:
+The controls are those of the systems of the building (valve positions, mixing valves, boiler part load ratio, heat
+pump speed, or the heat of ideal emitters) and the energy is read from the **meters** of the model, states in kWh, so
+that the efficiency of the systems (boiler, COP of the heat pump, fans, PV) is part of the optimisation. Over a
+horizon of ``N`` steps from the time ``t0``, the controller solves with IPOPT
 
 .. math::
 
-    \\min_{u, x, s}\\; \\sum_k \\pi_k \\, \\frac{\\sum_z u_{z,k}\\,\\Delta t}{3.6\\cdot 10^6}
+    \\min\\; \\sum_k \\left(\\pi_k\\, b_k - \\pi^{in}_k (b_k - e_k) + \\pi^{fuel}_k f_k\\right)
     + c_\\mathrm{cap} \\frac{P_\\mathrm{peak}}{1000}
     + \\sum_k \\left(w_1 (s^{lo}_k + s^{hi}_k) + w_2 (s^{lo\\,2}_k + s^{hi\\,2}_k)\\right)\\frac{\\Delta t}{3600}
-    + \\text{(power limit and ramp penalties)}
+    + \\text{(power limit, move and effort penalties)}
 
-subject to the RC dynamics ``x[k+1] = F(x[k], u[k], d[k])``, the heating power bounds
-``0 <= u <= u_max``, the soft comfort band ``T_lower - s_lo <= T_zone <= T_upper + s_hi`` and
-the soft building-level power limit of the demand response events. ``pi_k`` is the energy price
-of the tariff: with a time-varying price the optimiser pre-heats the thermal mass when the
-energy is cheap and lets the temperature float inside the comfort band when it is expensive.
+where ``e_k`` is the net electricity of step ``k`` [kWh] (the electricity meters and the heat of the ideal
+emitters, minus the production), ``b_k`` its smooth positive part (bought, the rest is sold at ``pi_in``) and
+``f_k`` the fuel drawn. The ODE is collocated on Radau IIA points in each step
+(:class:`trano_optimization.collocation.Collocated`, stable for the stiff water nodes), the comfort band
+``T_lower - s_lo <= T_zone <= T_upper + s_hi`` is soft, and the demand response power limits and the capacity charge
+apply to the electric power bought from the grid.
 
-The optimisation problem is built once; each call to :meth:`ModelPredictiveController.solve`
-only updates the parameters (initial state, forecasts, prices, bounds) and warm starts IPOPT.
+The problem is built once with the time, the forecasts, the prices and the bounds as parameters; each call to
+:meth:`ModelPredictiveController.solve` updates them and warm starts IPOPT from the previous plan.
 """
 
 from __future__ import annotations
@@ -29,14 +33,16 @@ import casadi as ca
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
+from trano_optimization.collocation import SOLVED, Collocated
 
-from mpctrano.calibration import ipopt_options
 from mpctrano.comfort import ComfortSpec
-from mpctrano.forecast import forecast_index
-from mpctrano.model import STATE_BOUNDS, RCModel
+from mpctrano.forecast import forecast_index, seconds_of_year
+from mpctrano.model import FastModel
 from mpctrano.tariff import Tariff
 
 WATT_HOUR_TO_JOULE = 3.6e6
+NET_SMOOTHING = 1e-3
+"""Smoothing [kWh] of the positive part of the net electricity of a step."""
 
 
 class MPCSettings(BaseModel):
@@ -44,18 +50,38 @@ class MPCSettings(BaseModel):
 
     horizon: int = Field(24, ge=1, description="Prediction horizon [steps]")
     time_step: float = Field(3600.0, gt=0, description="Control interval [s]")
+    degree: int = Field(3, ge=1, le=9, description="Radau collocation points per step")
     comfort_penalty: float = Field(5.0, ge=0, description="Linear penalty of comfort violations [EUR/(K.h)]")
     comfort_quadratic: float = Field(1.0, ge=0, description="Quadratic penalty of comfort violations [EUR/(K2.h)]")
     power_limit_penalty: float = Field(
-        50.0, ge=0, description="Penalty of the energy above a demand response power limit [EUR/kWh] (soft cap)"
+        50.0, ge=0, description="Penalty of the electricity above a demand response power limit [EUR/kWh]"
     )
-    ramp_weight: float = Field(0.0, ge=0, description="Penalty of control changes [EUR/kW2]")
-    max_power: dict[str, float] | None = Field(None, description="Maximum heating power per zone [W]")
-    min_power: float = Field(0.0, description="Minimum heating power [W] (negative allows cooling)")
-    substeps: int | None = None
-    max_iterations: int = Field(300, ge=1)
-    tolerance: float = Field(1e-6, gt=0)
-    verbose: bool = False
+    move_weight: float = Field(
+        1e-2, ge=0, description="Penalty of a full-range change of a control between steps [EUR]"
+    )
+    effort_weight: float = Field(
+        1e-3,
+        ge=0,
+        description="Penalty of a control at full range over a step [EUR]: separates the controls that deliver the "
+        "same heat (a valve and the boiler), whose flat valley IPOPT would otherwise crawl along",
+    )
+    fuel_price: float | None = Field(
+        None, ge=0, description="Price of the fuel [EUR/kWh]; None: the energy price of the tariff"
+    )
+    feed_in_price: float | None = Field(
+        None, description="Price of the electricity sold [EUR/kWh]; None: the energy price of the tariff"
+    )
+    warm_mu_init: float | None = Field(
+        1e-3,
+        gt=0,
+        description="Initial barrier parameter of IPOPT once the controller has a previous plan: the warm start is "
+        "close to the optimum, IPOPT's default (0.1) pushes it back into the interior and costs iterations; "
+        "None: IPOPT's default",
+    )
+    default_heat_bound: float = Field(1e4, gt=0, description="Upper bound of a heat control [W] without a max")
+    ipopt: dict[str, float | int | str] = Field(
+        default_factory=dict, description="IPOPT options added to trano's defaults (max_iter, tol, ...)"
+    )
 
 
 @dataclass(frozen=True)
@@ -89,125 +115,185 @@ class MPCSolution:
 
 
 class ModelPredictiveController:
-    """Economic MPC of a Trano RC model, see the module documentation for the problem."""
+    """Economic MPC of a ``FastModelMPC`` model, see the module documentation for the problem."""
 
-    def __init__(self, model: RCModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
+    def __init__(self, model: FastModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
         self.model = model
         self.settings = settings
         self.comfort = comfort
         self.tariff = tariff
-        self.max_power = self._max_power()
-        self.dynamics = model.discrete(settings.time_step, settings.substeps)
+        collocation = model.collocation_settings(
+            settings.time_step,
+            degree=settings.degree,
+            default_heat_bound=settings.default_heat_bound,
+            ipopt=settings.ipopt,
+        )
+        self.collocated = Collocated(model.model, model.roles, collocation, model.parameters)
+        self._cold_settings = collocation
+        self._warm_settings = (
+            collocation
+            if settings.warm_mu_init is None
+            else collocation.model_copy(update={"ipopt": {"mu_init": settings.warm_mu_init, **settings.ipopt}})
+        )
         self._previous: dict[str, np.ndarray] | None = None
+        self.energy: pd.DataFrame | None = None
+        """Electricity bought and net, fuel [kWh] and electric power [W] of each step of the last plan."""
         self._build()
 
-    def _max_power(self) -> np.ndarray:
-        if self.settings.max_power is None:
-            return self.model.max_heating_power
-        missing = set(self.model.zone_names) - set(self.settings.max_power)
-        if missing:
-            raise ValueError(f"max_power is missing the zones {sorted(missing)}.")
-        return np.array([self.settings.max_power[zone] for zone in self.model.zone_names], dtype=float)
+    @property
+    def lower(self) -> np.ndarray:
+        return np.asarray(self.collocated.lower, dtype=float)
 
-    def _build(self) -> None:
-        model, settings = self.model, self.settings
-        N, dt = settings.horizon, settings.time_step
+    @property
+    def upper(self) -> np.ndarray:
+        return np.asarray(self.collocated.upper, dtype=float)
+
+    def _meter_rows(self, carrier: str) -> list[int]:
+        return [self.model.state_names.index(name) for name, kind in self.model.meters.items() if kind == carrier]
+
+    def _build(self) -> None:  # noqa: PLR0915 - one optimisation problem, written in one place
+        model, settings, collocated = self.model, self.settings, self.collocated
+        N, dt, degree = settings.horizon, settings.time_step, settings.degree
+        n_x, n_u, n_d, n_c = model.n_states, model.n_controls, model.n_disturbances, model.n_zones
         hours = dt / 3600
         opti = ca.Opti()
-        X = opti.variable(model.n_states, N + 1)
-        U = opti.variable(model.n_controls, N)
-        S_lo = opti.variable(model.n_zones, N)
-        S_hi = opti.variable(model.n_zones, N)
-        S_lim = opti.variable(1, N)
+        z = opti.variable(n_x, N + 1)  # states shifted by the offsets of collocated (temperatures in degC)
+        zc = opti.variable(n_x * degree, N)
+        v = opti.variable(n_u, N)  # controls scaled to [0, 1]
+        s_lo = opti.variable(n_c, N)
+        s_hi = opti.variable(n_c, N)
+        s_lim = opti.variable(1, N)
         peak = opti.variable()
 
-        x0 = opti.parameter(model.n_states)
-        D = opti.parameter(model.n_disturbances, N)
+        t0 = opti.parameter()
+        x0 = opti.parameter(n_x)
+        disturbances = opti.parameter(n_d, N)
         price = opti.parameter(1, N)
-        lower = opti.parameter(model.n_zones, N)
-        upper = opti.parameter(model.n_zones, N)
+        feed_in = opti.parameter(1, N)
+        fuel_price = opti.parameter(1, N)
+        lower = opti.parameter(n_c, N)
+        upper = opti.parameter(n_c, N)
         limit = opti.parameter(1, N)
         capacity = opti.parameter()
-        u_previous = opti.parameter(model.n_controls)
+        v_previous = opti.parameter(n_u)
+        first_move = opti.parameter()  # 1 when v_previous is the control applied before the horizon, else 0
 
-        opti.subject_to(X[:, 0] == x0)
+        offset = ca.DM(collocated.offset)
         for k in range(N):
-            opti.subject_to(X[:, k + 1] == self.dynamics(X[:, k], U[:, k], D[:, k], model.parameters))
-        opti.subject_to(opti.bounded(STATE_BOUNDS[0], ca.vec(X), STATE_BOUNDS[1]))
-        opti.subject_to(opti.bounded(settings.min_power, ca.vec(U), np.tile(self.max_power, N)))
-        opti.subject_to(ca.vec(S_lo) >= 0)
-        opti.subject_to(ca.vec(S_hi) >= 0)
-        opti.subject_to(ca.vec(S_lim) >= 0)
-        comfort = X[model.comfort_indices, 1:]
-        opti.subject_to(ca.vec(comfort + S_lo) >= ca.vec(lower))
-        opti.subject_to(ca.vec(comfort - S_hi) <= ca.vec(upper))
-        total = ca.sum1(U)
-        opti.subject_to(ca.vec(total - S_lim) <= ca.vec(limit))
-        opti.subject_to(ca.vec(total) <= peak)
+            residual, end = collocated._interval(t0 + k * dt, z[:, k], zc[:, k], v[:, k], disturbances[:, k])
+            opti.subject_to(residual == 0)
+            opti.subject_to(z[:, k + 1] == end)
+        opti.subject_to(z[:, 0] == x0 - offset)
+        opti.subject_to(opti.bounded(0, ca.vec(v), 1))
+        collocated.bound_temperatures(opti, z[:, 1:])
+        for slack in (s_lo, s_hi, s_lim):
+            opti.subject_to(ca.vec(slack) >= 0)
+        comfort = z[model.comfort_indices, 1:] + offset[model.comfort_indices] @ ca.DM.ones(1, N)
+        opti.subject_to(ca.vec(comfort + s_lo) >= ca.vec(lower))
+        opti.subject_to(ca.vec(comfort - s_hi) <= ca.vec(upper))
 
-        energy_cost = ca.sum2(price * total) * dt / WATT_HOUR_TO_JOULE
+        def drawn(rows: list[int]) -> ca.MX:
+            """Energy metered over each step [kWh], (1, N)."""
+            return ca.sum1(z[rows, 1:] - z[rows, :-1]) if rows else ca.MX.zeros(1, N)
+
+        heat = np.array([1.0 if name in model.heat_controls else 0.0 for name in model.control_names])
+        span = self.upper - self.lower
+        heat_energy = (ca.DM(heat * span).T @ v + float(heat @ self.lower)) * dt / WATT_HOUR_TO_JOULE
+        net = drawn(self._meter_rows("electricity")) + heat_energy - drawn(self._meter_rows("electricity_production"))
+        bought = 0.5 * (net + ca.sqrt(net**2 + NET_SMOOTHING**2))
+        fuel = drawn(self._meter_rows("fuel"))
+        power = bought * WATT_HOUR_TO_JOULE / dt  # electric power bought from the grid [W]
+        opti.subject_to(ca.vec(power - s_lim) <= ca.vec(limit))
+        opti.subject_to(ca.vec(power) <= peak)
+
+        electricity_cost = ca.sum2(price * bought - feed_in * (bought - net))
+        fuel_cost = ca.sum2(fuel_price * fuel)
         capacity_cost = capacity * peak / 1000
         comfort_cost = (
-            settings.comfort_penalty * (ca.sum1(ca.sum2(S_lo)) + ca.sum1(ca.sum2(S_hi)))
-            + settings.comfort_quadratic * (ca.sumsqr(S_lo) + ca.sumsqr(S_hi))
+            settings.comfort_penalty * (ca.sum1(ca.sum2(s_lo)) + ca.sum1(ca.sum2(s_hi)))
+            + settings.comfort_quadratic * (ca.sumsqr(s_lo) + ca.sumsqr(s_hi))
         ) * hours
-        limit_cost = settings.power_limit_penalty * ca.sum2(S_lim) * dt / WATT_HOUR_TO_JOULE
-        ramp = ca.horzcat(U[:, 0] - u_previous, U[:, 1:] - U[:, :-1]) / 1000
-        ramp_cost = settings.ramp_weight * ca.sumsqr(ramp)
-        objective = energy_cost + capacity_cost + comfort_cost + limit_cost + ramp_cost
-        opti.minimize(objective)
-        opti.solver("ipopt", ipopt_options(settings.max_iterations, settings.tolerance, settings.verbose))
+        limit_cost = settings.power_limit_penalty * ca.sum2(s_lim) * dt / WATT_HOUR_TO_JOULE
+        moves = ca.sumsqr(v[:, 1:] - v[:, :-1]) if N > 1 else ca.MX(0)
+        move_cost = settings.move_weight * (moves + first_move * ca.sumsqr(v[:, 0] - v_previous))
+        effort_cost = settings.effort_weight * ca.sumsqr(v)
+        opti.minimize(
+            electricity_cost + fuel_cost + capacity_cost + comfort_cost + limit_cost + move_cost + effort_cost
+        )
 
         self._opti = opti
-        self._variables = {"X": X, "U": U, "S_lo": S_lo, "S_hi": S_hi, "S_lim": S_lim, "peak": peak}
+        self._variables = {"z": z, "zc": zc, "v": v, "s_lo": s_lo, "s_hi": s_hi, "s_lim": s_lim, "peak": peak}
         self._parameters = {
-            "x0": x0, "D": D, "price": price, "lower": lower, "upper": upper, "limit": limit,
-            "capacity": capacity, "u_previous": u_previous,
+            "t0": t0, "x0": x0, "D": disturbances, "price": price, "feed_in": feed_in, "fuel_price": fuel_price,
+            "lower": lower, "upper": upper, "limit": limit, "capacity": capacity, "v_previous": v_previous,
+            "first_move": first_move,
         }  # fmt: skip
         self._costs = {
-            "energy": energy_cost, "capacity": capacity_cost, "comfort": comfort_cost,
-            "power_limit": limit_cost, "ramp": ramp_cost,
+            "electricity": electricity_cost, "fuel": fuel_cost, "capacity": capacity_cost, "comfort": comfort_cost,
+            "power_limit": limit_cost, "moves": move_cost, "effort": effort_cost,
         }  # fmt: skip
+        self._energy = {"electricity_bought": bought, "electricity_net": net, "fuel": fuel, "power": power}
 
     def solve(self, x0: np.ndarray, forecast: pd.DataFrame, u_previous: np.ndarray | None = None) -> MPCSolution:
-        """Optimal plan from the state ``x0`` with the disturbance ``forecast`` (``horizon`` rows)."""
-        settings, model = self.settings, self.model
+        """Optimal plan from the state ``x0`` with the disturbance ``forecast`` (``horizon`` rows from ``t0``).
+
+        ``u_previous`` is the control applied before the horizon (in the units of the model), penalised as a move.
+        """
+        settings, model, collocated = self.settings, self.model, self.collocated
         N, dt = settings.horizon, settings.time_step
         if len(forecast) < N:
             raise ValueError(f"The forecast has {len(forecast)} rows, the horizon needs {N}.")
         forecast = forecast.iloc[:N]
         index = pd.DatetimeIndex(forecast.index)
         end_of_steps = forecast_index(index[0] + pd.Timedelta(seconds=dt), N, dt)
+        start_time = float(seconds_of_year(index[:1])[0])
         signal = self.tariff.signal(index)
         bounds = self.comfort.bounds(model, end_of_steps)
-        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 10 * self.max_power.sum())
+        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 1e9)
+        disturbances = forecast[model.disturbance_names].to_numpy(dtype=float).T
+        x0 = np.asarray(x0, dtype=float)
 
-        opti, parameters = self._opti, self._parameters
-        opti.set_value(parameters["x0"], np.asarray(x0, dtype=float))
-        opti.set_value(parameters["D"], forecast[model.disturbance_names].to_numpy(dtype=float).T)
-        opti.set_value(parameters["price"], signal.prices.reshape(1, -1))
-        opti.set_value(parameters["lower"], bounds.lower)
-        opti.set_value(parameters["upper"], bounds.upper)
-        opti.set_value(parameters["limit"], limits.reshape(1, -1))
-        opti.set_value(parameters["capacity"], signal.capacity_charge)
-        opti.set_value(parameters["u_previous"], np.zeros(model.n_controls) if u_previous is None else u_previous)
-        self._warm_start(np.asarray(x0, dtype=float))
+        def row(values: np.ndarray | float | None) -> np.ndarray:
+            return np.broadcast_to(signal.prices if values is None else values, (N,)).reshape(1, -1)
 
-        started = time.perf_counter()
-        solution, success, status = _solve(opti)
-        solve_time = time.perf_counter() - started
-        variables = self._variables
-        states = np.asarray(solution.value(variables["X"]), dtype=float).reshape(model.n_states, N + 1)
-        controls = np.asarray(solution.value(variables["U"]), dtype=float).reshape(model.n_controls, N)
-        self._previous = {
-            name: np.asarray(solution.value(variable), dtype=float) for name, variable in variables.items()
+        parameter_values: dict[str, float | np.ndarray] = {
+            "t0": start_time,
+            "x0": x0,
+            "D": disturbances,
+            "price": row(signal.prices),
+            "feed_in": row(settings.feed_in_price),
+            "fuel_price": row(settings.fuel_price),
+            "lower": bounds.lower,
+            "upper": bounds.upper,
+            "limit": limits.reshape(1, -1),
+            "capacity": signal.capacity_charge,
+            "v_previous": np.zeros(model.n_controls)
+            if u_previous is None
+            else collocated.scaled(np.asarray(u_previous, dtype=float).reshape(-1, 1)).ravel(),
+            "first_move": 0.0 if u_previous is None else 1.0,
         }
-        costs = {name: float(solution.value(expression)) for name, expression in self._costs.items()}
+        for name, parameter_value in parameter_values.items():
+            self._opti.set_value(self._parameters[name], parameter_value)
+        self._warm_start(x0, disturbances, start_time)
+
+        collocated.settings = self._cold_settings if self._previous is None else self._warm_settings
+        started = time.perf_counter()
+        value, status = collocated.solve_nlp(self._opti)
+        solve_time = time.perf_counter() - started
+        stats = self._opti.stats()
+        solution = {name: np.asarray(value(variable), dtype=float) for name, variable in self._variables.items()}
+        success = status in SOLVED
+        self._previous = solution if success else None  # a failed plan is a poor start: start cold next time
+        states = solution["z"].reshape(model.n_states, N + 1) + collocated.offset[:, None]
+        controls = collocated.unscaled(np.clip(solution["v"].reshape(model.n_controls, N), 0.0, 1.0))
+        costs = {name: float(value(expression)) for name, expression in self._costs.items()}
+        self.energy = pd.DataFrame(
+            {name: np.asarray(value(expression), dtype=float).ravel() for name, expression in self._energy.items()},
+            index=index,
+        )
         return MPCSolution(
             index=index,
-            controls=pd.DataFrame(
-                np.clip(controls.T, settings.min_power, self.max_power), index=index, columns=model.control_names
-            ),
+            controls=pd.DataFrame(controls.T, index=index, columns=model.control_names),
             states=pd.DataFrame(states.T, index=index.append(end_of_steps[-1:]), columns=model.state_names),
             lower=bounds.lower,
             upper=bounds.upper,
@@ -215,34 +301,33 @@ class ModelPredictiveController:
             costs=costs,
             success=success,
             status=status,
-            iterations=int(solution.stats().get("iter_count", 0)),
+            iterations=int(stats.get("iter_count", 0)),
             solve_time=solve_time,
         )
 
-    def _warm_start(self, x0: np.ndarray) -> None:
-        variables = self._variables
-        N = self.settings.horizon
+    def _warm_start(self, x0: np.ndarray, disturbances: np.ndarray, start_time: float) -> None:
+        """Initial guess: a simulation of the model (CVODES) from ``x0``, consistent with the dynamics, under the
+        previous plan shifted by one step (mid-range controls at the first solve).
+
+        Shifting the previous states instead starts IPOPT off the dynamics at the first step (the measured state
+        differs from the predicted one) and makes it slower than a cold start on the stiff water nodes.
+        """
+        collocated, variables, opti = self.collocated, self._variables, self._opti
+        N, degree, n_u = self.settings.horizon, self.settings.degree, self.model.n_controls
         if self._previous is None:
-            opti = self._opti
-            opti.set_initial(variables["X"], np.tile(x0.reshape(-1, 1), (1, N + 1)))
-            opti.set_initial(variables["U"], np.tile(0.3 * self.max_power.reshape(-1, 1), (1, N)))
-            return
-        previous = self._previous
-        X = np.asarray(previous["X"]).reshape(self.model.n_states, N + 1)
-        U = np.asarray(previous["U"]).reshape(self.model.n_controls, N)
-        shifted_x = np.hstack([X[:, 1:], X[:, -1:]])
-        shifted_x[:, 0] = x0
-        self._opti.set_initial(variables["X"], shifted_x)
-        self._opti.set_initial(variables["U"], np.hstack([U[:, 1:], U[:, -1:]]))
-        for name in ("S_lo", "S_hi"):
-            S = np.asarray(previous[name]).reshape(self.model.n_zones, N)
-            self._opti.set_initial(variables[name], np.hstack([S[:, 1:], S[:, -1:]]))
-        self._opti.set_initial(variables["peak"], float(previous["peak"]))
+            v = np.full((n_u, N), 0.5)
+        else:
+            v = _shift(self._previous["v"].reshape(n_u, N))
+            for name in ("s_lo", "s_hi"):
+                opti.set_initial(variables[name], _shift(self._previous[name].reshape(self.model.n_zones, N)))
+            opti.set_initial(variables["peak"], float(self._previous["peak"]))
+        z = collocated.simulate(x0, collocated.unscaled(v), disturbances, start_time) - collocated.offset[:, None]
+        opti.set_initial(variables["z"], z)
+        opti.set_initial(variables["zc"], np.tile(z[:, 1:], (degree, 1)))
+        opti.set_initial(variables["v"], v)
 
 
-def _solve(opti: Any) -> tuple[Any, bool, str]:  # noqa: ANN401
-    try:
-        solution = opti.solve()
-    except RuntimeError as error:
-        return opti.debug, False, str(error).splitlines()[-1][:120]
-    return solution, bool(solution.stats()["success"]), str(solution.stats()["return_status"])
+def _shift(values: Any) -> np.ndarray:  # noqa: ANN401
+    """Drop the first column and repeat the last one."""
+    values = np.asarray(values, dtype=float)
+    return np.hstack([values[:, 1:], values[:, -1:]])

@@ -10,6 +10,9 @@ Every step lists what it touches and a "done when" check, so a session can stop 
 the next one resumes from this file. Building models that the tutorials need and Trano lacks are
 added to Trano (test models and FastModel components) on its feature branch.
 
+Trano version: the migration to trano >= 0.57 (trano-optimization, containers) is planned and tracked
+in `TRANO_COMPATIBILITY_PLAN.md` at the root of the repository.
+
 ---
 
 ## 0. Where things stand
@@ -20,7 +23,7 @@ added to Trano (test models and FastModel components) on its feature branch.
 trano YAML --(FastModelMPC)--> building_mpc (controls of the systems as inputs)
            --(FastModel)-----> the same building with the controllers of the YAML (rule-based reference)
            --(rumoca c74cddf)--> CasADi ODE xdot = f(t, x, u, p)
-           --> mpctrano: Radau collocation (trano.optimization), economic MPC on the meters,
+           --> mpctrano: Radau collocation (trano_optimization), economic MPC on the meters,
                moving horizon estimation, calibration of parameter groups, closed loop, scenarios
 ```
 

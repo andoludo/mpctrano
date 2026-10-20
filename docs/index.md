@@ -29,7 +29,7 @@ the systems are inputs. `FastModel` reads everything from the Modelica model:
   load ratio or heat pump speed (between 0 and 1), the heat of ideal emitters [W];
 * `disturbance_names` - the weather channels (`weather_inputs.TDryBul`, `.TBlaSky`, `.winSpe`,
   `.winDir`, `.HDirNor`, `.HDifHor`, `.HGloHor`) and the internal gains per floor area of each
-  occupancy model (`<occupancy>.gai.QRad`, `.QCon`);
+  occupancy model (`<occupancy>_gai.QRad`, `.QCon`);
 * `comfort_states` - the air temperature of each zone (`<zone>.TAir`);
 * `meters` - the energy the systems drew or produced since the start, states in kWh: `EFue` (fuel),
   `EEle` (electricity of a heat pump), `EFan` (fans), `EPro` (PV);
@@ -38,12 +38,20 @@ the systems are inputs. `FastModel` reads everything from the Modelica model:
 * `with_parameters({...})`, `select_parameters(patterns)`, `write(directory)`.
 
 The model is nonlinear and stiff (water nodes): the optimisation problems collocate it on Radau
-points (`trano.optimization`), which keeps them stable whatever the step. rumoca does not report the
+points (`trano_optimization`), which keeps them stable whatever the step. rumoca does not report the
 unit of array states (wall layers, radiator water): `FastModel` restores the kelvin on them so that
 the collocation scales and bounds them as temperatures.
 
+The variables are named after the elements of the YAML (`space_001.TAir`, `boiler_001.EEle`,
+`externalwall_0.G[1]`): `FastModel.from_yaml` generates the model without the containers Trano groups
+the elements in since 0.57 (`network.model(include_container=False)`), and `FastModel.from_file`
+strips their prefixes (`envelope1.`, `production1.`, ...) from a containerised model, as written by
+`trano create-model`. Both give the same model; `tests/test_trano_contract.py` checks it, with the
+translation of Trano's models by rumoca, against the installed Trano.
+
 The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`); `uv sync`
-builds it from source, see the installation section of the README.
+builds it from source, see the installation section of the README. The collocation, the moving
+horizon estimation and the CasADi model come from `trano-optimization` (formerly `trano.optimization`).
 
 ## 2. Disturbances
 

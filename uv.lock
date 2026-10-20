@@ -2502,6 +2502,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "rumoca" },
     { name = "trano" },
+    { name = "trano-optimization" },
     { name = "typer" },
 ]
 
@@ -2543,7 +2544,8 @@ requires-dist = [
     { name = "plotly", marker = "extra == 'plot'", specifier = ">=5.22" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "rumoca", git = "https://github.com/CogniPilot/rumoca?subdirectory=crates%2Frumoca-bind-python&rev=c74cddff6d7669fc2c3603d43529ab62e0964072" },
-    { name = "trano", specifier = ">=0.48.0" },
+    { name = "trano", specifier = ">=0.57.0,<1" },
+    { name = "trano-optimization", specifier = ">=0.2.0,<1" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
 provides-extras = ["plot", "notebook"]
@@ -4704,7 +4706,7 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.48.0"
+version = "0.58.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4719,12 +4721,49 @@ dependencies = [
     { name = "pydot" },
     { name = "python-docx" },
     { name = "pyyaml-include" },
+    { name = "trano-simulate" },
     { name = "typer" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/ad/3689765278a6574ab1b28cbdab98c78d9b46df5b1bca0596904e9eb233b1/trano-0.48.0.tar.gz", hash = "sha256:fd142e277420f19c0230d8bfbd07798a9f3e5252f1d6703d67d9552d6f08cc47", size = 275624, upload-time = "2026-10-14T07:14:42.991Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8f/df/61421c4c18778f6d416647516a3c75332d27a8a4b32700d787ab000d27c2/trano-0.58.0.tar.gz", hash = "sha256:b2cf08e33da178f93dab3dc613036fcb8bdfb984f10b8b67d933a4c73e2f52ac", size = 281451, upload-time = "2026-10-20T17:12:50.91Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/85/e3/c7322bb50ac5eff98027c76b5a7ff1663a4e31c94bfeb755c76e7b81c528/trano-0.48.0-py3-none-any.whl", hash = "sha256:fd8f300eb28299f106a055efb2b04da70c3a1cf119c0932aef006f76e4de26ee", size = 332946, upload-time = "2026-10-14T07:14:41.682Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/fa/10eb16e77364b100b15364ed54c3e5c7020a5b7daa313c62d42ba20d81e2/trano-0.58.0-py3-none-any.whl", hash = "sha256:5e1569308550bda62e73b571f29e4c9e6b51cb581ad6fbb36b2e7d8b38d82fff", size = 337556, upload-time = "2026-10-20T17:12:49.688Z" },
+]
+
+[[package]]
+name = "trano-optimization"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "casadi" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pydantic" },
+    { name = "rumoca" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/6b/29a8306eefc60a9c6153be05785486e9b8772e2e09a3b8fc2f14eeadd7e0/trano_optimization-0.2.0.tar.gz", hash = "sha256:b44948e72f8c0e885f4a4765257e9ae689d5a1430bbd2f1a99c58e74e046018a", size = 15684, upload-time = "2026-10-20T17:59:53.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/94/4d4c35d5c755e6b361b51c0a9348889939031f9fab8592585c89a801489f/trano_optimization-0.2.0-py3-none-any.whl", hash = "sha256:c8d72f15685a8d3991bcbca089fc17a12b3f9e8303a15147c0ba0418967ba170", size = 15590, upload-time = "2026-10-20T17:59:52.182Z" },
+]
+
+[[package]]
+name = "trano-simulate"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "buildingspy" },
+    { name = "docker" },
+    { name = "jinja2" },
+    { name = "matplotlib" },
+    { name = "pandas" },
+    { name = "plotly" },
+    { name = "pydantic" },
+    { name = "python-docx" },
+    { name = "yattag" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/c5/56ce930c7d7f98036aec119349f4127dd311edd209c1851a5a1465ab68fb/trano_simulate-0.2.0.tar.gz", hash = "sha256:b9f006acdecba3f457051841a6a4a1eca965260d128c6f5703cf47ff0e9a9af9", size = 24356, upload-time = "2026-10-19T04:56:05.68Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b2/97/b32247a5af3f7e0d468421ac1a0f0a8f0ecf7c14ff16c35f51a8307f7243/trano_simulate-0.2.0-py3-none-any.whl", hash = "sha256:3b4d6b1088937897da6d207345e2b71d26bf58a6b7e3b146c98275568ed011cd", size = 27850, upload-time = "2026-10-19T04:56:04.524Z" },
 ]
 
 [[package]]

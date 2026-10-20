@@ -35,7 +35,8 @@ def test_mpc_keeps_comfort_at_the_cost_of_the_metered_fuel(house: FastModel) -> 
     forecast = disturbances(house, START, 25)
     plan = controller.solve(house.initial_state, forecast)
     assert plan.success, plan.status
-    assert plan.controls.columns.tolist() == CONTROLS
+    assert plan.controls.columns.tolist() == house.control_names
+    assert sorted(house.control_names) == sorted(CONTROLS)
     assert plan.controls.to_numpy().min() >= 0.0
     assert plan.controls.to_numpy().max() <= 1.0
     temperatures = plan.states[house.comfort_states[0]].to_numpy()[1:]

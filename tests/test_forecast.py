@@ -69,8 +69,8 @@ def test_weather_forecaster_gives_every_disturbance(heat_pump: FastModel, foreca
     assert frame.columns.tolist() == heat_pump.disturbance_names
     assert frame.notna().all().all()
     occupied = (frame.index.hour >= 7) & (frame.index.hour < 22)
-    np.testing.assert_allclose(frame["occupancy_1.gai.QRad"], np.where(occupied, 40 / 21, 0.0))
-    np.testing.assert_allclose(frame["occupancy_1.gai.QCon"], np.where(occupied, 75 / 21, 0.0))
+    np.testing.assert_allclose(frame["occupancy_1_gai.QRad"], np.where(occupied, 40 / 21, 0.0))
+    np.testing.assert_allclose(frame["occupancy_1_gai.QCon"], np.where(occupied, 75 / 21, 0.0))
     assert np.all(frame["weather_inputs.TBlaSky"] < frame["weather_inputs.TDryBul"])
 
 
@@ -83,7 +83,7 @@ def test_weather_forecaster_noise_and_custom_occupancy(heat_pump: FastModel) -> 
     pd.testing.assert_series_equal(forecast["weather_inputs.winSpe"], perfect["weather_inputs.winSpe"])
     pd.testing.assert_frame_equal(noisy.realisation(start, 24, 3600.0), perfect)
     empty = WeatherForecaster.from_model(heat_pump, occupancy=OccupancySchedule(gain_per_area=0.0))
-    assert empty.realisation(start, 24, 3600.0)["occupancy_1.gai.QCon"].sum() == 0.0
+    assert empty.realisation(start, 24, 3600.0)["occupancy_1_gai.QCon"].sum() == 0.0
 
 
 def test_data_forecaster_replays_and_checks_coverage(heat_pump: FastModel) -> None:

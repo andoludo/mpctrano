@@ -4,22 +4,25 @@
 # **Learning objectives**
 #
 # - confirm that the toolchain of the tutorials is installed: `trano` (YAML to Modelica),
-#   `rumoca` (Modelica to CasADi, the commit `uv sync` builds), `casadi` with IPOPT, `mpctrano`;
+#   `rumoca` (Modelica to CasADi, the commit `uv sync` builds), `trano-optimization` (collocation),
+#   `casadi` with IPOPT, `mpctrano`;
 # - generate a first CasADi model from a Trano YAML with the `FastModelMPC` library and plan its heating.
 #
 # Run this notebook first; every other tutorial assumes it passes. In continuous integration
 # the notebooks run with `MPCTRANO_QUICK=1` (shorter periods), see `tutorials/README.md`.
 
 # %%
+from importlib.metadata import version
+
 import casadi
 import pandas as pd
 import rumoca
-import trano
 
 import mpctrano
 from tutorials._common import MODEL, QUICK, horizon
 
-print(f"trano {trano.__version__ if hasattr(trano, '__version__') else 'installed'}")
+print(f"trano {version('trano')}")
+print(f"trano-optimization {version('trano-optimization')}")
 print(f"rumoca {rumoca.version()}")
 print(f"casadi {casadi.__version__}")
 print(f"mpctrano {mpctrano.__version__}")

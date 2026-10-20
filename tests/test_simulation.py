@@ -55,8 +55,8 @@ def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
     assert frame.columns.tolist() == house.disturbance_names
     assert frame.notna().all().all()
     occupied = (frame.index.hour >= 9) & (frame.index.hour < 17)
-    np.testing.assert_allclose(frame["occupancy_1.gai.QRad"], np.where(occupied, 40 / 21, 0.0))
-    np.testing.assert_allclose(frame["occupancy_1.gai.QCon"], np.where(occupied, 75 / 21, 0.0))
+    np.testing.assert_allclose(frame["occupancy_1_gai.QRad"], np.where(occupied, 40 / 21, 0.0))
+    np.testing.assert_allclose(frame["occupancy_1_gai.QCon"], np.where(occupied, 75 / 21, 0.0))
     assert np.all(frame["weather_inputs.TBlaSky"] < frame["weather_inputs.TDryBul"])
     assert frame["weather_inputs.TDryBul"].between(KELVIN - 20, KELVIN + 20).all()
 

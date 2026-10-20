@@ -17,7 +17,7 @@ takes the `FastModelMPC` version of it, whose controls are the inputs of the sys
 4. **compares** it with the controllers the YAML describes, simulated on the same building (the closed-loop
    `FastModel`).
 
-All optimisation problems collocate the model on Radau points (`trano.optimization`) and are solved with
+All optimisation problems collocate the model on Radau points (`trano_optimization`) and are solved with
 [IPOPT](https://coin-or.github.io/Ipopt/).
 
 ```
@@ -35,12 +35,13 @@ All optimisation problems collocate the model on Radau points (`trano.optimizati
 
 ```bash
 git clone https://github.com/andoludo/mpctrano && cd mpctrano
-uv sync                        # trano, casadi (IPOPT bundled) and rumoca built from source
+uv sync                        # trano, trano-optimization, casadi (IPOPT bundled) and rumoca built from source
 ```
 
 The CasADi export of the FastModel models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`), which is not on
 PyPI yet: `uv sync` builds it from the commit pinned in `pyproject.toml` (a Rust toolchain is needed, about
-10 minutes the first time, cached afterwards). With pip:
+10 minutes the first time, cached afterwards). With pip, rumoca 0.10.2 from PyPI would install but cannot translate
+the FastModel models, so install rumoca first:
 
 ```bash
 pip install "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072#subdirectory=crates/rumoca-bind-python"
@@ -98,7 +99,7 @@ A regularly sampled CSV (or `DataFrame`) whose columns are named after the varia
 | `<zone>.TAir`                         | K/°C | measured air temperature of a zone (at least one)     |
 | `valve_001_y.y`, `boiler_001_y.y`, ... | -   | the controls applied                                  |
 | `boiler_001.EEle`, `boiler_001.EFue`  | kWh  | meter readings, cumulative (optional)                 |
-| `weather_inputs.*`, `<occupancy>.gai.*` |    | disturbances (optional, filled from the weather file) |
+| `weather_inputs.*`, `<occupancy>_gai.*` |    | disturbances (optional, filled from the weather file) |
 
 ## Calibration
 
@@ -160,7 +161,7 @@ make tests-all    # including the slow scenario and tutorial tests
 make notebooks    # execute the notebooks (quick mode)
 ```
 
-Trano is only read: mpctrano consumes the `FastModel` library and `trano.optimization` and never modifies them.
+Trano is only read: mpctrano consumes the `FastModel` library and `trano_optimization` and never modifies them.
 
 ## License
 

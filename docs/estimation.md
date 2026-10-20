@@ -7,7 +7,7 @@ state → predict with the inputs applied during the step* (`StateEstimator`).
 
 `MovingHorizonEstimator(model, dt, start, settings=EstimatorSettings(window=12))` keeps the inputs
 applied and the measurements of the last `window` steps and, at each `correct`, finds the trajectory
-of the model closest to them with the moving horizon estimation of `trano.optimization` (Radau
+of the model closest to them with the moving horizon estimation of `trano_optimization` (Radau
 collocation, IPOPT): the measured air temperatures (`measurement_noise`), the model errors over each
 step (`process_noise`) and the deviation of the first state of the window from its prior
 (`arrival_noise`) are weighted by their standard deviations. When the window slides, the estimate of

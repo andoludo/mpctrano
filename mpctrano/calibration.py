@@ -31,7 +31,7 @@ import casadi as ca
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
-from trano.optimization.collocation import SOLVED, collocation_matrices, default_ipopt_options
+from trano_optimization.collocation import SOLVED, collocation_matrices, default_ipopt_options
 
 from mpctrano.data import MonitoringData, time_step_of
 from mpctrano.forecast import Forecaster, WeatherForecaster, seconds_of_year
@@ -67,10 +67,10 @@ DEFAULT_GROUPS = (
         name="envelope_capacity",
         patterns=(r"(wall|ground|floor|roof|ceiling)\w*_\d+\.C\[\d+\]$", r"window_\d+\.CPan\[\d+\]$"),
     ),
-    ParameterGroup(name="air_capacity", patterns=(r"^space_\d+\.mSenFac$",), lower=1.0, upper=10.0),
-    ParameterGroup(name="infiltration", patterns=(r"^space_\d+\.ACH$",), mode="value", lower=0.0, upper=3.0),
+    ParameterGroup(name="air_capacity", patterns=(r"(^|\.)space_\d+\.mSenFac$",), lower=1.0, upper=10.0),
+    ParameterGroup(name="infiltration", patterns=(r"(^|\.)space_\d+\.ACH$",), mode="value", lower=0.0, upper=3.0),
     ParameterGroup(
-        name="boiler_efficiency", patterns=(r"^boiler_\d+\.eta_nominal$",), lower=0.7, upper=1.1, prior_std=0.2
+        name="boiler_efficiency", patterns=(r"(^|\.)boiler_\d+\.eta_nominal$",), lower=0.7, upper=1.1, prior_std=0.2
     ),
 )
 """Groups of the envelope, the air and the boilers of a FastModel: identifiable from the air temperatures and the
@@ -84,7 +84,7 @@ OPTIONAL_GROUPS = (
         upper=1.5,
         prior_std=0.3,
     ),
-    ParameterGroup(name="emitter_capacity", patterns=(r"^radiator_\d+\.C$",)),
+    ParameterGroup(name="emitter_capacity", patterns=(r"(^|\.)radiator_\d+\.C$",)),
 )
 """Groups that the air temperatures hardly identify on their own (the transmittance of the windows trades with the
 gains, the capacity of the radiators with the air): add them to the settings with data that excites them."""

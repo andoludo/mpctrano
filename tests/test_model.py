@@ -26,7 +26,7 @@ def disturbances(model: FastModel, start: str, steps: int) -> pd.DataFrame:
 
 
 def test_roles_are_read_from_the_modelica_model(house: FastModel) -> None:
-    assert house.control_names == CONTROLS
+    assert sorted(house.control_names) == sorted(CONTROLS)
     assert len(house.disturbance_names) == 9
     assert house.zone_names == ["space_001"]
     assert house.comfort_states == ["space_001.TAir"]
@@ -61,7 +61,7 @@ def test_simulation_heats_the_zone_and_meters_the_fuel(house: FastModel) -> None
 
 
 def test_heat_pump_house_meters_its_electricity(heat_pump: FastModel) -> None:
-    assert heat_pump.control_names == ["valve_001_y.y", "boiler_001_y.y", "three_way_valve_001_y.y"]
+    assert sorted(heat_pump.control_names) == ["boiler_001_y.y", "three_way_valve_001_y.y", "valve_001_y.y"]
     assert heat_pump.meters == {"boiler_001.EEle": "electricity"}
     assert heat_pump.weather_path == WEATHER.resolve()
     assert heat_pump.occupancy["occupancy_1"].start_hour == 7.0

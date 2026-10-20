@@ -61,8 +61,21 @@ release pipeline.
 - The tests, the tutorials and the setup-check notebook use the single-zone air-to-water heat pump
   house of the Trano test suite (`tests/models/single_zone_air_water_heat_pump.yaml`) and its boiler
   variant.
-- trano >= 0.48; rumoca 0.10.3 built from the commit `c74cddf` of its main branch (pinned in
-  `[tool.uv.sources]`; the CasADi export of the FastModel models is not released on PyPI).
+- trano >= 0.57 and trano-optimization >= 0.2 (`trano.optimization` moved to its own package); the
+  published requirement on rumoca is >= 0.10.2 (its last release on PyPI) and `[tool.uv.sources]`
+  builds 0.10.3 from the commit `c74cddf` of its main branch, which the CasADi export of the FastModel
+  models needs.
+- `FastModel.from_network` generates the model without Trano's containers
+  (`include_container=False`), so the variables keep the names of the elements of the YAML;
+  `FastModel.from_source` and `from_file` strip the container prefixes (`envelope1.`,
+  `production1.`, ...) of a containerised model (`without_containers`).
+- The internal gains of an occupancy model are the inputs `<occupancy>_gai.QCon` and `.QRad`
+  (Trano 0.57); the forecaster still reads `<occupancy>.gai.*`. The parameter groups of the
+  calibration match their elements with or without a container prefix.
+- `tests/test_trano_contract.py`: the translation by rumoca of the FastModel and FastModelMPC models
+  of the installed Trano (the two houses of mpctrano, BESTEST 600FF and a six-zone heat pump house
+  copied from Trano), the equality of the flat and containerised models, and the names mpctrano
+  relies on. Trano no longer runs these checks: it does not install rumoca.
 - `ComfortSpec.bounds` takes any model with `zone_names`.
 - The script tutorials of the package moved from `tutorials/` to `tutorials/package/`; the
   top-level `tutorials/` directory is reserved for the numbered interactive notebooks.

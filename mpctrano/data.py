@@ -6,7 +6,7 @@ the :class:`~mpctrano.model.FastModel` of the building:
 * the measured zone air temperatures ``<zone>.TAir`` [K] (at least one zone);
 * the controls applied, held from each sample to the next (``valve_001_y.y``, ``boiler_001_y.y``, ...);
 * optionally, the readings of the energy meters [kWh] (``boiler_001.EEle``, ``boiler_001.EFue``, ...), cumulative;
-* optionally, the disturbances (``weather_inputs.TDryBul``, ``occupancy_1.gai.QCon``, ...); the missing ones are
+* optionally, the disturbances (``weather_inputs.TDryBul``, ``occupancy_1_gai.QCon``, ...); the missing ones are
   filled with a forecaster (:meth:`MonitoringData.fill_disturbances`), e.g. from the weather file of the model.
 
 Temperatures are stored in Kelvin; :meth:`MonitoringData.from_csv` converts from Celsius.

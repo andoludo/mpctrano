@@ -4,14 +4,17 @@
 walls, windows with their angular optics, hydronic circuits, boilers, heat pumps, ventilation, PV) that rumoca
 translates into an explicit ODE ``xdot = f(t, x, u, p)``:
 
-* the roles of the variables are read from the Modelica model itself (:class:`trano.optimization.Roles`): an input
+* the roles of the variables are read from the Modelica model itself (:class:`trano_optimization.Roles`): an input
   with a ``min`` and a ``max`` is a **control** (valve positions, boiler part load ratio, heat pump speed, all
   between 0 and 1, or the heat of an ideal emitter in W), any other input a **disturbance** (the weather channels
   and the internal gains per floor area); the ``TAir`` states are the comfort temperatures and the states in kWh
   are the energy **meters** of the systems;
 * the model depends on the time: the solar position is computed inside it from the seconds of the year;
 * it is nonlinear and stiff (water nodes): it is simulated with CVODES and optimised on Radau collocation points
-  (:class:`trano.optimization.collocation.Collocated`).
+  (:class:`trano_optimization.collocation.Collocated`);
+* its variables are named after the elements of the YAML (``space_001.TAir``, ``boiler_001.EEle``): the model is
+  generated without the containers of Trano (``envelope1``, ``production1``, ...), whose prefixes are stripped from
+  the names of a containerised model read from a file (:func:`without_containers`).
 
 The ``FastModel`` library of Trano gives the closed loop of the same building, with the controllers of its YAML:
 the rule-based reference of the MPC (:func:`mpctrano.simulation.run_rule_based`).
@@ -23,15 +26,16 @@ from __future__ import annotations
 
 import fnmatch
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cache, cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args
 
 import numpy as np
-from trano.optimization import CasadiModel, CollocationSettings, Roles
-from trano.optimization.collocation import Collocated
+from trano_optimization import CasadiModel, CollocationSettings, Roles, Variable
+from trano_optimization.collocation import Collocated
 
 from mpctrano.forecast import OccupancySchedule
 from mpctrano.units import STATE_BOUNDS
@@ -94,7 +98,7 @@ class FastModel:
     parameters: np.ndarray
     base_dir: Path | None = None
     occupancy: dict[str, OccupancySchedule] = field(default_factory=dict)
-    """Schedule of each occupancy model (by name, the ``<name>.gai`` inputs), from the Trano network."""
+    """Schedule of each occupancy model (by name, the ``<name>_gai`` inputs), from the Trano network."""
     weather_file: str | None = None
     """Weather file of the runnable model, as written in it (a path or a ``modelica://`` URI)."""
     _collocated: dict[float, Collocated] = field(default_factory=dict, init=False, repr=False)
@@ -123,7 +127,7 @@ class FastModel:
                     f"{RUMOCA_COMMIT} (uv sync installs it)."
                 ) from error
             raise
-        casadi_model = with_temperature_units(casadi_model)
+        casadi_model = with_temperature_units(without_containers(casadi_model))
         roles = roles or Roles.infer(casadi_model.description)
         roles.check(casadi_model.description)
         return cls(
@@ -144,7 +148,10 @@ class FastModel:
         roles: Roles | None = None,
         occupancy: Mapping[str, OccupancySchedule] | None = None,
     ) -> FastModel:
-        """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``."""
+        """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``.
+
+        The package can be containerised (``trano create-model`` writes it so): the container prefixes are stripped.
+        """
         path = Path(modelica)
         return cls.from_source(
             path.read_text(),
@@ -156,9 +163,12 @@ class FastModel:
 
     @classmethod
     def from_network(cls, network: Network, roles: Roles | None = None, base_dir: Path | None = None) -> FastModel:
-        """The model of a network generated with the ``FastModelMPC`` library, with its occupancy schedules."""
+        """The model of a network generated with the ``FastModelMPC`` library, with its occupancy schedules.
+
+        The model is generated without containers, so its variables have the names of the elements of the network.
+        """
         return cls.from_source(
-            network.model(),
+            network.model(include_container=False),
             f"{network.name}.building_mpc",
             roles=roles,
             base_dir=base_dir,
@@ -372,6 +382,42 @@ def network_occupancy(network: Network) -> dict[str, OccupancySchedule]:
         for space in network.graph.nodes
         if isinstance(space, Space) and space.occupancy is not None
     }
+
+
+@cache
+def _container_prefix() -> re.Pattern[str]:
+    """Prefix of the variables of an element in a containerised model: ``<container type>1.`` (as Trano names the
+    instances of its containers)."""
+    from trano.elements.types import ContainerTypes
+
+    return re.compile(rf"^(?:{'|'.join(get_args(ContainerTypes))})1\.")
+
+
+def without_containers(model: CasadiModel) -> CasadiModel:
+    """The model with the names of its elements: ``envelope1.space_001.TAir`` -> ``space_001.TAir``.
+
+    Trano groups the elements of a model in containers (``envelope1``, ``emission1``, ``distribution1``,
+    ``production1``, ...) unless it is generated with ``include_container=False``; the names of the states and
+    parameters then start with the container. The CasADi function is positional: only the description changes.
+    """
+    prefix = _container_prefix()
+    description = model.description
+
+    def stripped(variables: tuple[Variable, ...]) -> tuple[Variable, ...]:
+        return tuple(variable.model_copy(update={"name": prefix.sub("", variable.name)}) for variable in variables)
+
+    states, inputs, parameters = (
+        stripped(variables) for variables in (description.states, description.inputs, description.parameters)
+    )
+    if (states, inputs, parameters) == (description.states, description.inputs, description.parameters):
+        return model
+    for kind, variables in (("states", states), ("inputs", inputs), ("parameters", parameters)):
+        if duplicates := sorted(name for name, count in Counter(v.name for v in variables).items() if count > 1):
+            raise ModelError(f"The {kind} of {description.name} have the same names without containers: {duplicates}")
+    return CasadiModel(
+        rhs=model.rhs,
+        description=description.model_copy(update={"states": states, "inputs": inputs, "parameters": parameters}),
+    )
 
 
 def with_temperature_units(model: CasadiModel) -> CasadiModel:

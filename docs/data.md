@@ -10,7 +10,7 @@ the variables of the `FastModel`:
 | `valve_001_y.y`, `boiler_001_y.y`, ... | - | the controls applied, held from each sample to the next   |
 | `boiler_001.EEle`, `boiler_001.EFue`, ... | kWh | readings of the energy meters, cumulative (optional)  |
 | `weather_inputs.TDryBul`, ...   | K, W/m², m/s, rad | the weather channels (optional)                     |
-| `occupancy_1.gai.QCon`, `.QRad` | W/m² | internal gains per floor area (optional)                        |
+| `occupancy_1_gai.QCon`, `.QRad` | W/m² | internal gains per floor area (optional; `occupancy_1.gai.*` before Trano 0.57) |
 
 ```python
 from mpctrano import MonitoringData

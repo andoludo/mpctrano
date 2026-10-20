@@ -6,7 +6,7 @@ gains per floor area of each occupancy model:
 
 * ``weather_inputs.TDryBul``, ``.TBlaSky`` (black-body sky temperature, from the dew point and the opaque sky
   cover), ``.winSpe``, ``.winDir`` [rad], ``.HDirNor``, ``.HDifHor``, ``.HGloHor``;
-* ``<occupancy>.gai.QRad`` and ``.QCon`` [W/m2], from the schedule of the occupancy model of the YAML.
+* ``<occupancy>_gai.QRad`` and ``.QCon`` [W/m2], from the schedule of the occupancy model of the YAML.
 
 :class:`WeatherForecaster` builds them from the TMY3 ``.mos`` weather file of the model and its occupancy
 schedules, :class:`DataForecaster` replays recorded disturbances; :class:`ForecastNoise` adds forecast errors
@@ -269,9 +269,9 @@ NOISE_KINDS = {
 
 def channel(name: str) -> tuple[str, str]:
     """``(owner, channel)`` of a disturbance: ``weather_inputs.TDryBul`` -> ``("weather_inputs", "TDryBul")``,
-    ``occupancy_1.gai.QCon`` -> ``("occupancy_1", "QCon")``."""
+    ``occupancy_1_gai.QCon`` -> ``("occupancy_1", "QCon")`` (``occupancy_1.gai.QCon`` before Trano 0.57)."""
     owner, _, name_ = name.rpartition(".")
-    return owner.removesuffix(".gai"), name_
+    return owner.removesuffix(".gai").removesuffix("_gai"), name_
 
 
 def noise_kinds(names: list[str]) -> dict[str, str]:

@@ -15,7 +15,7 @@ horizon of ``N`` steps from the time ``t0``, the controller solves with IPOPT
 where ``e_k`` is the net electricity of step ``k`` [kWh] (the electricity meters and the heat of the ideal
 emitters, minus the production), ``b_k`` its smooth positive part (bought, the rest is sold at ``pi_in``) and
 ``f_k`` the fuel drawn. The ODE is collocated on Radau IIA points in each step
-(:class:`trano.optimization.collocation.Collocated`, stable for the stiff water nodes), the comfort band
+(:class:`trano_optimization.collocation.Collocated`, stable for the stiff water nodes), the comfort band
 ``T_lower - s_lo <= T_zone <= T_upper + s_hi`` is soft, and the demand response power limits and the capacity charge
 apply to the electric power bought from the grid.
 
@@ -33,7 +33,7 @@ import casadi as ca
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
-from trano.optimization.collocation import SOLVED, Collocated
+from trano_optimization.collocation import SOLVED, Collocated
 
 from mpctrano.comfort import ComfortSpec
 from mpctrano.forecast import forecast_index, seconds_of_year
@@ -256,7 +256,7 @@ class ModelPredictiveController:
         def row(values: np.ndarray | float | None) -> np.ndarray:
             return np.broadcast_to(signal.prices if values is None else values, (N,)).reshape(1, -1)
 
-        values = {
+        parameter_values: dict[str, float | np.ndarray] = {
             "t0": start_time,
             "x0": x0,
             "D": disturbances,
@@ -272,8 +272,8 @@ class ModelPredictiveController:
             else collocated.scaled(np.asarray(u_previous, dtype=float).reshape(-1, 1)).ravel(),
             "first_move": 0.0 if u_previous is None else 1.0,
         }
-        for name, value in values.items():
-            self._opti.set_value(self._parameters[name], value)
+        for name, parameter_value in parameter_values.items():
+            self._opti.set_value(self._parameters[name], parameter_value)
         self._warm_start(x0, disturbances, start_time)
 
         collocated.settings = self._cold_settings if self._previous is None else self._warm_settings

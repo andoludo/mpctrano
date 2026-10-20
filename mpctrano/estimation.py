@@ -3,7 +3,7 @@
 The FastModel is nonlinear (water flows, boiler and heat pump maps) and only the zone air temperatures are measured:
 the walls, the water of the circuits and the buffers are not. :class:`MovingHorizonEstimator` keeps the inputs
 applied and the measurements of the last ``window`` steps and, at each :meth:`~MovingHorizonEstimator.correct`,
-finds the trajectory of the model closest to them with :class:`trano.optimization.MovingHorizonEstimation`
+finds the trajectory of the model closest to them with :class:`trano_optimization.MovingHorizonEstimation`
 (Radau collocation, IPOPT): the measured air temperatures, the model errors over each step (process noise) and the
 deviation of the first state of the window from its prior (arrival cost) are weighted by their standard deviations.
 When the window slides, the estimate of its second state becomes the prior of the next window.
@@ -22,7 +22,7 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
-from trano.optimization import EstimationSettings, MovingHorizonEstimation
+from trano_optimization import EstimationSettings, MovingHorizonEstimation
 
 from mpctrano.forecast import seconds_of_year
 from mpctrano.model import FastModel

@@ -140,7 +140,18 @@ display(
 # %% [markdown]
 # ## Key takeaways
 #
-# TAKEAWAYS
+# * **Cooling is the same optimisation with the sign flipped**: the ideal emitters of the YAML, their lower bound
+#   made negative, cool the two zones at a fixed EER; on the hottest day of the year the office needs 37 kWh of
+#   cooling, 12.4 kWh of electricity and a 1.8 kW peak, and keeps the band to 0.7 K.h where the office without
+#   cooling exceeds it by 52 K.h and 5.4 K at worst.
+# * **Day-ahead prices move nothing here**: the plan under day-ahead prices is the plan under a flat price (3.17
+#   against 3.15 EUR). Summer prices are flat where the cooling load is, the night is already cool and cooling the
+#   mass in advance costs the same electricity: there is no price spread to arbitrage with a constant EER.
+# * **A capacity charge is what moves the chiller**: at 8 EUR/kW of monthly peak the controller pre-cools the slab
+#   and the walls through the night, shaves the peak from 1.80 to 1.40 kW and pays for it with 75 % more
+#   electricity (21.7 against 12.4 kWh); the bill still falls, by less than a euro over the day, because the
+#   capacity charge is the larger term. Whether the pre-cooling is worth it depends on that charge: see
+#   `tutorials/references.md` on capacity tariffs.
 #
 # ## Further reading
 #

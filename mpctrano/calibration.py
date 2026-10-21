@@ -206,13 +206,25 @@ def prepare(model: FastModel, data: MonitoringData | pd.DataFrame, forecaster: F
 
 
 def _initial_state(model: FastModel, data: _Data) -> np.ndarray:
-    """The initial state of the model with the measured air temperatures, every other temperature at their mean."""
-    state = model.initial_state.copy()
+    """The initial state of the model with the measured air temperatures.
+
+    The other states of a model with controls are its temperatures at the mean of the measurements (the water and
+    the walls are unknown); a closed-loop model (its controllers inside, no control) starts from two days of its own
+    operation before the data (:func:`~mpctrano.simulation.spin_up`): its water, buffer and controller states are
+    then consistent, where a buffer at the air temperature sends the controllers into a transient the integrator
+    cannot follow.
+    """
     measured = data.temperatures[:, 0]
-    mean = float(np.nanmean(measured)) if np.any(~np.isnan(measured)) else None
-    for i, variable in enumerate(model.model.description.states):
-        if variable.unit == "K" and mean is not None:
-            state[i] = mean
+    if model.control_names:
+        state = model.initial_state.copy()
+        mean = float(np.nanmean(measured)) if np.any(~np.isnan(measured)) else None
+        for i, variable in enumerate(model.model.description.states):
+            if variable.unit == "K" and mean is not None:
+                state[i] = mean
+    else:
+        from mpctrano.simulation import spin_up
+
+        state = spin_up(model, model, data.index[0], days=2.0, time_step=data.time_step)
     for row, index in enumerate(model.comfort_indices):
         if not np.isnan(measured[row]):
             state[index] = measured[row]

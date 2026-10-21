@@ -55,8 +55,10 @@ from mpctrano.model import FastModel
 from mpctrano.units import KELVIN, STATE_BOUNDS
 
 Symbol = TypeVar("Symbol", ca.SX, ca.MX)
-FD_STEP = 1e-3
-"""Step of the finite differences of the shooting objective, in the decision variables (log of a factor)."""
+FD_STEP = 0.05
+"""Step of the central differences of the shooting objective, in the decision variables (log of a factor): 5 %
+of a field. The switching controllers make the objective jumpy at the scale of a tenth of a percent (a thermostat
+flips one integration step earlier); a wide step reads the slope of the valley through the jumps."""
 """The kind of CasADi expression a problem is written in: SX inside an integrator, MX in an Opti problem."""
 
 

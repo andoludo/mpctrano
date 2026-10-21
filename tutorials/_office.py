@@ -22,8 +22,8 @@ from tutorials._house import HERE
 
 BUILDINGS = HERE / "buildings" / "office"
 CACHE = ResultCache(HERE / "cache" / "office")
-START = pd.Timestamp("2023-07-17")
-"""A Monday of the typical meteorological year in summer."""
+START = pd.Timestamp("2023-08-02")
+"""The hottest day of the typical meteorological year (a Wednesday: 33.6 degC in the afternoon, after two hot days)."""
 DAYS = 1.0
 """Period of the cached runs: one working day (a plan of this two-zone office takes one to two minutes)."""
 LIVE_DAYS = days(1.0, quick=0.25)

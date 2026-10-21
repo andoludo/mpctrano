@@ -31,7 +31,7 @@ notebooks: sync-notebooks
 docs:
 	mkdir -p docs/tutorials
 	cp tutorials/[0-9][0-9]_*.ipynb docs/tutorials/
-	uv run mkdocs build
+	uv run --no-sync mkdocs build
 
 # Rebuild the cached closed-loop runs of the notebooks (hours: run it in the background).
 cache:

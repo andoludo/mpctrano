@@ -139,6 +139,9 @@ class CalibrationSettings(BaseModel):
     method: Literal["auto", "collocation", "shooting"] = Field(
         "auto", description="How the dynamics enter the problem; auto: shooting for a closed-loop model"
     )
+    spin_up_days: float = Field(
+        2.0, gt=0, description="Days a closed-loop model runs before the data, with the candidate parameters"
+    )
     verbose: bool = False
 
     def method_for(self, model: FastModel) -> Literal["collocation", "shooting"]:
@@ -225,14 +228,14 @@ def prepare(model: FastModel, data: MonitoringData | pd.DataFrame, forecaster: F
     )
 
 
-def _initial_state(model: FastModel, data: _Data) -> np.ndarray:
+def _initial_state(model: FastModel, data: _Data, spin_up_days: float = 2.0) -> np.ndarray:
     """The initial state of the model with the measured air temperatures.
 
     The other states of a model with controls are its temperatures at the mean of the measurements (the water and
-    the walls are unknown); a closed-loop model (its controllers inside, no control) starts from two days of its own
-    operation before the data (:func:`~mpctrano.simulation.spin_up`): its water, buffer and controller states are
-    then consistent, where a buffer at the air temperature sends the controllers into a transient the integrator
-    cannot follow.
+    the walls are unknown); a closed-loop model (its controllers inside, no control) starts from ``spin_up_days`` of
+    its own operation before the data (:func:`~mpctrano.simulation.spin_up`): its water, buffer and controller
+    states are then consistent, where a buffer at the air temperature sends the controllers into a transient the
+    integrator cannot follow.
     """
     measured = data.temperatures[:, 0]
     if model.control_names:
@@ -244,7 +247,7 @@ def _initial_state(model: FastModel, data: _Data) -> np.ndarray:
     else:
         from mpctrano.simulation import spin_up
 
-        state = spin_up(model, model, data.index[0], days=2.0, time_step=data.time_step)
+        state = spin_up(model, model, data.index[0], days=spin_up_days, time_step=data.time_step)
     for row, index in enumerate(model.comfort_indices):
         if not np.isnan(measured[row]):
             state[index] = measured[row]
@@ -410,7 +413,13 @@ class Calibrator:
     def _fit_shooting(
         self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None
     ) -> tuple[FastModel, CalibrationResult]:
-        """The groups as the only decision variables, the model simulated with CVODES inside the objective."""
+        """The groups as the only decision variables, the model simulated with CVODES inside the objective.
+
+        A closed-loop model starts ``spin_up_days`` before the data from the start values of the Modelica model and
+        runs with its own controllers and the candidate parameters: the walls, the water and the controller states at
+        the start of the data are then those of the candidate model, not of the nominal one (a fixed start, spun up
+        with the nominal parameters, biases the estimates towards it).
+        """
         model, settings = self.model, self.settings
         steps, dt = arrays.controls.shape[1], arrays.time_step
         collocated = model.collocated(dt)
@@ -430,8 +439,14 @@ class Calibrator:
         step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-8, "reltol": 1e-8})
         theta = ca.MX.sym("theta", len(self.groups))
         _, values = self._symbolic_parameters(theta)
-        start = _initial_state(model, arrays)
-        state = ca.MX(start)
+        if model.control_names:
+            state = ca.MX(_initial_state(model, arrays))
+        else:
+            state = ca.MX(model.initial_state)
+            warm_up = self._spin_up_disturbances(arrays)
+            for k in range(warm_up.shape[1]):
+                t_k = arrays.start_time - (warm_up.shape[1] - k) * dt
+                state = step(x0=state, p=ca.vertcat(t_k, np.zeros(0), warm_up[:, k], theta))["xf"]
         states = [state]
         for k in range(steps):
             inputs = ca.vertcat(arrays.start_time + k * dt, arrays.controls[:, k], arrays.disturbances[:, k], theta)
@@ -466,6 +481,14 @@ class Calibrator:
             estimated, states_array, arrays, validation, str(stats["return_status"]), stats, solve_time
         )
         return result[0], result[1].model_copy(update={"method": "shooting", "variables": len(self.groups)})
+
+    def _spin_up_disturbances(self, arrays: _Data) -> np.ndarray:
+        """The disturbances of the ``spin_up_days`` before the data, from the weather file of the model."""
+        model, dt = self.model, arrays.time_step
+        steps = round(self.settings.spin_up_days * 86400 / dt)
+        start = arrays.index[0] - pd.Timedelta(seconds=steps * dt)
+        realisation = WeatherForecaster.from_model(model).realisation(start, steps, dt)
+        return realisation[model.disturbance_names].to_numpy(dtype=float).T
 
     def _fit_collocation(
         self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None

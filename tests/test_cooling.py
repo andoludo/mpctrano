@@ -59,11 +59,12 @@ def test_the_controller_cools_the_office_in_summer(office: FastModel) -> None:
     )
     start = "2023-07-17 06:00"
     x0 = cooling.initial_state.copy()
-    x0[cooling.comfort_indices] = 273.15 + 27.0  # a warm office at 6h
+    warm = [i for i, value in enumerate(x0) if 280.0 < value < 320.0]  # every temperature state
+    x0[warm] = 273.15 + 27.0  # a warm office at 6h, walls included
     forecast = WeatherForecaster.from_model(cooling).forecast(start, 12, 3600.0)
     plan = controller.solve(x0, forecast)
     assert plan.success, plan.status
     assert plan.controls.to_numpy().min() < -500.0  # it cools
     assert plan.meter is not None and plan.meter["P_meter"].sum() > 0  # and pays electricity for it
-    occupied = plan.comfort_temperatures.iloc[2:]  # from 8h
-    assert np.all(occupied.to_numpy() - 273.15 <= 24.0 + 0.5)
+    temperatures = plan.comfort_temperatures[cooling.comfort_states].to_numpy(dtype=float).T
+    assert np.all(temperatures <= plan.upper + 0.5)  # within the band (24 degC occupied, 30 degC otherwise)

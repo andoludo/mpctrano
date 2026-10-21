@@ -16,8 +16,8 @@ The problem is solved with IPOPT, by one of two methods (:attr:`CalibrationSetti
   and poor initial parameters stay well conditioned, and the unmeasured states (walls, water) are free at the start;
 * **shooting** (closed-loop models, their controllers inside): the groups are the only decision variables, the
   model is simulated with CVODES inside the objective from the state its own controllers reach before the data
-  (:func:`~mpctrano.simulation.spin_up`) and IPOPT gets the gradient from the adjoint sensitivities of the
-  integrator (a quasi-Newton Hessian). The switching controllers of such a model (thermostats, hysteresis) make its
+  (:func:`~mpctrano.simulation.spin_up`) and IPOPT gets the gradient from central finite differences of the
+  objective (a quasi-Newton Hessian). The switching controllers of such a model (thermostats, hysteresis) make its
   collocated dynamics non-smooth, where a simulation follows them.
 
 The objective weighs the errors of the measured zone air temperatures, of the energy metered over each step (fuel,
@@ -55,6 +55,8 @@ from mpctrano.model import FastModel
 from mpctrano.units import KELVIN, STATE_BOUNDS
 
 Symbol = TypeVar("Symbol", ca.SX, ca.MX)
+FD_STEP = 1e-3
+"""Step of the finite differences of the shooting objective, in the decision variables (log of a factor)."""
 """The kind of CasADi expression a problem is written in: SX inside an integrator, MX in an Opti problem."""
 
 
@@ -435,7 +437,7 @@ class Calibrator:
             "p": ca.vertcat(t0, u, w, theta_sx),
             "ode": collocated.rhs(t0 + s, x, collocated._inputs(u, w), p),
         }
-        # tight tolerances: the gradient comes from the adjoint sensitivities of this integration
+        # tight tolerances: the objective is differentiated by finite differences
         step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-8, "reltol": 1e-8})
         theta = ca.MX.sym("theta", len(self.groups))
         _, values = self._symbolic_parameters(theta)
@@ -453,7 +455,23 @@ class Calibrator:
             state = step(x0=state, p=inputs)["xf"]
             states.append(state)
         z = ca.hcat(states) - ca.DM(collocated.offset)
-        objective = self._objective(z, theta, arrays)
+        # the switching controllers (thermostats, hysteresis) make the adjoint gradient of the chain noisy near
+        # the optimum (IPOPT then stalls short of it): the gradient comes from finite differences of the objective,
+        # 2n + 1 simulations of a second each for n groups
+        objective_function = ca.Function(
+            "objective",
+            [theta],
+            [self._objective(z, theta, arrays)],
+            {
+                "enable_fd": True,
+                "enable_forward": False,
+                "enable_reverse": False,
+                "enable_jacobian": False,
+                "fd_method": "central",
+                "fd_options": {"h": FD_STEP},
+            },
+        )
+        objective = objective_function(theta)
         bounds = np.array([self._bounds(group) for group in self.groups])
         options = {
             **default_ipopt_options(),
@@ -461,10 +479,9 @@ class Calibrator:
             "print_level": 5 if settings.verbose else 0,
             "hessian_approximation": "limited-memory",
             "tol": 1e-4,
-            # the switching controllers leave the gradient noisy near the optimum: stop when the objective settles
-            "acceptable_tol": 1.0,
-            "acceptable_obj_change_tol": 1e-4,
-            "acceptable_iter": 3,
+            "acceptable_tol": 1e-2,
+            "acceptable_obj_change_tol": 1e-5,
+            "acceptable_iter": 5,
         }
         solver = ca.nlpsol(
             "calibration", "ipopt", {"x": theta, "f": objective}, {"ipopt": options, "print_time": False}

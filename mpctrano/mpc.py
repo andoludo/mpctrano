@@ -38,6 +38,7 @@ from trano_optimization.collocation import SOLVED, Collocated
 from mpctrano.comfort import ComfortSpec
 from mpctrano.forecast import forecast_index, seconds_of_year
 from mpctrano.model import FastModel
+from mpctrano.storage import Battery, ElectricVehicle, storage_schedule
 from mpctrano.tariff import Tariff
 
 WATT_HOUR_TO_JOULE = 3.6e6
@@ -94,6 +95,12 @@ class MPCSettings(BaseModel):
     ipopt: dict[str, float | int | str] = Field(
         default_factory=dict, description="IPOPT options added to trano's defaults (max_iter, tol, ...)"
     )
+    batteries: tuple[Battery, ...] = Field((), description="Stationary batteries at the meter")
+    vehicles: tuple[ElectricVehicle, ...] = Field((), description="Electric vehicles charged at the meter")
+
+    @property
+    def storages(self) -> tuple[Battery, ...]:
+        return (*self.batteries, *self.vehicles)
 
 
 @dataclass(frozen=True)
@@ -114,6 +121,9 @@ class MPCSolution:
     meter: pd.DataFrame | None = None
     """Planned power of each step [W]: ``P_meter`` (electricity bought, what the tariff bills), ``P_export``
     (sold) and ``P_fuel``."""
+    storage: pd.DataFrame | None = None
+    """Planned storages, on the index of the states: ``<name>_soc_kwh`` at the start of each step (and after the
+    last), ``<name>_charge_w`` and ``<name>_discharge_w`` over each step (NaN on the last row)."""
 
     @property
     def first_control(self) -> np.ndarray:
@@ -156,6 +166,10 @@ class ModelPredictiveController:
             else collocation.model_copy(update={"ipopt": {"mu_init": settings.warm_mu_init, **settings.ipopt}})
         )
         self._previous: dict[str, np.ndarray] | None = None
+        self.storage_state: dict[str, float] = {
+            storage.name: storage.initial_energy_kwh for storage in settings.storages
+        }
+        """Energy in each storage [kWh], carried from one solve to the next by :meth:`advance`."""
         self.energy: pd.DataFrame | None = None
         """Electricity bought and net, fuel [kWh] and electric power [W] of each step of the last plan."""
         self._build()
@@ -228,6 +242,39 @@ class ModelPredictiveController:
                 dt / WATT_HOUR_TO_JOULE
             )
         net = drawn(self._meter_rows("electricity")) + heat_energy - drawn(self._meter_rows("electricity_production"))
+        # ---- electrical storages at the meter: batteries charge and discharge, vehicles charge while plugged in
+        storages = settings.storages
+        n_s = len(storages)
+        storage_cost: Any = ca.MX(0)
+        price_mean = opti.parameter()
+        if n_s:
+            p_ch, p_dis, s_ev = (opti.variable(n_s, N) for _ in range(3))
+            soc = opti.variable(n_s, N + 1)
+            soc0, plugged, departs = opti.parameter(n_s), opti.parameter(n_s, N), opti.parameter(n_s, N)
+            per_kwh = dt / WATT_HOUR_TO_JOULE
+            for i, storage in enumerate(storages):
+                eta = storage.one_way_efficiency
+                low, high = storage.energy_bounds_kwh
+                discharge = 0.0 if isinstance(storage, ElectricVehicle) else storage.max_discharge_w
+                opti.subject_to(ca.vec(p_ch[i, :]) >= 0)
+                opti.subject_to(ca.vec(p_ch[i, :]) <= storage.max_charge_w * ca.vec(plugged[i, :]))
+                opti.subject_to(opti.bounded(0, ca.vec(p_dis[i, :]), discharge))
+                opti.subject_to(opti.bounded(low, ca.vec(soc[i, 1:]), high))
+                opti.subject_to(soc[i, 0] == soc0[i])
+                opti.subject_to(
+                    soc[i, 1:]
+                    == soc[i, :-1]
+                    + (eta * p_ch[i, :] - p_dis[i, :] / eta) * per_kwh
+                    - departs[i, :] * storage.driven_kwh
+                )
+                opti.subject_to(ca.vec(s_ev[i, :]) >= 0)
+                if isinstance(storage, ElectricVehicle):
+                    target = departs[i, :] * storage.departure_energy_kwh
+                    opti.subject_to(ca.vec(soc[i, :-1] + s_ev[i, :]) >= ca.vec(target))
+                    storage_cost = storage_cost + storage.missing_energy_price * ca.sum2(s_ev[i, :])
+                else:  # the energy stored at the end is worth the mean price (no emptying at the horizon end)
+                    storage_cost = storage_cost - price_mean * eta * (soc[i, N] - soc[i, 0])
+                net = net + (p_ch[i, :] - p_dis[i, :]) * per_kwh
         bought = 0.5 * (net + ca.sqrt(net**2 + NET_SMOOTHING**2))
         fuel = drawn(self._meter_rows("fuel"))
         power = bought * WATT_HOUR_TO_JOULE / dt  # electric power bought from the grid [W]
@@ -257,6 +304,7 @@ class ModelPredictiveController:
             + floor_cost
             + move_cost
             + effort_cost
+            + storage_cost
         )
 
         self._opti = opti
@@ -267,10 +315,15 @@ class ModelPredictiveController:
             "t0": t0, "x0": x0, "D": disturbances, "price": price, "feed_in": feed_in, "fuel_price": fuel_price,
             "lower": lower, "upper": upper, "limit": limit, "floor": floor, "capacity": capacity,
             "peak_so_far": peak_so_far, "v_previous": v_previous, "first_move": first_move,
+            "price_mean": price_mean,
         }  # fmt: skip
+        if n_s:
+            self._variables |= {"p_ch": p_ch, "p_dis": p_dis, "soc": soc, "s_ev": s_ev}
+            self._parameters |= {"soc0": soc0, "plugged": plugged, "departs": departs}
         self._costs = {
             "electricity": electricity_cost, "fuel": fuel_cost, "capacity": capacity_cost, "comfort": comfort_cost,
             "power_limit": limit_cost, "power_floor": floor_cost, "moves": move_cost, "effort": effort_cost,
+            "storage": storage_cost,
         }  # fmt: skip
         self._energy = {"electricity_bought": bought, "electricity_net": net, "fuel": fuel, "power": power}
 
@@ -326,11 +379,13 @@ class ModelPredictiveController:
             "floor": floors.reshape(1, -1),
             "capacity": signal.capacity_charge,
             "peak_so_far": float(peak_so_far),
+            "price_mean": float(np.mean(signal.prices)),
             "v_previous": np.zeros(model.n_controls)
             if u_previous is None
             else collocated.scaled(np.asarray(u_previous, dtype=float).reshape(-1, 1)).ravel(),
             "first_move": 0.0 if u_previous is None else 1.0,
         }
+        parameter_values |= self._storage_parameters(index)
         for name, parameter_value in parameter_values.items():
             self._opti.set_value(self._parameters[name], parameter_value)
         self._warm_start(x0, disturbances, start_time)
@@ -360,6 +415,7 @@ class ModelPredictiveController:
             },
             index=index,
         )
+        storage = self._storage_frame(solution, pd.DatetimeIndex(index.append(end_of_steps[-1:])))
         return MPCSolution(
             index=index,
             controls=pd.DataFrame(controls.T, index=index, columns=model.control_names),
@@ -373,7 +429,44 @@ class ModelPredictiveController:
             iterations=int(stats.get("iter_count", 0)),
             solve_time=solve_time,
             meter=meter,
+            storage=storage,
         )
+
+    def _storage_parameters(self, index: pd.DatetimeIndex) -> dict[str, float | np.ndarray]:
+        """The state of the storages, clipped to their bounds, and the schedule of the vehicles over ``index``; the
+        state of charge variables start at the current state."""
+        storages = self.settings.storages
+        if not storages:
+            return {}
+        soc0 = np.array([np.clip(self.storage_state[s.name], *s.energy_bounds_kwh) for s in storages], dtype=float)
+        plugged, departs = storage_schedule(storages, index, self.settings.time_step)
+        self._opti.set_initial(self._variables["soc"], np.repeat(soc0[:, None], len(index) + 1, axis=1))
+        return {"soc0": soc0, "plugged": plugged, "departs": departs}
+
+    def _storage_frame(self, solution: dict[str, np.ndarray], index: pd.DatetimeIndex) -> pd.DataFrame | None:
+        storages = self.settings.storages
+        if not storages:
+            return None
+        N = len(index) - 1
+        columns: dict[str, np.ndarray] = {}
+        for i, storage in enumerate(storages):
+            columns[f"{storage.name}_soc_kwh"] = solution["soc"].reshape(len(storages), N + 1)[i]
+            for kind, name in (("ch", "charge"), ("dis", "discharge")):
+                powers = solution[f"p_{kind}"].reshape(len(storages), N)[i]
+                columns[f"{storage.name}_{name}_w"] = np.append(powers, np.nan)
+        return pd.DataFrame(columns, index=index)
+
+    def advance(self, solution: MPCSolution) -> float:
+        """Apply the first step of ``solution`` to the storages (their model is exact): their state becomes the one
+        after that step; returns the energy they took from the meter over it [kWh] (negative when they fed it)."""
+        if solution.storage is None:
+            return 0.0
+        exchange = 0.0
+        for storage in self.settings.storages:
+            self.storage_state[storage.name] = float(solution.storage[f"{storage.name}_soc_kwh"].iloc[1])
+            first = solution.storage.iloc[0]
+            exchange += float(first[f"{storage.name}_charge_w"] - first[f"{storage.name}_discharge_w"])
+        return exchange * self.settings.time_step / WATT_HOUR_TO_JOULE
 
     def full_load_power(self, x0: np.ndarray, forecast: pd.DataFrame) -> float:
         """Largest electric power [W] the building draws over the horizon with every control at its upper bound: the

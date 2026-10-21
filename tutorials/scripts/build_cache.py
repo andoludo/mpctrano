@@ -7,7 +7,8 @@
 
 The runs are deterministic (fixed seeds and solver tolerances); the cache is committed so that the notebooks and
 the CI never pay the closed-loop cost. Runtime: about ten minutes per two-day hourly run of the house (48 MPC solves
-and moving horizon estimations), about an hour and a half for both studies on three workers.
+and moving horizon estimations), about an hour and a half for the house and flexibility studies on three workers;
+the office closed loops take about an hour each, the PV house ones 10 to 30 minutes.
 """
 
 from __future__ import annotations
@@ -24,15 +25,15 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-STUDIES = ("house", "flexibility")
+STUDIES = ("house", "flexibility", "office", "pv")
 app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _module(name: str) -> Any:
     sys.path.insert(0, str(ROOT))
-    from tutorials import _flexibility, _house
+    from tutorials import _flexibility, _house, _office, _pv
 
-    return {"house": _house, "flexibility": _flexibility}[name]
+    return {"house": _house, "flexibility": _flexibility, "office": _office, "pv": _pv}[name]
 
 
 def _build(study: str, label: str, parts: dict[str, Any], force: bool) -> str:

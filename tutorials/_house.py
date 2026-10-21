@@ -37,6 +37,7 @@ BANDS: dict[str, tuple[float, float, float]] = {
     "wide": (20.0, 25.0, 4.0),
 }
 """Occupied minimum and maximum [degC] and night setback [K] of each comfort band."""
+BAND_DEFAULT = BANDS["standard"]
 
 
 @cache

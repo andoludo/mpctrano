@@ -52,6 +52,7 @@ from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import Scenario, run_scenario, run_scenario_rule_based, scenario_catalogue
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based, spin_up
+from mpctrano.storage import Battery, ElectricVehicle
 from mpctrano.synthetic import SyntheticData, generate_monitoring_data, perturb, random_factors
 from mpctrano.tariff import (
     CapacityTariff,
@@ -74,6 +75,7 @@ __all__ = [
     "OPTIONAL_GROUPS",
     "ActivationRequest",
     "ActivationResult",
+    "Battery",
     "CalibrationResult",
     "CalibrationSettings",
     "Calibrator",
@@ -87,6 +89,7 @@ __all__ = [
     "DemandResponseEvent",
     "DemandResponseTariff",
     "DynamicTariff",
+    "ElectricVehicle",
     "EstimatorSettings",
     "FastModel",
     "FitMetrics",

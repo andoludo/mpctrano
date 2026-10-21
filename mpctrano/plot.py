@@ -242,3 +242,29 @@ def plot_envelope(envelope: FlexibilityEnvelope | pd.DataFrame, title: str | Non
     figure.update_xaxes(title_text="Duration", row=1, col=1)
     figure.update_xaxes(title_text="Duration", row=1, col=2)
     return _style(figure, title or "Flexibility envelope", 420)
+
+
+def plot_storage(source: MPCSolution | ClosedLoopResult, title: str | None = None) -> Any:  # noqa: ANN401
+    """State of charge of the storages [kWh] and their charging (positive) and discharging power, from a plan
+    (``MPCSolution.storage``) or a closed-loop run (the storage columns of its frame)."""
+    go, make_subplots = _plotly()
+    frame = source.storage if hasattr(source, "storage") else source.frame
+    if frame is None:
+        raise ValueError("No storage in this plan.")
+    names = [column.removesuffix("_soc_kwh") for column in frame.columns if column.endswith("_soc_kwh")]
+    if not names:
+        raise ValueError("No storage in this run.")
+    figure = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08, row_heights=[0.5, 0.5])
+    for i, name in enumerate(names):
+        color = SERIES[i % len(SERIES)]
+        figure.add_trace(_line(go, frame.index, frame[f"{name}_soc_kwh"], f"{name} [kWh]", color), row=1, col=1)
+        power = (frame[f"{name}_charge_w"] - frame[f"{name}_discharge_w"]) / 1000
+        figure.add_trace(
+            go.Bar(x=frame.index, y=power, name=f"{name} charge (+) / discharge (-) [kW]", marker_color=color),
+            row=2,
+            col=1,
+        )
+    figure.update_layout(barmode="relative")
+    figure.update_yaxes(title_text="Energy [kWh]", row=1, col=1)
+    figure.update_yaxes(title_text="Power [kW]", row=2, col=1)
+    return _style(figure, title or "Storages", 560)

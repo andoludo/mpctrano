@@ -8,6 +8,24 @@ release pipeline.
 
 ### Added
 
+- Flexibility quantification on FastModel (the Days 2 to 6 tutorial work ported): activation
+  requests with the delivered energy and the rebound (`respond`, `ActivationResult`), the
+  flexibility function (`flexibility_function`), the flexibility envelope (`FlexibilityEnvelope`),
+  the peak reduction in `compare`.
+- Tariffs: export price series, power floors and notice time of the demand response events,
+  `CapacityTariff` (monthly peaks); the controller takes per-solve caps and floors and the peak
+  already billed (`peak_so_far`), and reports the planned meter powers (`MPCSolution.meter`).
+- `spin_up`: a state after a few days of the controllers of the YAML; the running monthly peak
+  and the billed power in the closed-loop frame; PV generation and self-consumption in the metrics.
+- Cooling with ideal emitters: `FastModel.with_control_bounds` (a negative lower bound),
+  `MPCSettings.heat_cop` and `cooling_eer`.
+- `mpctrano.notebook` (`TutorialBuilding`, `ResultCache`, price options, widgets) and the plots of
+  plans, closed loops, states, activations and envelopes with a shared palette.
+- Tutorials: `tutorials/buildings/` (the house and its variants, the office), the studies
+  `tutorials/_house.py`, `_flexibility.py`, `_office.py` with their cached runs
+  (`make cache`), the notebooks `01_house_heat_pump`, `02_flexibility_use_cases` and
+  `04_office_cooling`; the docs site renders the executed notebooks (mkdocs-jupyter, `make docs`).
+
 - Notebook tooling: `notebook` extra (`plotly`, `ipywidgets`), jupytext pairing of the tutorial
   notebooks with percent scripts (`tutorials/NN_*.py` <-> `.ipynb`), `nbmake` execution of the
   notebooks in CI (`make notebooks`), a `pre-commit` configuration and this changelog.

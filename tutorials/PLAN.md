@@ -1,9 +1,13 @@
 # Plan: interactive MPC and energy-flexibility tutorials in mpctrano
 
-Status: **re-planned on 2026-10-15 on Trano's `FastModel` library.** The YAML stays the single
-source of truth: Trano renders it into the `FastModelMPC` model (the controls of the systems as
-inputs) and the closed-loop `FastModel` (the controllers of the YAML), rumoca translates them into
-CasADi, and mpctrano contains no building or system physics.
+Status: **re-planned on 2026-10-15 on Trano's `FastModel` library; phases A and B and Day 7 done on
+2026-10-21** (notebooks 01, 02, 04 and 05, the flexibility library, the cached studies, the docs site).
+The YAML stays the single source of truth: Trano renders it into the `FastModelMPC` model (the
+controls of the systems as inputs) and the closed-loop `FastModel` (the controllers of the YAML),
+rumoca translates them into CasADi, and mpctrano contains no building or system physics, with one
+exception decided on 2026-10-21 and open to review (section 5): the electrical storages (battery,
+vehicle) are linear models in the controller, at the meter, since Trano removed its battery and
+charger elements with the `mpc` library.
 
 Execution: one phase per working session, each ending with a pushed commit and a short report.
 Every step lists what it touches and a "done when" check, so a session can stop after any step and
@@ -75,37 +79,46 @@ plans live; CI runs them in quick mode (3 h, 6 h horizon).
 | Notebook | Topic | Status |
 |---|---|---|
 | `00_setup_check` | toolchain check, first FastModel from a YAML, one MPC plan | ready |
-| `01_house_heat_pump` | the heat pump house: pipeline, plan widget, closed loop vs rule-based, estimation | next |
-| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | planned |
-| `03_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel |
-| `04_office_cooling` | AHU + chiller, occupancy schedule, summer week | needs cooling in FastModel |
-| `05_pv_battery_ev` | PV, battery and EV charger next to the thermal storage | needs battery and EV in FastModel |
+| `01_house_heat_pump` | the heat pump house: pipeline, plan widget, closed loop vs rule-based, estimation | ready (2026-10-21) |
+| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready (2026-10-21) |
+| `03_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel (decision 1) |
+| `04_office_cooling` | ideal cooling at an EER, occupancy, capacity charge, summer day | ready (2026-10-21); a chiller in FastModel would add the part load (decision 2) |
+| `05_pv_battery_ev` | PV, battery and vehicle at the meter next to the thermal storage | ready (2026-10-21); storages in the controller (decision 3) |
 | `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | needs district models |
 | `07_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
 
+The studies behind the notebooks (`tutorials/_house.py`, `_flexibility.py`, `_office.py`, `_pv.py`) define
+the cached closed loops (`tutorials/cache/`, `make cache`, about four hours on four cores); the notebooks
+read them and solve their plans live. The buildings are in `tutorials/buildings/` (the single-zone heat pump
+house of the Trano test suite and its `old` and `pv` variants, a two-zone office): the two-zone house of the
+first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
+
 ## 2. Phases
 
-### Phase A - reference notebook (`01_house_heat_pump`)
+### Phase A - reference notebook (`01_house_heat_pump`) - done 2026-10-21
 
-1. `mpctrano.notebook`: `ResultCache` (parquet, keyed by scenario hash), widget factories (comfort
-   band, price signal, horizon / weights), runtime guard.
-2. `tutorials/01_house_heat_pump.py` -> `.ipynb`: YAML -> Modelica -> CasADi (states, controls,
-   meters, the COP in the heat pump component); open-loop plan widget; closed loop against a
-   perturbed building vs the controllers of the YAML; estimation on/off. Done when: the notebook
-   runs top to bottom in CI and every widget updates in < 5 s from the cache.
+1. `mpctrano.notebook`: `TutorialBuilding` (model, closed-loop reference, true building, spun-up
+   states), `ResultCache` (parquet, keyed by the run parameters), price options, widgets.
+2. `tutorials/01_house_heat_pump`: pipeline, plan widget, closed loop against the true building vs
+   the controllers of the YAML, the price of the model error, estimation (true state, moving
+   horizon, none). Widgets read the cache in milliseconds; the plan widget solves in 5 to 20 s.
 
-### Phase B - flexibility use cases (`02_flexibility_use_cases`)
+### Phase B - flexibility use cases (`02_flexibility_use_cases`) - done 2026-10-21
 
-3. `mpctrano.flexibility`: activation requests and rebound, flexibility function (step-price
-   response), envelope (sweep of constrained MPC solves), KPI set with references.
-4. `mpctrano.tariff`: capacity tariff (monthly quarter-hour peak), negative prices and export
-   remuneration. Done when: KPIs reproduce with fixed seeds and tests cover each metric.
+3. `mpctrano.flexibility`: activation requests and rebound (`respond`), flexibility function,
+   envelope (bisection on caps and floors of the electricity bought), peak reduction.
+4. `mpctrano.tariff`: `CapacityTariff` (monthly peaks, floor), export price series, power floors,
+   notice time; the controller carries the running peak. A 15-minute plan solves in one to two
+   minutes: the 15-minute market time unit is shown on plans, not closed loops.
 
-### Phase C - systems FastModel lacks (Trano branch)
+### Phase C - systems FastModel lacks - Day 7 done 2026-10-21 with two workarounds
 
-5. DHW tank with a draw-off disturbance, battery and EV charger with their meters, cooling (chiller,
-   AHU): FastModel components and templates, translation and validation tests in Trano, then the
-   apartment, office and PV/battery/EV notebooks.
+5. Cooling: the ideal emitter of FastModelMPC is a heat flow input bounded to heating by Trano;
+   `FastModel.with_control_bounds` lets it go negative and `MPCSettings.heat_cop` / `cooling_eer`
+   cost it (`04_office_cooling`). Battery and vehicle: linear state-of-charge models at the meter
+   in the controller (`mpctrano.storage`, `05_pv_battery_ev`). Still missing in FastModel: the DHW
+   tank with its draw-off (notebook 03), a chiller with part load, a battery and a charger as
+   Modelica components (decisions 1 to 3).
 
 ### Phase D - district and grid
 
@@ -119,7 +132,21 @@ plans live; CI runs them in quick mode (3 h, 6 h horizon).
 * Deterministic seeds, fixed IPOPT tolerances, reproducible caches.
 * CHANGELOG updated; every new public symbol typed, tested, documented.
 
-## 4. Risks and mitigations
+## 4. Decisions left to the author (2026-10-21)
+
+1. **DHW tank in FastModel (Trano)**: notebook 03 (apartment block, the tank as the cheapest
+   flexibility) needs a tank with a draw-off disturbance in Trano's FastModel; the apartment YAMLs
+   and the old notebook text are on the branch `ccr-c0c43f9d-7vxewf` for reference.
+2. **Chiller in FastModel (Trano)** or keep the constant EER of notebook 04.
+3. **Battery and vehicle**: keep them in the controller (`mpctrano.storage`, exact linear models,
+   no plant mismatch) or add them to FastModel in Trano and read them from the meters.
+4. **Price samples**: `tutorials/scripts/fetch_prices.py` needs network access to Energy-Charts /
+   ENTSO-E (blocked in the container); the studies use the synthetic day-ahead signal until a
+   sample is committed under `mpctrano/data/prices/`.
+5. **Pages**: the docs site publishes the executed notebooks (mkdocs-jupyter); the widgets of the
+   live sections are static there. A Binder or JupyterLite launch would make them interactive.
+
+## 5. Risks and mitigations
 
 * rumoca: the FastModel export needs rumoca main up to `c74cddf` (later commits stop at residual
   equations); the commit is pinned in `pyproject.toml` until a release exports these models.

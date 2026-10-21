@@ -84,3 +84,6 @@ same way: the reference the MPC is compared with.
 `Scenario` bundles a tariff, a comfort specification, the MPC settings, the forecast noise and the
 estimator; `run_scenario`, `run_scenario_rule_based` and `Project.run` / `Project.run_rule_based`
 execute it; `compare` puts several runs side by side.
+
+The executed tutorial notebooks are in the *Tutorials* section of this site; their source is in
+[`tutorials/`](https://github.com/andoludo/mpctrano/tree/main/tutorials).

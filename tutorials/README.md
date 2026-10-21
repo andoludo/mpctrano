@@ -8,13 +8,17 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 | Notebook | Topic | Status |
 |---|---|---|
 | `00_setup_check` | toolchain check, first FastModel from a YAML, one MPC plan | ready |
-| `01_house_heat_pump` | single-family house, heat pump + floor heating (reference implementation) | planned |
-| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | planned |
-| `03_apartment_block` | central heat pump, radiators, DHW tank | planned (needs the DHW tank in FastModel) |
-| `04_office_cooling` | AHU + chiller, occupancy schedule, summer week | planned (needs cooling in FastModel) |
-| `05_pv_battery_ev` | PV, battery and EV charger next to the thermal storage | planned (needs battery and EV in FastModel) |
+| `01_house_heat_pump` | a house with a heat pump: pipeline, plan widget, closed loop vs the controllers of the YAML, estimation | ready |
+| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready |
+| `03_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
+| `04_office_cooling` | an office in summer: ideal cooling at an EER, occupancy, capacity charge | ready |
+| `05_pv_battery_ev` | PV, a battery and a vehicle at the meter next to the thermal storage | ready |
 | `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
 | `07_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+
+The executed notebooks are published on the documentation site
+([andoludo.github.io/mpctrano](https://andoludo.github.io/mpctrano/), section *Tutorials*): the figures are
+interactive there, the widgets of the live sections are not (they need a kernel: run the notebooks locally).
 
 The script tutorials of the package itself (calibration, state estimation, tariffs) are in
 [`package/`](package/).
@@ -52,23 +56,39 @@ Execute every notebook top to bottom, as the CI does (quick mode, cached results
 make notebooks
 ```
 
-## The building of the tutorials
+## The buildings and the cached runs
 
-The tutorials use `tests/models/single_zone_air_water_heat_pump.yaml` (from the Trano test suite: a
-single-zone house heated by an air-to-water heat pump with its buffer, a mixing valve and a
-radiator) and the Uccle weather file next to it. Trano generates its models when a notebook starts
-(about 10 s); `mpctrano generate house.yaml --closed-loop` writes them to disk.
+The buildings are YAML files in `buildings/`: the single-zone heat pump house of the Trano test suite
+(`house/base.yaml`), its `old` (uninsulated, 55 degC radiator) and `pv` (20 m2 of PV) variants, and a
+two-zone office with ideal emitters (`office/base.yaml`), with the Uccle weather file next to them.
+Trano generates the models when a notebook starts (10 to 30 s per building).
+
+The closed loops the notebooks read are cached in `cache/` (parquet frames keyed by the parameters
+of the run, committed): the studies `_house.py`, `_flexibility.py`, `_office.py` and `_pv.py`
+define them and `scripts/build_cache.py` computes the missing ones.
+
+```bash
+uv run python tutorials/scripts/build_cache.py              # every study, three runs at a time (hours)
+uv run python tutorials/scripts/build_cache.py office       # one study
+uv run python tutorials/scripts/build_cache.py --force      # recompute
+```
+
+The runs are deterministic (fixed seeds and solver tolerances), so a rebuilt cache reproduces the
+committed one up to the solver's tolerance.
 
 ## Price data
 
-Real day-ahead prices are cached in `mpctrano/data/prices/` (see `provenance.md` there) and loaded
-with `PriceSignal.from_cached(name)`; no API key is needed to run the notebooks. To refresh or
-extend the samples:
+The studies use the synthetic day-ahead signal of `PriceSignal.synthetic` unless a real sample is
+cached in `mpctrano/data/prices/` (see `provenance.md` there; none is committed yet, the data
+providers were not reachable from the machine that built the cache). To download one, with
+network access:
 
 ```bash
 uv run python tutorials/scripts/fetch_prices.py energy-charts 2024-01-01 2025-01-01 --name be_day_ahead_2024
 ENTSOE_TOKEN=... uv run python tutorials/scripts/fetch_prices.py entsoe 2025-10-01 2025-11-01 --name be_day_ahead_2025_10
 ```
+
+`price_options` picks `be_day_ahead_2024` up automatically; rebuild the cache afterwards.
 
 ## Troubleshooting
 

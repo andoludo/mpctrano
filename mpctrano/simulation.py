@@ -93,10 +93,11 @@ def metered_energy(
     time_step: float,
     heat_cop: float = 1.0,
     cooling_eer: float = 3.0,
+    storage_kwh: float = 0.0,
 ) -> dict[str, float]:
     """Energy of one step [kWh], read from the meters: fuel, electricity bought and sold (the electricity meters and
-    the heat of the ideal emitters through their COP, or their cooling through the EER, netted with the
-    production)."""
+    the heat of the ideal emitters through their COP, or their cooling through the EER, plus what the storages
+    took from the meter, netted with the production)."""
     drawn = {"fuel": 0.0, "electricity": 0.0, "electricity_production": 0.0}
     for name, carrier in model.meters.items():
         index = model.state_names.index(name)
@@ -107,7 +108,7 @@ def metered_energy(
         * time_step
         / WATT_HOUR_TO_JOULE
     )
-    net = drawn["electricity"] + heat - drawn["electricity_production"]
+    net = drawn["electricity"] + heat + storage_kwh - drawn["electricity_production"]
     return {
         "fuel": drawn["fuel"],
         "bought": max(net, 0.0),
@@ -265,9 +266,14 @@ def run_closed_loop(
         after = plant.step(control, disturbance)
         estimator.predict(control, disturbance)
         previous = control
-        energy = metered_energy(model, before, after, control, dt, settings.heat_cop, settings.cooling_eer)
+        exchange = controller.advance(solution)
+        energy = metered_energy(
+            model, before, after, control, dt, settings.heat_cop, settings.cooling_eer, storage_kwh=exchange
+        )
         peak_so_far = max(peak_so_far, energy["bought"] * WATT_HOUR_TO_JOULE / dt)
         row = _record(model, now, control, disturbance, before, after, energy)
+        if solution.storage is not None:
+            row |= {str(name): float(value) for name, value in solution.storage.iloc[0].items()}
         row |= {
             f"{state}_measured": value for state, value in zip(model.comfort_states, measurement.tolist(), strict=True)
         }

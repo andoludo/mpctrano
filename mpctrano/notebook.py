@@ -37,6 +37,7 @@ from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import DEFAULT_START, Scenario
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_rule_based, spin_up
+from mpctrano.synthetic import perturb
 from mpctrano.tariff import FlatTariff, Tariff, TimeOfUseTariff
 
 QUICK_VARIABLE = "MPCTRANO_QUICK"
@@ -76,16 +77,20 @@ class TutorialBuilding:
     relative_std: float = 0.2
     seed: int = 0
     measurement_std: float = 0.1
+    control_bounds: dict[str, tuple[float | None, float | None]] | None = None
+    """Other bounds on some controls (:meth:`~mpctrano.model.FastModel.with_control_bounds`): a negative lower
+    bound on an ideal emitter lets the controller cool with it."""
     _states: dict[tuple[bool, bool, pd.Timestamp], np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
     @cached_property
     def project(self) -> Project:
         return Project.from_yaml(self.yaml)
 
-    @property
+    @cached_property
     def model(self) -> FastModel:
-        """The ``FastModelMPC`` model of the YAML: the model of the controller."""
-        return self.project.model
+        """The ``FastModelMPC`` model of the YAML (with :attr:`control_bounds`): the model of the controller."""
+        model = self.project.model
+        return model if self.control_bounds is None else model.with_control_bounds(self.control_bounds)
 
     @property
     def forecaster(self) -> WeatherForecaster:
@@ -99,7 +104,7 @@ class TutorialBuilding:
     @cached_property
     def truth(self) -> FastModel:
         """The true building: the model with perturbed parameter groups."""
-        return self.project.true_building(relative_std=self.relative_std, seed=self.seed)
+        return perturb(self.model, relative_std=self.relative_std, seed=self.seed)
 
     @cached_property
     def true_closed_loop(self) -> FastModel:

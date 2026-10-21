@@ -393,14 +393,19 @@ class Calibrator:
         temperatures = [i for i, variable in enumerate(model.model.description.states) if variable.unit == "K"]
         low, high = STATE_BOUNDS
         opti.subject_to(opti.bounded(low - KELVIN, ca.vec(z[temperatures, :]), high - KELVIN))
+        start = _initial_state(model, arrays)
+        if not model.control_names:
+            # a closed-loop model: its controller states (integrators, hysteresis flags, pressures) at the start are
+            # not identifiable from the data and left free they make the simulation chatter; the spin-up sets them
+            others = [i for i in range(n_x) if i not in temperatures]
+            if others:
+                opti.subject_to(z[others, 0] == ca.DM(start[others] - collocated.offset[others]))
         bounds = [self._bounds(group) for group in self.groups]
         opti.subject_to(opti.bounded(ca.DM([b[0] for b in bounds]), theta, ca.DM([b[1] for b in bounds])))
         opti.minimize(self._objective(z, theta, arrays))
 
         guess = (
-            model.simulate(
-                _initial_state(model, arrays), arrays.controls, arrays.disturbances, dt, start_time=arrays.start_time
-            )
+            model.simulate(start, arrays.controls, arrays.disturbances, dt, start_time=arrays.start_time)
             - collocated.offset[:, None]
         )
         opti.set_initial(z, guess)
@@ -421,14 +426,14 @@ class Calibrator:
         stats = opti.stats()
 
         estimated = {group.name: float(value(values[group.name])) for group in self.groups}
-        x0 = np.asarray(value(z[:, 0]), dtype=float).ravel() + collocated.offset
-        result = self._result(estimated, x0, arrays, validation, str(stats["return_status"]), stats, solve_time)
+        trajectory = np.asarray(value(z), dtype=float).reshape(n_x, steps + 1) + collocated.offset[:, None]
+        result = self._result(estimated, trajectory, arrays, validation, str(stats["return_status"]), stats, solve_time)
         return result[0], result[1].model_copy(update={"variables": int(opti.nx), "constraints": int(opti.ng)})
 
     def _result(
         self,
         estimated: dict[str, float],
-        x0: np.ndarray,
+        trajectory: np.ndarray,
         arrays: _Data,
         validation: MonitoringData | pd.DataFrame | None,
         status: str,
@@ -436,16 +441,28 @@ class Calibrator:
         solve_time: float,
     ) -> tuple[FastModel, CalibrationResult]:
         """The calibrated model and its fit, before and after, on the training and the validation data (simulated
-        from where the training ends)."""
+        from where the training ends). ``trajectory`` is the collocated solution: the fit after is that of a
+        simulation from its first state, or of the trajectory itself when the integrator cannot follow that state."""
         model = self.model
         calibrated = self.calibrated(estimated)
+        x0 = trajectory[:, 0]
         before, before_states = evaluate(model, arrays)
-        after, after_states = evaluate(calibrated, arrays, x0)
+        try:
+            after, after_states = evaluate(calibrated, arrays, x0)
+        except RuntimeError:  # CVODES: the collocated states stand in for the simulation
+            after_states = trajectory
+            observed = ~np.isnan(arrays.temperatures).any(axis=0)
+            after = FitMetrics.compute(
+                arrays.temperatures[:, observed], trajectory[model.comfort_indices][:, observed], model.zone_names
+            )
         validation_before = validation_after = None
         if validation is not None:
             validation_arrays = prepare(model, validation)
             validation_before, _ = evaluate(model, validation_arrays, before_states[:, -1])
-            validation_after, _ = evaluate(calibrated, validation_arrays, after_states[:, -1])
+            try:
+                validation_after, _ = evaluate(calibrated, validation_arrays, after_states[:, -1])
+            except RuntimeError:
+                validation_after = None
         changed = sorted({i for group in self.groups for i in self.members[group.name]})
         iterations = stats.get("iter_count", 0)
         return calibrated, CalibrationResult(

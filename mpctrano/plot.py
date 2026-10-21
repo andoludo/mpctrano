@@ -88,15 +88,25 @@ def _four_rows(make_subplots: Any) -> Any:  # noqa: ANN401
 
 
 def plot_fit(fit: pd.DataFrame, title: str = "Calibration fit") -> Any:  # noqa: ANN401
-    """Measured vs simulated zone air temperatures (frame of :func:`mpctrano.calibration.simulate_fit`)."""
-    go, _ = _plotly()
-    figure = go.Figure()
-    for i, column in enumerate(fit.columns):
+    """Measured (dotted) vs simulated zone air temperatures, and the meters when the frame has them (frame of
+    :func:`mpctrano.calibration.simulate_fit`)."""
+    go, make_subplots = _plotly()
+    temperatures = [column for column in fit.columns if ".TAir_" in column]
+    meters = [column for column in fit.columns if column not in temperatures]
+    rows = 2 if meters else 1
+    figure = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.08)
+    for i, column in enumerate(temperatures):
         dash = "dot" if column.endswith("_measured") else "solid"
         color = SERIES[(i // 2) % len(SERIES)]
-        figure.add_trace(_line(go, fit.index, fit[column] - KELVIN, column, color, line={"dash": dash}))
-    figure.update_yaxes(title_text="Temperature [degC]")
-    return _style(figure, title, 450)
+        figure.add_trace(_line(go, fit.index, fit[column] - KELVIN, column, color, line={"dash": dash}), row=1, col=1)
+    for i, column in enumerate(meters):
+        dash = "dot" if column.endswith("_measured") else "solid"
+        color = SERIES[(i // 2 + 2) % len(SERIES)]
+        figure.add_trace(_line(go, fit.index, fit[column], column, color, line={"dash": dash}), row=2, col=1)
+    figure.update_yaxes(title_text="Temperature [degC]", row=1, col=1)
+    if meters:
+        figure.update_yaxes(title_text="Energy [kWh]", row=2, col=1)
+    return _style(figure, title, 450 if not meters else 700)
 
 
 def plot_plan(solution: MPCSolution, model: FastModel, title: str | None = None) -> Any:  # noqa: ANN401

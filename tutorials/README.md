@@ -10,7 +10,8 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 | `00_setup_check` | toolchain check, first FastModel from a YAML, one MPC plan | ready |
 | `01_house_heat_pump` | a house with a heat pump: pipeline, plan widget, closed loop vs the controllers of the YAML, estimation | ready |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready |
-| `03_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
+| `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, how IPOPT solves it, before and after | ready |
+| `08_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
 | `04_office_cooling` | an office in summer: ideal cooling at an EER, occupancy, capacity charge | ready |
 | `05_pv_battery_ev` | PV, a battery and a vehicle at the meter next to the thermal storage | ready |
 | `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |

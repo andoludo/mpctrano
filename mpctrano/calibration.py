@@ -144,6 +144,8 @@ class CalibrationResult(BaseModel):
     status: str
     iterations: int
     solve_time: float
+    variables: int = Field(0, description="Decision variables of the nonlinear programme (states, points, groups)")
+    constraints: int = Field(0, description="Constraints of the nonlinear programme (the collocated dynamics)")
 
     def metrics(self) -> pd.DataFrame:
         rows = {
@@ -408,7 +410,8 @@ class Calibrator:
 
         estimated = {group.name: float(value(values[group.name])) for group in self.groups}
         x0 = np.asarray(value(z[:, 0]), dtype=float).ravel() + collocated.offset
-        return self._result(estimated, x0, arrays, validation, str(stats["return_status"]), stats, solve_time)
+        result = self._result(estimated, x0, arrays, validation, str(stats["return_status"]), stats, solve_time)
+        return result[0], result[1].model_copy(update={"variables": int(opti.nx), "constraints": int(opti.ng)})
 
     def _result(
         self,
@@ -449,12 +452,18 @@ class Calibrator:
 
 
 def simulate_fit(model: FastModel, data: MonitoringData | pd.DataFrame, x0: np.ndarray | None = None) -> pd.DataFrame:
-    """Measured and simulated zone air temperatures (``<zone>.TAir_measured`` and ``<zone>.TAir_simulated`` [K]) of an
-    open-loop simulation from ``x0`` (see :func:`evaluate`), on the index of the data."""
+    """Measured and simulated zone air temperatures (``<zone>.TAir_measured`` and ``<zone>.TAir_simulated`` [K]) and
+    meters (``<meter>_measured``, ``<meter>_simulated`` [kWh] since the start) of an open-loop simulation from ``x0``
+    (see :func:`evaluate`), on the index of the data."""
     arrays = prepare(model, data)
     _, states = evaluate(model, arrays, x0)
     columns = {}
     for row, (state, index) in enumerate(zip(model.comfort_states, model.comfort_indices, strict=True)):
         columns[f"{state}_measured"] = arrays.temperatures[row]
         columns[f"{state}_simulated"] = states[index]
+    for row, name in enumerate(arrays.meter_names):  # the meters [kWh], from the first reading
+        index = model.state_names.index(name)
+        measured = np.concatenate([[0.0], np.nancumsum(arrays.meters[row])])
+        columns[f"{name}_measured"] = measured
+        columns[f"{name}_simulated"] = states[index] - states[index, 0]
     return pd.DataFrame(columns, index=arrays.index)

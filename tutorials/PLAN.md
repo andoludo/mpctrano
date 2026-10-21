@@ -81,7 +81,8 @@ plans live; CI runs them in quick mode (3 h, 6 h horizon).
 | `00_setup_check` | toolchain check, first FastModel from a YAML, one MPC plan | ready |
 | `01_house_heat_pump` | the heat pump house: pipeline, plan widget, closed loop vs rule-based, estimation | ready (2026-10-21) |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready (2026-10-21) |
-| `03_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel (decision 1) |
+| `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, IPOPT, before / after | ready (2026-10-21) |
+| `08_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel (decision 1) |
 | `04_office_cooling` | ideal cooling at an EER, occupancy, capacity charge, summer day | ready (2026-10-21); a chiller in FastModel would add the part load (decision 2) |
 | `05_pv_battery_ev` | PV, battery and vehicle at the meter next to the thermal storage | ready (2026-10-21); storages in the controller (decision 3) |
 | `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | needs district models |
@@ -134,7 +135,7 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
 
 ## 4. Decisions left to the author (2026-10-21)
 
-1. **DHW tank in FastModel (Trano)**: notebook 03 (apartment block, the tank as the cheapest
+1. **DHW tank in FastModel (Trano)**: notebook 08 (apartment block, the tank as the cheapest
    flexibility) needs a tank with a draw-off disturbance in Trano's FastModel; the apartment YAMLs
    and the old notebook text are on the branch `ccr-c0c43f9d-7vxewf` for reference.
 2. **Chiller in FastModel (Trano)** or keep the constant EER of notebook 04.

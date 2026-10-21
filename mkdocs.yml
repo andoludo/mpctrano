@@ -50,6 +50,7 @@ nav:
       - 00 Setup check: tutorials/00_setup_check.ipynb
       - 01 A house with a heat pump: tutorials/01_house_heat_pump.ipynb
       - 02 Flexibility use cases: tutorials/02_flexibility_use_cases.ipynb
+      - 03 Calibration from the YAML: tutorials/03_calibration_from_yaml.ipynb
       - 04 An office in summer: tutorials/04_office_cooling.ipynb
       - 05 PV, battery and vehicle: tutorials/05_pv_battery_ev.ipynb
 markdown_extensions:

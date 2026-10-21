@@ -151,7 +151,7 @@ class CalibrationSpec:
         return [parameter.path for parameter in self.parameters]
 
     @property
-    def values(self) -> dict[str, float]:
+    def nominal(self) -> dict[str, float]:
         """The nominal value of each parameter, by path."""
         return {parameter.path: parameter.value for parameter in self.parameters}
 

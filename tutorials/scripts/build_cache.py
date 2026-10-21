@@ -25,15 +25,17 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-STUDIES = ("house", "flexibility", "office", "pv")
+STUDIES = ("house", "flexibility", "office", "pv", "calibration")
 app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def _module(name: str) -> Any:
     sys.path.insert(0, str(ROOT))
-    from tutorials import _flexibility, _house, _office, _pv
+    from tutorials import _calibration, _flexibility, _house, _office, _pv
 
-    return {"house": _house, "flexibility": _flexibility, "office": _office, "pv": _pv}[name]
+    return {"house": _house, "flexibility": _flexibility, "office": _office, "pv": _pv, "calibration": _calibration}[
+        name
+    ]
 
 
 def _build(study: str, label: str, parts: dict[str, Any], force: bool) -> str:
@@ -45,6 +47,15 @@ def _build(study: str, label: str, parts: dict[str, Any], force: bool) -> str:
         f"{study} | {label}: {time.perf_counter() - started:.0f} s, cost {result.metrics.total_cost:.2f} EUR, "
         f"{result.metrics.comfort_violation_kh:.1f} K.h, {result.failures} failed solves"
     )
+
+
+def _calibration(force: bool) -> str:
+    started = time.perf_counter()
+    module = _module("calibration")
+    module.groups(force=force)
+    module.recorded(force=force)
+    _, result = module.calibrate(force=force)
+    return f"calibration: {time.perf_counter() - started:.0f} s, {result.status} in {result.iterations} iterations"
 
 
 def _envelope(at: str, force: bool) -> str:
@@ -63,6 +74,8 @@ def main(
     pending: list[list[tuple[str, str, dict[str, Any]]]] = [[], []]
     for name in names:
         module = _module(name)
+        if not hasattr(module, "runs"):
+            continue
         for label, parts in module.runs().items():
             if force or not module.CACHE.has(module.CACHE.key(**parts)):
                 # an activation response starts from the cached baseline: second phase
@@ -75,6 +88,8 @@ def main(
             futures = [pool.submit(_build, *job, force) for job in jobs]
             if phase == 0 and "flexibility" in names:
                 futures += [pool.submit(_envelope, at, force) for at in _module("flexibility").ENVELOPE_TIMES]
+            if phase == 0 and "calibration" in names:
+                futures.append(pool.submit(_calibration, force))
             for future in as_completed(futures):
                 typer.echo(future.result(), err=False)
     typer.echo(f"done in {time.perf_counter() - started:.0f} s")

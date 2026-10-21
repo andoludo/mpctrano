@@ -1,0 +1,39 @@
+{
+ "name": "base | day-ahead | standard | perfect | perfect",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 11.981311495909182,
+  "sold_kwh": 0.0,
+  "energy_kwh": 11.981311495909182,
+  "energy_cost": 3.0561547120109864,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.01905701633239687,
+  "max_violation": 0.0031845907698766496,
+  "peak_power_kw": 0.8805316356462995,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.5835452402316689,
+  "mean_price": 0.2550768096676611,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 1432.9823796830005,
+ "parts": {
+  "variant": "base",
+  "price": "day-ahead",
+  "band": "standard",
+  "mismatch": "perfect",
+  "estimator": "perfect",
+  "days": 2.0
+ }
+}

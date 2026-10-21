@@ -511,10 +511,12 @@ class Calibrator:
             "print_level": 5 if settings.verbose else 0,
             "hessian_approximation": "limited-memory",
             "tol": 1e-4,
+            # the small-scale jumps of the objective (a thermostat flipping one integration step earlier) defeat a
+            # sufficient-decrease test and keep the objective changing by a fraction of a percent: full quasi-Newton
+            # steps, and the solve is over once the objective settles within a percent
             "acceptable_tol": 1e-2,
-            "acceptable_obj_change_tol": 1e-5,
+            "acceptable_obj_change_tol": 1e-2,
             "acceptable_iter": 5,
-            # the small-scale jumps of the objective defeat a sufficient-decrease test: full quasi-Newton steps
             "accept_every_trial_step": "yes",
         }
         solver = ca.nlpsol(

@@ -140,7 +140,7 @@ def calibrate(
         )
     else:
         path, base, selected = CACHE / "result.json", model(), groups()
-    calibrator = Calibrator(base, CalibrationSettings(groups=selected, verbose=verbose))
+    calibrator = Calibrator(base, CalibrationSettings(groups=selected, verbose=verbose, max_iterations=60))
     if path.exists() and not force:
         result = CalibrationResult.model_validate_json(path.read_text())
         return calibrator.calibrated(result.factors), result

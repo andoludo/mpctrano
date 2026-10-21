@@ -24,7 +24,7 @@ regenerates the model with each field perturbed and reads the exponent of every 
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -188,20 +188,26 @@ class CalibrationSpec:
         return FastModel.from_yaml(self.write(values), name=name, library=library, base_dir=self.source.parent)
 
     def sensitivities(
-        self, library: str = FAST_MODEL_LIBRARY, model: FastModel | None = None
+        self,
+        library: str = FAST_MODEL_LIBRARY,
+        model: FastModel | None = None,
+        values: Mapping[str, float] | None = None,
     ) -> dict[str, dict[str, float]]:
         """For each parameter, the exponent of every parameter of the model it moves (``p = p0 * (field /
-        field0) ** e``), measured by regenerating the model with the field raised by :data:`PERTURBATION`.
+        field0) ** e``), measured by regenerating the model with the field raised by :data:`PERTURBATION` from
+        ``values`` (the nominal ones by default; ``model``, when given, is the model at ``values``).
 
         A conductivity moves the conductances of its layers with the exponent 1, a thickness moves them with -1 and
         the capacities with 1; a dependence that is not a power law (an optical fit) is approximated by the
         exponent measured at the perturbation.
         """
-        base = model or self.model(library)
+        values = dict(values or {})
+        base = model or self.model(library, values)
         names = base.parameter_names
         result: dict[str, dict[str, float]] = {}
         for parameter in self.parameters:
-            raised = self.model(library, {parameter.path: parameter.value * (1 + PERTURBATION)})
+            at = values.get(parameter.path, parameter.value)
+            raised = self.model(library, {**values, parameter.path: at * (1 + PERTURBATION)})
             if raised.parameter_names != names:
                 raise ValueError(f"{parameter.path} changes the structure of the model, not only its parameters.")
             exponents: dict[str, float] = {}
@@ -220,22 +226,32 @@ class CalibrationSpec:
         return result
 
     def groups(
-        self, model: FastModel | None = None, library: str = FAST_MODEL_LIBRARY, prior_std: float = 0.5
+        self,
+        model: FastModel | None = None,
+        library: str = FAST_MODEL_LIBRARY,
+        prior_std: float = 0.5,
+        values: Mapping[str, float] | None = None,
+        only: Sequence[str] | None = None,
     ) -> tuple[YamlGroup, ...]:
-        """The calibration groups of the declared parameters (their sensitivities measured on ``model``, or on the
-        nominal model of ``library``)."""
-        model = model or self.model(library)
-        sensitivities = self.sensitivities(library, model)
+        """The calibration groups of the declared parameters (``only`` these paths), with their sensitivities
+        measured around ``values`` (nominal by default) on ``model`` (the model at ``values``, regenerated when not
+        given); each group starts, and has its prior, at its value in ``values``."""
+        values = dict(values or {})
+        model = model or self.model(library, values)
+        sensitivities = self.sensitivities(library, model, values)
+        selected = [p for p in self.parameters if only is None or p.path in only]
+        if only is not None and len(selected) != len(only):
+            raise KeyError(f"Unknown calibration parameters: {sorted(set(only) - set(self.paths))}")
         return tuple(
             YamlGroup(
                 name=parameter.path,
-                value=parameter.value,
+                value=values.get(parameter.path, parameter.value),
                 lower=parameter.lower,
                 upper=parameter.upper,
                 exponents=sensitivities[parameter.path],
                 prior_std=prior_std,
             )
-            for parameter in self.parameters
+            for parameter in selected
         )
 
 

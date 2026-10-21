@@ -86,4 +86,5 @@ estimator; `run_scenario`, `run_scenario_rule_based` and `Project.run` / `Projec
 execute it; `compare` puts several runs side by side.
 
 The executed tutorial notebooks are in the *Tutorials* section of this site; their source is in
-[`tutorials/`](https://github.com/andoludo/mpctrano/tree/main/tutorials).
+[`tutorials/`](https://github.com/andoludo/mpctrano/tree/main/tutorials), and each one opens in Google Colab
+with its *Open in Colab* badge (`06_your_building` to edit the building itself).

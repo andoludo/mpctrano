@@ -25,6 +25,11 @@ release pipeline.
   `tutorials/_house.py`, `_flexibility.py`, `_office.py` with their cached runs
   (`make cache`), the notebooks `01_house_heat_pump`, `02_flexibility_use_cases` and
   `04_office_cooling`; the docs site renders the executed notebooks (mkdocs-jupyter, `make docs`).
+- `tutorials/06_your_building`: the building is a YAML cell; the notebook regenerates the models,
+  plans with the widget and compares the MPC with the controllers of the YAML for two versions.
+- Every notebook opens in Google Colab (badge and a first cell that clones the repository and runs
+  `tutorials/_colab.setup()`); the `rumoca wheel` workflow builds the manylinux wheel of the pinned
+  rumoca commit and attaches it to the release `rumoca-0.10.3-c74cddf` that the Colab setup installs.
 
 - Notebook tooling: `notebook` extra (`plotly`, `ipywidgets`), jupytext pairing of the tutorial
   notebooks with percent scripts (`tutorials/NN_*.py` <-> `.ipynb`), `nbmake` execution of the

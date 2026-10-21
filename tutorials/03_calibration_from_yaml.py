@@ -127,7 +127,8 @@ else:
             training, validation
         )
 print(
-    f"{result.variables} variables, {result.constraints} constraints, {result.iterations} iterations, {result.solve_time:.0f} s, {result.status}"
+    f"{result.variables} variables, {result.constraints} constraints, {result.iterations} iterations, "
+    f"{result.solve_time:.0f} s, {result.status}"
 )
 
 # %% [markdown]

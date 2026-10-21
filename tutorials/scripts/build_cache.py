@@ -53,7 +53,9 @@ def _calibration(force: bool) -> str:
     started = time.perf_counter()
     module = _module("calibration")
     module.groups(force=force)
+    module.known_infiltration_groups(force=force)
     module.recorded(force=force)
+    module.calibrate(force=force, known_infiltration=True)
     _, result = module.calibrate(force=force)
     return f"calibration: {time.perf_counter() - started:.0f} s, {result.status} in {result.iterations} iterations"
 

@@ -514,6 +514,8 @@ class Calibrator:
             "acceptable_tol": 1e-2,
             "acceptable_obj_change_tol": 1e-5,
             "acceptable_iter": 5,
+            # the small-scale jumps of the objective defeat a sufficient-decrease test: full quasi-Newton steps
+            "accept_every_trial_step": "yes",
         }
         solver = ca.nlpsol(
             "calibration", "ipopt", {"x": theta, "f": objective}, {"ipopt": options, "print_time": False}

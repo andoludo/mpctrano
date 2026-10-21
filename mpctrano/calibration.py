@@ -426,7 +426,8 @@ class Calibrator:
             "p": ca.vertcat(t0, u, w, theta_sx),
             "ode": collocated.rhs(t0 + s, x, collocated._inputs(u, w), p),
         }
-        step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-6, "reltol": 1e-6})
+        # tight tolerances: the gradient comes from the adjoint sensitivities of this integration
+        step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-8, "reltol": 1e-8})
         theta = ca.MX.sym("theta", len(self.groups))
         _, values = self._symbolic_parameters(theta)
         start = _initial_state(model, arrays)
@@ -445,8 +446,10 @@ class Calibrator:
             "print_level": 5 if settings.verbose else 0,
             "hessian_approximation": "limited-memory",
             "tol": 1e-4,
-            "acceptable_tol": 1e-2,
-            "acceptable_iter": 5,
+            # the switching controllers leave the gradient noisy near the optimum: stop when the objective settles
+            "acceptable_tol": 1.0,
+            "acceptable_obj_change_tol": 1e-4,
+            "acceptable_iter": 3,
         }
         solver = ca.nlpsol(
             "calibration", "ipopt", {"x": theta, "f": objective}, {"ipopt": options, "print_time": False}

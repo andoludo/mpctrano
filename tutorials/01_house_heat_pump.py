@@ -200,7 +200,20 @@ display(kpi_table(estimation, ("total_cost", "energy_kwh", "comfort_violation_kh
 # %% [markdown]
 # ## Key takeaways
 #
-# TAKEAWAYS
+# * **The MPC beats the controllers of the YAML on both counts**: over the same two January days, on the true
+#   building, it costs 5 to 8 % less (3.21 against 3.48 EUR under day-ahead prices for the base house, 6.46
+#   against 6.87 EUR for the old one) with 1.4 K.h of comfort violation against 48 K.h for the thermostat, which
+#   hovers at the bottom of the band; it uses about 5 % less energy because the house is never overheated.
+# * **The price signal moves the heating, not the bill**: under day-ahead prices the MPC buys 58 % of its energy
+#   in the cheap third of the hours (40 % for the thermostat, by chance of the night setback); with so flat a
+#   winter price profile the saving is a few cents, the flexibility is what the next tutorial sells.
+# * **Model error costs about 5 %**: against the true building (envelope 20 % off, noisy sensor) the same controller
+#   pays 3.17 instead of 3.02 EUR and lets the air drift 1.5 K.h outside the band; with the model as the plant
+#   the violation is nil.
+# * **State estimation is not optional**: with the air temperature only (the other states held at their expected
+#   values) the controller under-heats, saves 17 % and violates the band by 41 K.h with 2.3 K at worst; the moving
+#   horizon estimate (1.4 K.h) even beats the true state handed over (2.3 K.h), because its bias absorbs part of
+#   the model error.
 #
 # ## Further reading
 #

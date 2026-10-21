@@ -241,8 +241,10 @@ display(kpi_table(results, ("total_cost", "energy_kwh", "comfort_violation_kh", 
 # * The comparison with the controllers of the YAML is the fair one: same building, same weather, same tariff,
 #   same comfort band, same spun-up state; what the MPC gains comes from timing the heat pump on the price
 #   and from using the buffer and the walls as storage.
-# * A larger buffer helps the MPC more than the thermostat: the reference charges it to its set point whatever the
-#   price, the MPC charges it when electricity is cheap.
+# * A larger buffer helps the MPC and hurts the thermostat (as written: the MPC's day falls from 1.41 to 1.38 EUR
+#   with two thirds of the energy bought in the cheap hours, the thermostat's rises from 1.53 to 1.64 EUR): the
+#   reference charges the buffer to its set point whatever the price and loses more from a bigger tank, the MPC
+#   charges it when electricity is cheap and only as much as the house will need.
 #
 # ## Further reading
 #

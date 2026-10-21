@@ -46,3 +46,53 @@ both are losses to the outdoor air.
 `evaluate(model, data, x0)` and `simulate_fit(model, data, x0)` give the open-loop fit of any model;
 `Project.save()` writes the calibration to `<stem>.calibration.json` and `Project.load_calibrated()`
 reads it back.
+
+## Parameters declared in the YAML
+
+The YAML of the building can declare the parameters to calibrate itself, so that it stays the single
+source of truth: a numeric field written as a mapping with its nominal value and its bounds, instead
+of the bare number Trano expects.
+
+```yaml
+material:
+  - id: ROCKWOOL:CAL
+    thermal_conductivity: {value: 0.04, parameter: true, min: 0.025, max: 0.08}
+constructions:
+  - id: CAVITYWALL:CAL
+    layers:
+      - material: ROCKWOOL:CAL
+        thickness: {value: 0.1, parameter: true, min: 0.04, max: 0.2}
+spaces:
+  - id: SPACE:001
+    variant: infiltration
+    parameters:
+      ach: {value: 0.3, parameter: true, min: 0.05, max: 1.5}
+```
+
+`CalibrationSpec` reads the file, addresses the fields by path (the convention of `trano.runtime`:
+`material[ROCKWOOL:CAL].thermal_conductivity`, `spaces[SPACE:001].parameters.ach`) and writes the
+flat copy Trano reads. Which parameters of the CasADi model a field moves is measured, not assumed:
+the model is regenerated with the field raised by 20 % and the exponent of every parameter that
+moved is read (a conductivity moves the conductances of its layers with the exponent 1, a thickness
+moves them with -1 and the node capacities with a small exponent). The calibration then adjusts the
+field within its bounds and every dependent parameter with it (`YamlGroup`).
+
+```python
+from mpctrano import CalibrationSettings, CalibrationSpec, Calibrator, generate_closed_loop_data, spin_up
+
+spec = CalibrationSpec.from_yaml("house.yaml")
+model = spec.model("FastModel")                     # the closed loop: the controllers of the YAML, no control input
+groups = spec.groups(model, "FastModel")            # one regeneration per declared field
+calibrated, result = Calibrator(model, CalibrationSettings(groups=groups)).fit(data)
+result.factors                                      # {"material[ROCKWOOL:CAL].thermal_conductivity": 0.058, ...}
+```
+
+The data of a closed-loop model holds no control: the disturbances, the measured air temperatures and
+the meter readings are enough, as a monitoring system that logs the sensors and the meters but not the
+valves records. `generate_closed_loop_data` records such data on a *true* building, for instance the
+YAML with other values of its parameters (`spec.model("FastModel", {"...ach": 0.6})`), with sensor
+and meter noise, which is how the tests check that the calibration recovers them.
+
+Trano's own tools do not read the annotations (its validation rejects unknown keys); mpctrano writes
+the flat copy before calling it. A `value / parameter / min / max` convention in Trano's schema would
+make the annotated file valid everywhere.

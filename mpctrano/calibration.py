@@ -18,6 +18,13 @@ from its prior. The unmeasured states (walls, water) are free at the start of th
 Only the parameters the equations use count: the layer data of a construction (``constructionType.k``) are not,
 the conductances and capacities computed from them (``G[i]``, ``C[i]``) are. The heat output law of the radiators is
 settled when rumoca translates the model and cannot be calibrated.
+
+A third kind of group comes from the YAML of the building (:mod:`mpctrano.yaml_parameters`): a :class:`YamlGroup`
+is one field of the YAML declared as a calibration parameter (a conductivity, a thickness, an infiltration rate),
+adjusted within its bounds; it moves the parameters of the model that depend on it, each with the exponent measured
+by regenerating the model (``p = p0 * (field / field0) ** e``). The model of a closed-loop ``FastModel`` (the
+controllers of the YAML inside, no control input) calibrates alike: the data then holds the disturbances, the
+measured air temperatures and the meters only.
 """
 
 from __future__ import annotations
@@ -58,6 +65,25 @@ class ParameterGroup(BaseModel):
         return any(re.search(pattern, name) for pattern in self.patterns)
 
 
+class YamlGroup(BaseModel):
+    """A field of the YAML declared as a calibration parameter, and the parameters of the model it moves."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(description="The path of the field (``material[ROCKWOOL:CAL].thermal_conductivity``)")
+    value: float = Field(gt=0, description="The nominal value of the field (the YAML)")
+    lower: float = Field(gt=0)
+    upper: float = Field(gt=0)
+    exponents: dict[str, float] = Field(description="Exponent of each parameter of the model in the field")
+    prior_std: float = Field(0.5, gt=0, description="Standard deviation of the prior of log(field / value)")
+    mode: Literal["field"] = "field"
+
+    def matches(self, name: str) -> bool:
+        return name in self.exponents
+
+
+AnyGroup = ParameterGroup | YamlGroup
+
 DEFAULT_GROUPS = (
     ParameterGroup(
         name="envelope_conductance",
@@ -93,7 +119,7 @@ gains, the capacity of the radiators with the air): add them to the settings wit
 class CalibrationSettings(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    groups: tuple[ParameterGroup, ...] = DEFAULT_GROUPS
+    groups: tuple[AnyGroup, ...] = DEFAULT_GROUPS
     temperature_std: float = Field(0.1, gt=0, description="Standard deviation of a temperature measurement [K]")
     meter_std: float = Field(0.05, gt=0, description="Standard deviation of the energy metered over a step [kWh]")
     regularization: float = Field(1.0, ge=0, description="Weight of the priors of the groups")
@@ -105,7 +131,9 @@ class CalibrationSettings(BaseModel):
 class CalibrationResult(BaseModel):
     """Calibrated groups and fit before and after."""
 
-    factors: dict[str, float] = Field(description="Factor (scale group) or value (value group) of each group")
+    factors: dict[str, float] = Field(
+        description="Factor (scale group), common value (value group) or value of the field (YAML group) of each group"
+    )
     parameters: dict[str, float] = Field(description="Calibrated values of the parameters of the groups")
     initial_state: list[float] = Field(description="Estimated state at the start of the data")
     training_before: FitMetrics
@@ -217,7 +245,7 @@ class Calibrator:
                 for i, name in enumerate(model.parameter_names)
                 if i in used and group.matches(name) and np.isfinite(model.parameters[i])
             ]
-            if group.mode == "scale":
+            if group.mode in ("scale", "field"):
                 members = [i for i in members if model.parameters[i] != 0]
             if members:
                 self.members[group.name] = members
@@ -238,11 +266,16 @@ class Calibrator:
         return set(ca.jacobian(rhs, p).sparsity().get_col())
 
     def parameter_vector(self, values: dict[str, float]) -> np.ndarray:
-        """The parameters of the model with each group at its factor (scale) or value (value)."""
+        """The parameters of the model with each group at its factor (scale), value (value) or field value (YAML)."""
         vector = self.model.parameters.copy()
+        names = self.model.parameter_names
         for group in self.groups:
             members = self.members[group.name]
-            if group.mode == "scale":
+            if isinstance(group, YamlGroup):
+                factor = values[group.name] / group.value
+                for i in members:
+                    vector[i] = self.model.parameters[i] * factor ** group.exponents[names[i]]
+            elif group.mode == "scale":
                 vector[members] = self.model.parameters[members] * values[group.name]
             else:
                 vector[members] = values[group.name]
@@ -251,20 +284,34 @@ class Calibrator:
     def calibrated(self, values: dict[str, float]) -> FastModel:
         return self.model.with_parameters(self.parameter_vector(values))
 
-    def _prior_value(self, group: ParameterGroup) -> float:
-        """The decision variable of a group at the Trano values: log(1) for a scale group, the mean value otherwise."""
+    def _prior_value(self, group: AnyGroup) -> float:
+        """The decision variable of a group at the Trano values: log(1) for a scale or YAML group, the mean value
+        otherwise."""
         return (
             0.0
-            if group.mode == "scale"
+            if group.mode in ("scale", "field")
             else float(np.mean(np.nan_to_num(self.model.parameters)[self.members[group.name]]))
         )
+
+    def _bounds(self, group: AnyGroup) -> tuple[float, float]:
+        if isinstance(group, YamlGroup):
+            return float(np.log(group.lower / group.value)), float(np.log(group.upper / group.value))
+        if group.mode == "scale":
+            return float(np.log(group.lower)), float(np.log(group.upper))
+        return group.lower, group.upper
 
     def _symbolic_parameters(self, theta: ca.MX) -> tuple[ca.MX, dict[str, ca.MX]]:
         """The parameter vector of the model as expressions of the decision variables of the groups."""
         base = np.nan_to_num(self.model.parameters)
+        names = self.model.parameter_names
         parameters: list[ca.MX] = [ca.MX(float(value)) for value in base]
         values: dict[str, ca.MX] = {}
         for position, group in enumerate(self.groups):
+            if isinstance(group, YamlGroup):
+                values[group.name] = group.value * ca.exp(theta[position])
+                for i in self.members[group.name]:
+                    parameters[i] = float(base[i]) * ca.exp(group.exponents[names[i]] * theta[position])
+                continue
             values[group.name] = ca.exp(theta[position]) if group.mode == "scale" else theta[position]
             for i in self.members[group.name]:
                 parameters[i] = float(base[i]) * values[group.name] if group.mode == "scale" else theta[position]
@@ -332,10 +379,7 @@ class Calibrator:
         temperatures = [i for i, variable in enumerate(model.model.description.states) if variable.unit == "K"]
         low, high = STATE_BOUNDS
         opti.subject_to(opti.bounded(low - KELVIN, ca.vec(z[temperatures, :]), high - KELVIN))
-        bounds = [
-            (np.log(group.lower), np.log(group.upper)) if group.mode == "scale" else (group.lower, group.upper)
-            for group in self.groups
-        ]
+        bounds = [self._bounds(group) for group in self.groups]
         opti.subject_to(opti.bounded(ca.DM([b[0] for b in bounds]), theta, ca.DM([b[1] for b in bounds])))
         opti.minimize(self._objective(z, theta, arrays))
 

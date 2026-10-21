@@ -177,12 +177,18 @@ class FastModel:
 
     @classmethod
     def from_yaml(
-        cls, path: Path | str, name: str | None = None, roles: Roles | None = None, library: str = FAST_MODEL_LIBRARY
+        cls,
+        path: Path | str,
+        name: str | None = None,
+        roles: Roles | None = None,
+        library: str = FAST_MODEL_LIBRARY,
+        base_dir: Path | None = None,
     ) -> FastModel:
         """Generate the model with Trano from a building description.
 
         ``library`` is ``FastModelMPC`` (the controls of the systems are inputs, for MPC) or ``FastModel`` (the
         closed loop with the controllers of the YAML: the baseline of :func:`mpctrano.simulation.run_rule_based`).
+        The weather file is looked up in ``base_dir`` (the directory of the YAML by default).
         """
         from trano.data_models.conversion import convert_network
         from trano.elements.library.library import Library
@@ -192,7 +198,7 @@ class FastModel:
         path = Path(path).resolve()
         library_ = Library.from_configuration(library)
         network = convert_network(name or _package_name(path.stem), path, library=library_)
-        return cls.from_network(network, roles=roles, base_dir=path.parent)
+        return cls.from_network(network, roles=roles, base_dir=base_dir or path.parent)
 
     def write(self, directory: Path | str, stem: str | None = None) -> Path:
         """Write the Modelica package (``<stem>.mo``)."""

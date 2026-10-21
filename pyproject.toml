@@ -57,6 +57,7 @@ dev = [
     "nbmake>=1.5.5",
     "pre-commit>=4.6.2",
     "pyarrow>=25.0.1",
+    "types-pyyaml>=6.0",
 ]
 
 docs = [

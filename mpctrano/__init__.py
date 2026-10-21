@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from mpctrano.calibration import (
     DEFAULT_GROUPS,
+    YamlGroup,
     OPTIONAL_GROUPS,
     CalibrationResult,
     CalibrationSettings,
@@ -53,7 +54,14 @@ from mpctrano.project import Project
 from mpctrano.scenarios import Scenario, run_scenario, run_scenario_rule_based, scenario_catalogue
 from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based, spin_up
 from mpctrano.storage import Battery, ElectricVehicle
-from mpctrano.synthetic import SyntheticData, generate_monitoring_data, perturb, random_factors
+from mpctrano.synthetic import (
+    SyntheticData,
+    generate_closed_loop_data,
+    generate_monitoring_data,
+    perturb,
+    random_factors,
+)
+from mpctrano.yaml_parameters import CalibrationSpec, YamlParameter
 from mpctrano.tariff import (
     CapacityTariff,
     DemandResponseEvent,
@@ -78,6 +86,7 @@ __all__ = [
     "Battery",
     "CalibrationResult",
     "CalibrationSettings",
+    "CalibrationSpec",
     "Calibrator",
     "CapacityTariff",
     "ClosedLoopResult",
@@ -120,10 +129,13 @@ __all__ = [
     "TimeOfUseTariff",
     "WeatherFile",
     "WeatherForecaster",
+    "YamlGroup",
+    "YamlParameter",
     "__version__",
     "compare",
     "evaluate",
     "flexibility_function",
+    "generate_closed_loop_data",
     "generate_monitoring_data",
     "perturb",
     "price_response",

@@ -54,7 +54,9 @@ class MPCSettings(BaseModel):
     comfort_penalty: float = Field(5.0, ge=0, description="Linear penalty of comfort violations [EUR/(K.h)]")
     comfort_quadratic: float = Field(1.0, ge=0, description="Quadratic penalty of comfort violations [EUR/(K2.h)]")
     power_limit_penalty: float = Field(
-        50.0, ge=0, description="Penalty of the electricity above a demand response power limit [EUR/kWh]"
+        50.0,
+        ge=0,
+        description="Penalty of the electricity above a demand response power limit, or below a power floor [EUR/kWh]",
     )
     move_weight: float = Field(
         1e-2, ge=0, description="Penalty of a full-range change of a control between steps [EUR]"
@@ -69,7 +71,9 @@ class MPCSettings(BaseModel):
         None, ge=0, description="Price of the fuel [EUR/kWh]; None: the energy price of the tariff"
     )
     feed_in_price: float | None = Field(
-        None, description="Price of the electricity sold [EUR/kWh]; None: the energy price of the tariff"
+        None,
+        description="Price of the electricity sold [EUR/kWh]; None: the export price of the tariff when it has one, "
+        "its energy price otherwise",
     )
     warm_mu_init: float | None = Field(
         1e-3,
@@ -99,6 +103,9 @@ class MPCSolution:
     status: str
     iterations: int
     solve_time: float
+    meter: pd.DataFrame | None = None
+    """Planned power of each step [W]: ``P_meter`` (electricity bought, what the tariff bills), ``P_export``
+    (sold) and ``P_fuel``."""
 
     @property
     def first_control(self) -> np.ndarray:
@@ -107,6 +114,11 @@ class MPCSolution:
     @property
     def total_cost(self) -> float:
         return float(sum(self.costs.values()))
+
+    @property
+    def economic_cost(self) -> float:
+        """The money of the plan [EUR]: electricity, fuel and capacity, without the penalties."""
+        return self.costs["electricity"] + self.costs["fuel"] + self.costs["capacity"]
 
     @property
     def comfort_temperatures(self) -> pd.DataFrame:
@@ -163,6 +175,7 @@ class ModelPredictiveController:
         s_lo = opti.variable(n_c, N)
         s_hi = opti.variable(n_c, N)
         s_lim = opti.variable(1, N)
+        s_floor = opti.variable(1, N)
         peak = opti.variable()
 
         t0 = opti.parameter()
@@ -174,7 +187,9 @@ class ModelPredictiveController:
         lower = opti.parameter(n_c, N)
         upper = opti.parameter(n_c, N)
         limit = opti.parameter(1, N)
+        floor = opti.parameter(1, N)
         capacity = opti.parameter()
+        peak_so_far = opti.parameter()  # the peak already billed this month [W]
         v_previous = opti.parameter(n_u)
         first_move = opti.parameter()  # 1 when v_previous is the control applied before the horizon, else 0
 
@@ -186,7 +201,7 @@ class ModelPredictiveController:
         opti.subject_to(z[:, 0] == x0 - offset)
         opti.subject_to(opti.bounded(0, ca.vec(v), 1))
         collocated.bound_temperatures(opti, z[:, 1:])
-        for slack in (s_lo, s_hi, s_lim):
+        for slack in (s_lo, s_hi, s_lim, s_floor):
             opti.subject_to(ca.vec(slack) >= 0)
         comfort = z[model.comfort_indices, 1:] + offset[model.comfort_indices] @ ca.DM.ones(1, N)
         opti.subject_to(ca.vec(comfort + s_lo) >= ca.vec(lower))
@@ -204,7 +219,9 @@ class ModelPredictiveController:
         fuel = drawn(self._meter_rows("fuel"))
         power = bought * WATT_HOUR_TO_JOULE / dt  # electric power bought from the grid [W]
         opti.subject_to(ca.vec(power - s_lim) <= ca.vec(limit))
+        opti.subject_to(ca.vec(power + s_floor) >= ca.vec(floor))
         opti.subject_to(ca.vec(power) <= peak)
+        opti.subject_to(peak >= peak_so_far)
 
         electricity_cost = ca.sum2(price * bought - feed_in * (bought - net))
         fuel_cost = ca.sum2(fuel_price * fuel)
@@ -214,30 +231,51 @@ class ModelPredictiveController:
             + settings.comfort_quadratic * (ca.sumsqr(s_lo) + ca.sumsqr(s_hi))
         ) * hours
         limit_cost = settings.power_limit_penalty * ca.sum2(s_lim) * dt / WATT_HOUR_TO_JOULE
+        floor_cost = settings.power_limit_penalty * ca.sum2(s_floor) * dt / WATT_HOUR_TO_JOULE
         moves = ca.sumsqr(v[:, 1:] - v[:, :-1]) if N > 1 else ca.MX(0)
         move_cost = settings.move_weight * (moves + first_move * ca.sumsqr(v[:, 0] - v_previous))
         effort_cost = settings.effort_weight * ca.sumsqr(v)
         opti.minimize(
-            electricity_cost + fuel_cost + capacity_cost + comfort_cost + limit_cost + move_cost + effort_cost
+            electricity_cost
+            + fuel_cost
+            + capacity_cost
+            + comfort_cost
+            + limit_cost
+            + floor_cost
+            + move_cost
+            + effort_cost
         )
 
         self._opti = opti
-        self._variables = {"z": z, "zc": zc, "v": v, "s_lo": s_lo, "s_hi": s_hi, "s_lim": s_lim, "peak": peak}
+        self._variables = {
+            "z": z, "zc": zc, "v": v, "s_lo": s_lo, "s_hi": s_hi, "s_lim": s_lim, "s_floor": s_floor, "peak": peak,
+        }  # fmt: skip
         self._parameters = {
             "t0": t0, "x0": x0, "D": disturbances, "price": price, "feed_in": feed_in, "fuel_price": fuel_price,
-            "lower": lower, "upper": upper, "limit": limit, "capacity": capacity, "v_previous": v_previous,
-            "first_move": first_move,
+            "lower": lower, "upper": upper, "limit": limit, "floor": floor, "capacity": capacity,
+            "peak_so_far": peak_so_far, "v_previous": v_previous, "first_move": first_move,
         }  # fmt: skip
         self._costs = {
             "electricity": electricity_cost, "fuel": fuel_cost, "capacity": capacity_cost, "comfort": comfort_cost,
-            "power_limit": limit_cost, "moves": move_cost, "effort": effort_cost,
+            "power_limit": limit_cost, "power_floor": floor_cost, "moves": move_cost, "effort": effort_cost,
         }  # fmt: skip
         self._energy = {"electricity_bought": bought, "electricity_net": net, "fuel": fuel, "power": power}
 
-    def solve(self, x0: np.ndarray, forecast: pd.DataFrame, u_previous: np.ndarray | None = None) -> MPCSolution:
+    def solve(
+        self,
+        x0: np.ndarray,
+        forecast: pd.DataFrame,
+        u_previous: np.ndarray | None = None,
+        power_limits: np.ndarray | None = None,
+        power_floors: np.ndarray | None = None,
+        peak_so_far: float = 0.0,
+    ) -> MPCSolution:
         """Optimal plan from the state ``x0`` with the disturbance ``forecast`` (``horizon`` rows from ``t0``).
 
         ``u_previous`` is the control applied before the horizon (in the units of the model), penalised as a move.
+        ``power_limits`` and ``power_floors`` (``horizon`` values [W]) cap and floor the electricity bought on top of
+        the demand response events of the tariff, softly; ``peak_so_far`` [W] is the peak already billed by a
+        capacity tariff, below which the peak of the plan costs nothing more.
         """
         settings, model, collocated = self.settings, self.model, self.collocated
         N, dt = settings.horizon, settings.time_step
@@ -249,7 +287,13 @@ class ModelPredictiveController:
         start_time = float(seconds_of_year(index[:1])[0])
         signal = self.tariff.signal(index)
         bounds = self.comfort.bounds(model, end_of_steps)
-        limits = np.where(np.isfinite(signal.power_limits), signal.power_limits, 1e9)
+        limits = signal.power_limits if power_limits is None else np.minimum(signal.power_limits, power_limits)
+        limits = np.where(np.isfinite(limits), limits, 1e9)
+        floors = signal.floors if power_floors is None else np.maximum(signal.floors, power_floors)
+        if settings.feed_in_price is not None:
+            feed_in = np.full(N, settings.feed_in_price)
+        else:
+            feed_in = signal.export if self.tariff.has_export_price else signal.prices
         disturbances = forecast[model.disturbance_names].to_numpy(dtype=float).T
         x0 = np.asarray(x0, dtype=float)
 
@@ -261,12 +305,14 @@ class ModelPredictiveController:
             "x0": x0,
             "D": disturbances,
             "price": row(signal.prices),
-            "feed_in": row(settings.feed_in_price),
+            "feed_in": row(feed_in),
             "fuel_price": row(settings.fuel_price),
             "lower": bounds.lower,
             "upper": bounds.upper,
             "limit": limits.reshape(1, -1),
+            "floor": floors.reshape(1, -1),
             "capacity": signal.capacity_charge,
+            "peak_so_far": float(peak_so_far),
             "v_previous": np.zeros(model.n_controls)
             if u_previous is None
             else collocated.scaled(np.asarray(u_previous, dtype=float).reshape(-1, 1)).ravel(),
@@ -291,6 +337,16 @@ class ModelPredictiveController:
             {name: np.asarray(value(expression), dtype=float).ravel() for name, expression in self._energy.items()},
             index=index,
         )
+        per_kwh = WATT_HOUR_TO_JOULE / dt
+        meter = pd.DataFrame(
+            {
+                "P_meter": self.energy["power"],
+                "P_export": (self.energy["electricity_bought"] - self.energy["electricity_net"]).clip(lower=0)
+                * per_kwh,
+                "P_fuel": self.energy["fuel"] * per_kwh,
+            },
+            index=index,
+        )
         return MPCSolution(
             index=index,
             controls=pd.DataFrame(controls.T, index=index, columns=model.control_names),
@@ -303,7 +359,22 @@ class ModelPredictiveController:
             status=status,
             iterations=int(stats.get("iter_count", 0)),
             solve_time=solve_time,
+            meter=meter,
         )
+
+    def full_load_power(self, x0: np.ndarray, forecast: pd.DataFrame) -> float:
+        """Largest electric power [W] the building draws over the horizon with every control at its upper bound: the
+        bound of what it can absorb (a simulation, no optimisation)."""
+        settings, model, collocated = self.settings, self.model, self.collocated
+        N, dt = settings.horizon, settings.time_step
+        index = pd.DatetimeIndex(forecast.index[:N])
+        disturbances = forecast.iloc[:N][model.disturbance_names].to_numpy(dtype=float).T
+        controls = np.tile(collocated.unscaled(np.ones((model.n_controls, 1))), (1, N))
+        states = model.simulate(x0, controls, disturbances, dt, float(seconds_of_year(index[:1])[0]))
+        rows = self._meter_rows("electricity")
+        drawn = np.diff(states[rows], axis=1).sum(axis=0) if rows else np.zeros(N)
+        heat = sum(controls[model.control_names.index(name)] for name in model.heat_controls) * dt / WATT_HOUR_TO_JOULE
+        return float(np.max((drawn + heat) * WATT_HOUR_TO_JOULE / dt))
 
     def _warm_start(self, x0: np.ndarray, disturbances: np.ndarray, start_time: float) -> None:
         """Initial guess: a simulation of the model (CVODES) from ``x0``, consistent with the dynamics, under the

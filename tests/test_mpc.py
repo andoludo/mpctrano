@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from mpctrano import (
+    CapacityTariff,
     ComfortSpec,
     DemandResponseEvent,
     FastModel,
@@ -100,3 +101,27 @@ def test_heat_pump_mpc_follows_the_grid_signals(heat_pump: FastModel) -> None:
     assert power["capped"][window].max() <= 300 + 20  # W
     assert power["capped"][window].sum() <= power["free"][window].sum() + 1.0
     assert power["capacity"].max() <= power["free"].max() + 1.0
+
+
+def test_power_floors_caps_and_the_running_peak(heat_pump: FastModel) -> None:
+    """Per-solve floors and caps on the electricity bought hold in the plan; a peak already billed is charged."""
+    forecast = disturbances(heat_pump, START, 24)
+    tariff = CapacityTariff(base=FlatTariff(price=0.25), capacity_price=120.0)
+    controller = ModelPredictiveController(heat_pump, MPCSettings(horizon=24), ComfortSpec(), tariff)
+    free = controller.solve(heat_pump.initial_state, forecast)
+    assert free.success and free.meter is not None
+    billed = free.meter["P_meter"].to_numpy()
+    full_load = controller.full_load_power(heat_pump.initial_state, forecast)
+    assert full_load >= billed.max() - 1.0
+    window = slice(2, 5)
+    floors = np.zeros(24)
+    floors[window] = billed[window] + 500.0
+    limits = np.full(24, np.inf)
+    limits[10:13] = 0.0
+    shaped = controller.solve(heat_pump.initial_state, forecast, power_limits=limits, power_floors=floors)
+    assert shaped.success and shaped.meter is not None
+    assert np.all(shaped.meter["P_meter"].to_numpy()[window] >= floors[window] - 50.0)
+    assert shaped.meter["P_meter"].to_numpy()[10:13].max() <= 50.0
+    assert shaped.economic_cost > free.economic_cost
+    remembered = controller.solve(heat_pump.initial_state, forecast, peak_so_far=3000.0)
+    assert remembered.costs["capacity"] >= 10.0 * 3.0 - 1e-3  # 120/12 EUR/kW x 3 kW at least

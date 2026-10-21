@@ -22,7 +22,7 @@ from mpctrano.forecast import Forecaster, seconds_of_year
 from mpctrano.metrics import ControlMetrics, Prices
 from mpctrano.model import FastModel
 from mpctrano.mpc import WATT_HOUR_TO_JOULE, ModelPredictiveController
-from mpctrano.tariff import Tariff
+from mpctrano.tariff import CapacityTariff, Tariff
 
 
 class Plant(Protocol):
@@ -100,7 +100,12 @@ def metered_energy(
         / WATT_HOUR_TO_JOULE
     )
     net = drawn["electricity"] + heat - drawn["electricity_production"]
-    return {"fuel": drawn["fuel"], "bought": max(net, 0.0), "sold": max(-net, 0.0)}
+    return {
+        "fuel": drawn["fuel"],
+        "bought": max(net, 0.0),
+        "sold": max(-net, 0.0),
+        "generated": drawn["electricity_production"],
+    }
 
 
 @dataclass
@@ -192,7 +197,9 @@ def _result(
         frame[f"{zone}_upper"] = bounds.upper[i]
     prices = Prices.of(tariff, index, fuel_price, feed_in_price)
     frame["price"] = prices.electricity
+    frame["feed_in_price"] = prices.feed_in
     frame["fuel_price"] = prices.fuel
+    frame["P_meter"] = frame["bought"] * WATT_HOUR_TO_JOULE / time_step  # billed electric power [W]
     temperatures = frame[[f"{state}_end" for state in model.comfort_states]].to_numpy(dtype=float).T
     return ClosedLoopResult(
         name=name,
@@ -216,18 +223,33 @@ def run_closed_loop(
     steps: int,
     name: str = "mpc",
 ) -> ClosedLoopResult:
-    """Run ``steps`` control intervals from the time of the plant: measure, estimate, forecast, solve, apply."""
+    """Run ``steps`` control intervals from the time of the plant: measure, estimate, forecast, solve, apply.
+
+    Under a :class:`~mpctrano.tariff.CapacityTariff` with ``running_peak``, the controller carries the peak of the
+    month so far (from its floor ``minimum_peak_kw``, reset when the month changes).
+    """
     model, settings = controller.model, controller.settings
     dt = settings.time_step
     rows: list[dict[str, object]] = []
     previous: np.ndarray | None = None
     failures = 0
+    tariff = controller.tariff
+    carries_peak = isinstance(tariff, CapacityTariff) and tariff.running_peak
+    peak_floor = 1000 * tariff.minimum_peak_kw if isinstance(tariff, CapacityTariff) else 0.0
+    peak_so_far, month = peak_floor, plant.time.to_period("M")
     started = time.perf_counter()
     for _ in range(steps):
         now = plant.time
+        if now.to_period("M") != month:
+            peak_so_far, month = peak_floor, now.to_period("M")
         measurement = plant.measure()
         estimate = estimator.correct(measurement)
-        solution = controller.solve(estimate, forecaster.forecast(now, settings.horizon, dt), previous)
+        solution = controller.solve(
+            estimate,
+            forecaster.forecast(now, settings.horizon, dt),
+            previous,
+            peak_so_far=peak_so_far if carries_peak else 0.0,
+        )
         failures += not solution.success
         control = solution.first_control
         disturbance = forecaster.realisation(now, 1, dt).iloc[0].to_numpy(dtype=float)
@@ -235,9 +257,9 @@ def run_closed_loop(
         after = plant.step(control, disturbance)
         estimator.predict(control, disturbance)
         previous = control
-        row = _record(
-            model, now, control, disturbance, before, after, metered_energy(model, before, after, control, dt)
-        )
+        energy = metered_energy(model, before, after, control, dt)
+        peak_so_far = max(peak_so_far, energy["bought"] * WATT_HOUR_TO_JOULE / dt)
+        row = _record(model, now, control, disturbance, before, after, energy)
         row |= {
             f"{state}_measured": value for state, value in zip(model.comfort_states, measurement.tolist(), strict=True)
         }
@@ -247,6 +269,7 @@ def run_closed_loop(
             "solve_time": solution.solve_time,
             "iterations": solution.iterations,
             "success": float(solution.success),
+            "peak_so_far": peak_so_far,
         }
         rows.append(row)
     return _result(
@@ -293,3 +316,31 @@ def run_rule_based(
             _record(model, now, none, disturbance, before, after, metered_energy(model, before, after, none, time_step))
         )
     return _result(name, model, rows, comfort, tariff, fuel_price, feed_in_price, time_step, 0, started)
+
+
+def spin_up(
+    model: FastModel,
+    closed_loop: FastModel,
+    start: pd.Timestamp | str,
+    days: float = 3.0,
+    forecaster: Forecaster | None = None,
+    time_step: float = 3600.0,
+) -> np.ndarray:
+    """A state of ``model`` at ``start`` after ``days`` of operation by the controllers of the YAML.
+
+    A FastModel starts with every temperature at its start value (the walls at the set point, the buffer at its
+    supply temperature): a closed loop from there spends its first day emptying heat the building would not hold.
+    The closed-loop ``FastModel`` of the same YAML runs ``days`` before ``start``; the states the two models share
+    (by name) are copied into the initial state of ``model``.
+    """
+    from mpctrano.forecast import WeatherForecaster
+
+    forecaster = forecaster or WeatherForecaster.from_model(closed_loop)
+    plant = ModelPlant(closed_loop, time_step, pd.Timestamp(start) - pd.Timedelta(days=days))
+    none = np.zeros(0)
+    for _ in range(round(days * 86400 / time_step)):
+        plant.step(none, forecaster.realisation(plant.time, 1, time_step).iloc[0].to_numpy(dtype=float))
+    reached = dict(zip(closed_loop.state_names, plant.state.tolist(), strict=True))
+    return np.array(
+        [reached.get(name, value) for name, value in zip(model.state_names, model.initial_state, strict=True)]
+    )

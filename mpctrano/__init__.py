@@ -41,9 +41,10 @@ from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import Scenario, run_scenario, run_scenario_rule_based, scenario_catalogue
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based, spin_up
 from mpctrano.synthetic import SyntheticData, generate_monitoring_data, perturb, random_factors
 from mpctrano.tariff import (
+    CapacityTariff,
     DemandResponseEvent,
     DemandResponseTariff,
     DynamicTariff,
@@ -64,6 +65,7 @@ __all__ = [
     "CalibrationResult",
     "CalibrationSettings",
     "Calibrator",
+    "CapacityTariff",
     "ClosedLoopResult",
     "ComfortSchedule",
     "ComfortSpec",
@@ -116,5 +118,6 @@ __all__ = [
     "scenario_catalogue",
     "shifted_energy",
     "simulate_fit",
+    "spin_up",
     "value_of_flexibility",
 ]

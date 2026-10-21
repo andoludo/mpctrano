@@ -9,8 +9,8 @@
 #    the single source of truth, and see which parameters of the CasADi model each field moves.
 # 2. Calibrate the **closed-loop** model (the controllers of the YAML inside, no control input) on monitoring data
 #    a real building would give: a noisy air temperature and an electricity meter, no valve positions.
-# 3. Read how IPOPT solves it: the whole period on Radau collocation, the states as decision variables, the
-#    dynamics as constraints, a weighted least squares with priors.
+# 3. Read how IPOPT solves it: the three fields as decision variables, the closed-loop model simulated with CVODES
+#    inside a weighted least squares with priors, the gradient from the adjoint sensitivities of the integrator.
 # 4. Compare the model before and after: the temperatures and the energy on the training days and on two
 #    validation days, and the recovered values against the true ones.
 #
@@ -118,20 +118,29 @@ display(metrics_before.frame().round(3))
 # %% [markdown]
 # ## 4. How IPOPT calibrates it
 #
-# The calibration is one nonlinear programme over the whole training period:
+# The calibration is one nonlinear programme over the whole training period, solved by **single shooting**
+# (`CalibrationSettings.method`, chosen automatically for a closed-loop model):
 #
-# * **decision variables**: the states at every hour and on the Radau collocation points inside each hour (38
-#   states, 2 points), the initial state (the walls and the water are not measured) and one variable per declared
-#   parameter, `log(field / value)`, bounded by `log(min / value)` and `log(max / value)`;
-# * **constraints**: the collocated dynamics `xdot = f(t, x, d, p(theta))` on every point, with the disturbances of
-#   the data and the parameters as expressions of the fields (`p = p0 * (field / value) ** e`);
+# * **decision variables**: one per declared parameter, `log(field / value)`, bounded by `log(min / value)` and
+#   `log(max / value)`; nothing else. The parameters of the model are expressions of the fields
+#   (`p = p0 * (field / value) ** e`, the exponents measured above; a conductivity and a thickness both move the
+#   conductance of the insulation layer, their factors compound).
+# * **the simulation inside the objective**: from the state the controllers of the YAML reach after two days
+#   before the data (`spin_up`, the measured air temperature put in), CVODES integrates the closed-loop model
+#   hour by hour with the disturbances of the data, the parameters symbolic. CasADi differentiates through the
+#   integrator (adjoint sensitivities), so that IPOPT has an exact gradient; its Hessian is a quasi-Newton
+#   (L-BFGS) one.
 # * **objective**: the squared errors of the simulated air temperature against the measurements (weighted by the
 #   sensor noise), of the energy metered over each hour against the meter (weighted by the meter noise), and the
 #   squared deviations of the fields from their prior (the YAML).
 #
-# Keeping the states as variables (rather than simulating and differentiating) keeps the problem well conditioned
-# over long periods and poor initial parameters: IPOPT moves the parameters and the trajectory together. The log
-# below is IPOPT's own (one line per iteration: the objective, the infeasibility, the step).
+# The models with control inputs (the MPC models of the other tutorials) are calibrated on their Radau
+# collocation instead, the states as decision variables and the dynamics as constraints: well conditioned over
+# long periods and poor initial parameters. Not here: the thermostat, the hysteresis of the heat pump controller
+# and the valve limits make the collocated dynamics of a closed-loop model non-smooth, and IPOPT crawls for
+# hundreds of iterations without converging; a simulation follows these switches in under a second, and three
+# parameters need a handful of iterations. The log below is IPOPT's own (one line per iteration: the objective,
+# the dual infeasibility, the step).
 
 # %%
 if quick_mode():
@@ -143,7 +152,7 @@ else:
             training, validation
         )
 print(
-    f"{result.variables} variables, {result.constraints} constraints, {result.iterations} iterations, "
+    f"{result.method}: {result.variables} decision variables, {result.iterations} iterations, "
     f"{result.solve_time:.0f} s, {result.status}"
 )
 

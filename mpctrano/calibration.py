@@ -9,11 +9,19 @@ each by one decision variable:
 * a ``value`` group gives every parameter it matches one common value within ``[lower, upper]``, regularised towards
   their mean Trano value (the infiltration rate, which Trano leaves at 0).
 
-The problem is solved with IPOPT on the Radau collocation of the model over the whole data set (the parameters
-symbolic): the states of every step are decision variables bound by the dynamics, so that a long period and poor
-initial parameters stay well conditioned. The objective weighs the errors of the measured zone air temperatures, of
-the energy metered over each step (fuel, electricity) when the data has the meters, and the deviation of each group
-from its prior. The unmeasured states (walls, water) are free at the start of the data.
+The problem is solved with IPOPT, by one of two methods (:attr:`CalibrationSettings.method`):
+
+* **collocation** (models with control inputs): the Radau collocation of the model over the whole data set, the
+  parameters symbolic; the states of every step are decision variables bound by the dynamics, so that a long period
+  and poor initial parameters stay well conditioned, and the unmeasured states (walls, water) are free at the start;
+* **shooting** (closed-loop models, their controllers inside): the groups are the only decision variables, the
+  model is simulated with CVODES inside the objective from the state its own controllers reach before the data
+  (:func:`~mpctrano.simulation.spin_up`) and IPOPT gets the gradient from the adjoint sensitivities of the
+  integrator (a quasi-Newton Hessian). The switching controllers of such a model (thermostats, hysteresis) make its
+  collocated dynamics non-smooth, where a simulation follows them.
+
+The objective weighs the errors of the measured zone air temperatures, of the energy metered over each step (fuel,
+electricity) when the data has the meters, and the deviation of each group from its prior.
 
 Only the parameters the equations use count: the layer data of a construction (``constructionType.k``) are not,
 the conductances and capacities computed from them (``G[i]``, ``C[i]``) are. The heat output law of the radiators is
@@ -32,7 +40,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypeVar
 
 import casadi as ca
 import numpy as np
@@ -45,6 +53,9 @@ from mpctrano.forecast import Forecaster, WeatherForecaster, seconds_of_year
 from mpctrano.metrics import FitMetrics
 from mpctrano.model import FastModel
 from mpctrano.units import KELVIN, STATE_BOUNDS
+
+Symbol = TypeVar("Symbol", ca.SX, ca.MX)
+"""The kind of CasADi expression a problem is written in: SX inside an integrator, MX in an Opti problem."""
 
 
 class ParameterGroup(BaseModel):
@@ -125,7 +136,15 @@ class CalibrationSettings(BaseModel):
     regularization: float = Field(1.0, ge=0, description="Weight of the priors of the groups")
     degree: int = Field(2, ge=1, le=9, description="Radau collocation points per step")
     max_iterations: int = Field(500, ge=1)
+    method: Literal["auto", "collocation", "shooting"] = Field(
+        "auto", description="How the dynamics enter the problem; auto: shooting for a closed-loop model"
+    )
     verbose: bool = False
+
+    def method_for(self, model: FastModel) -> Literal["collocation", "shooting"]:
+        if self.method == "auto":
+            return "shooting" if not model.control_names else "collocation"
+        return self.method
 
 
 class CalibrationResult(BaseModel):
@@ -144,6 +163,7 @@ class CalibrationResult(BaseModel):
     status: str
     iterations: int
     solve_time: float
+    method: Literal["collocation", "shooting"] = "collocation"
     variables: int = Field(0, description="Decision variables of the nonlinear programme (states, points, groups)")
     constraints: int = Field(0, description="Constraints of the nonlinear programme (the collocated dynamics)")
 
@@ -283,14 +303,14 @@ class Calibrator:
         """The parameters of the model with each group at its factor (scale), value (value) or field value (YAML)."""
         vector = self.model.parameters.copy()
         names = self.model.parameter_names
-        for group in self.groups:
+        for group in self.groups:  # the factors of the groups sharing a parameter compound
             members = self.members[group.name]
             if isinstance(group, YamlGroup):
                 factor = values[group.name] / group.value
                 for i in members:
-                    vector[i] = self.model.parameters[i] * factor ** group.exponents[names[i]]
+                    vector[i] *= factor ** group.exponents[names[i]]
             elif group.mode == "scale":
-                vector[members] = self.model.parameters[members] * values[group.name]
+                vector[members] *= values[group.name]
             else:
                 vector[members] = values[group.name]
         return vector
@@ -314,21 +334,23 @@ class Calibrator:
             return float(np.log(group.lower)), float(np.log(group.upper))
         return group.lower, group.upper
 
-    def _symbolic_parameters(self, theta: ca.MX) -> tuple[ca.MX, dict[str, ca.MX]]:
-        """The parameter vector of the model as expressions of the decision variables of the groups."""
+    def _symbolic_parameters(self, theta: Symbol) -> tuple[Symbol, dict[str, Symbol]]:
+        """The parameter vector of the model as expressions (of the kind of ``theta``) of the decision variables of
+        the groups; the factors of the groups sharing a parameter compound."""
+        symbol = type(theta)
         base = np.nan_to_num(self.model.parameters)
         names = self.model.parameter_names
-        parameters: list[ca.MX] = [ca.MX(float(value)) for value in base]
-        values: dict[str, ca.MX] = {}
+        parameters: list[Symbol] = [symbol(float(value)) for value in base]
+        values: dict[str, Symbol] = {}
         for position, group in enumerate(self.groups):
             if isinstance(group, YamlGroup):
                 values[group.name] = group.value * ca.exp(theta[position])
                 for i in self.members[group.name]:
-                    parameters[i] = float(base[i]) * ca.exp(group.exponents[names[i]] * theta[position])
+                    parameters[i] = parameters[i] * ca.exp(group.exponents[names[i]] * theta[position])
                 continue
             values[group.name] = ca.exp(theta[position]) if group.mode == "scale" else theta[position]
             for i in self.members[group.name]:
-                parameters[i] = float(base[i]) * values[group.name] if group.mode == "scale" else theta[position]
+                parameters[i] = parameters[i] * values[group.name] if group.mode == "scale" else theta[position]
         return ca.vertcat(*parameters), values
 
     def _collocate(self, opti: ca.Opti, z: ca.MX, zc: ca.MX, p: ca.MX, arrays: _Data) -> None:
@@ -357,7 +379,7 @@ class Calibrator:
                 opti.subject_to(dt * derivative - slope == 0)
             opti.subject_to(z[:, k + 1] == sum(d[r] * points[r] for r in range(degree + 1)))
 
-    def _objective(self, z: ca.MX, theta: ca.MX, arrays: _Data) -> ca.MX:
+    def _objective(self, z: Symbol, theta: Symbol, arrays: _Data) -> Symbol:
         """Weighted squares of the temperature and meter errors and of the deviations of the groups from their prior."""
         model, settings = self.model, self.settings
         observed = ~np.isnan(arrays.temperatures)
@@ -378,9 +400,75 @@ class Calibrator:
     def fit(
         self, data: MonitoringData | pd.DataFrame, validation: MonitoringData | pd.DataFrame | None = None
     ) -> tuple[FastModel, CalibrationResult]:
-        """Calibrate on ``data`` (see :func:`prepare`); ``validation`` follows it in time and is only simulated."""
+        """Calibrate on ``data`` (see :func:`prepare`) by the method of the settings; ``validation`` follows it in
+        time and is only simulated."""
+        arrays = prepare(self.model, data)
+        if self.settings.method_for(self.model) == "shooting":
+            return self._fit_shooting(arrays, validation)
+        return self._fit_collocation(arrays, validation)
+
+    def _fit_shooting(
+        self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None
+    ) -> tuple[FastModel, CalibrationResult]:
+        """The groups as the only decision variables, the model simulated with CVODES inside the objective."""
         model, settings = self.model, self.settings
-        arrays = prepare(model, data)
+        steps, dt = arrays.controls.shape[1], arrays.time_step
+        collocated = model.collocated(dt)
+        x = ca.SX.sym("x", model.n_states)
+        u = ca.SX.sym("u", len(model.control_names))
+        w = ca.SX.sym("w", len(model.disturbance_names))
+        t0, s = ca.SX.sym("t0"), ca.SX.sym("s")
+        theta_sx = ca.SX.sym("theta", len(self.groups))
+        p, _ = self._symbolic_parameters(theta_sx)
+        ode = {
+            "x": x,
+            "t": s,
+            "p": ca.vertcat(t0, u, w, theta_sx),
+            "ode": collocated.rhs(t0 + s, x, collocated._inputs(u, w), p),
+        }
+        step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-6, "reltol": 1e-6})
+        theta = ca.MX.sym("theta", len(self.groups))
+        _, values = self._symbolic_parameters(theta)
+        start = _initial_state(model, arrays)
+        state = ca.MX(start)
+        states = [state]
+        for k in range(steps):
+            inputs = ca.vertcat(arrays.start_time + k * dt, arrays.controls[:, k], arrays.disturbances[:, k], theta)
+            state = step(x0=state, p=inputs)["xf"]
+            states.append(state)
+        z = ca.hcat(states) - ca.DM(collocated.offset)
+        objective = self._objective(z, theta, arrays)
+        bounds = np.array([self._bounds(group) for group in self.groups])
+        options = {
+            **default_ipopt_options(),
+            "max_iter": settings.max_iterations,
+            "print_level": 5 if settings.verbose else 0,
+            "hessian_approximation": "limited-memory",
+            "tol": 1e-4,
+            "acceptable_tol": 1e-2,
+            "acceptable_iter": 5,
+        }
+        solver = ca.nlpsol(
+            "calibration", "ipopt", {"x": theta, "f": objective}, {"ipopt": options, "print_time": False}
+        )
+        started = time.perf_counter()
+        solution = solver(x0=[self._prior_value(group) for group in self.groups], lbx=bounds[:, 0], ubx=bounds[:, 1])
+        solve_time = time.perf_counter() - started
+        stats = solver.stats()
+        at_solution = ca.Function("solution", [theta], [ca.vertcat(*list(values.values())), z])
+        estimated_values, trajectory = at_solution(solution["x"])
+        estimated = {group.name: float(estimated_values[position]) for position, group in enumerate(self.groups)}
+        states_array = np.asarray(trajectory, dtype=float) + collocated.offset[:, None]
+        result = self._result(
+            estimated, states_array, arrays, validation, str(stats["return_status"]), stats, solve_time
+        )
+        return result[0], result[1].model_copy(update={"method": "shooting", "variables": len(self.groups)})
+
+    def _fit_collocation(
+        self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None
+    ) -> tuple[FastModel, CalibrationResult]:
+        """The states on the collocation points as decision variables, the dynamics as constraints."""
+        model, settings = self.model, self.settings
         n_x, steps, degree, dt = model.n_states, arrays.controls.shape[1], settings.degree, arrays.time_step
         collocated = model.collocated(dt)
 
@@ -428,7 +516,9 @@ class Calibrator:
         estimated = {group.name: float(value(values[group.name])) for group in self.groups}
         trajectory = np.asarray(value(z), dtype=float).reshape(n_x, steps + 1) + collocated.offset[:, None]
         result = self._result(estimated, trajectory, arrays, validation, str(stats["return_status"]), stats, solve_time)
-        return result[0], result[1].model_copy(update={"variables": int(opti.nx), "constraints": int(opti.ng)})
+        return result[0], result[1].model_copy(
+            update={"method": "collocation", "variables": int(opti.nx), "constraints": int(opti.ng)}
+        )
 
     def _result(
         self,

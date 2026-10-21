@@ -29,13 +29,23 @@ result.factors       # the value of each group
 result.metrics()     # RMSE and MAE of the air temperatures, training and validation, before and after
 ```
 
-The problem is solved with IPOPT on the Radau collocation of the model over the whole period, the
-parameters symbolic: the states of every step are decision variables bound by the dynamics, so that a
-long period and poor initial parameters stay well conditioned, and the unmeasured states (walls,
-water) are free at the start. The objective weighs the errors of the air temperatures
-(`temperature_std`), of the energy metered over each step (`meter_std`) and the deviation of each
-group from the Trano value (`prior_std`, `regularization`). The validation period is simulated from
-where the training ends.
+The problem is solved with IPOPT by one of two methods (`CalibrationSettings.method`, `auto` by
+default):
+
+* **collocation**, for a model with control inputs: the Radau collocation of the model over the whole
+  period, the parameters symbolic. The states of every step are decision variables bound by the
+  dynamics, so that a long period and poor initial parameters stay well conditioned, and the
+  unmeasured states (walls, water) are free at the start.
+* **shooting**, for a closed-loop model (the controllers of the YAML inside, no control input): the
+  groups are the only decision variables; the model is simulated with CVODES inside the objective from
+  the state its own controllers reach before the data (`spin_up`), and IPOPT gets the gradient from the
+  adjoint sensitivities of the integrator, with a quasi-Newton (L-BFGS) Hessian. The thermostats and
+  hysteresis of such a model make its collocated dynamics non-smooth (IPOPT then crawls without
+  converging), where a simulation follows them in a second.
+
+The objective weighs the errors of the air temperatures (`temperature_std`), of the energy metered
+over each step (`meter_std`) and the deviation of each group from the Trano value (`prior_std`,
+`regularization`). The validation period is simulated from where the training ends.
 
 On the boiler house of the tests, with the conductances x1.3, the capacities x0.8, the air capacity
 x3, 0.5 air changes per hour and the boiler efficiency x0.9, four days recover x1.35, x0.80, x2.74,
@@ -75,7 +85,9 @@ flat copy Trano reads. Which parameters of the CasADi model a field moves is mea
 the model is regenerated with the field raised by 20 % and the exponent of every parameter that
 moved is read (a conductivity moves the conductances of its layers with the exponent 1, a thickness
 moves them with -1 and the node capacities with a small exponent). The calibration then adjusts the
-field within its bounds and every dependent parameter with it (`YamlGroup`).
+field within its bounds and every dependent parameter with it (`YamlGroup`); the factors of fields
+that move the same parameter compound (a conductivity and a thickness both move the conductance of
+the insulation layer).
 
 ```python
 from mpctrano import CalibrationSettings, CalibrationSpec, Calibrator, generate_closed_loop_data, spin_up

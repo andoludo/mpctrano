@@ -310,6 +310,30 @@ class FastModel:
         patterns = list(patterns)
         return [name for name in self.parameter_names if any(fnmatch.fnmatch(name, pattern) for pattern in patterns)]
 
+    def with_control_bounds(self, bounds: Mapping[str, tuple[float | None, float | None]]) -> FastModel:
+        """Copy of the model with other bounds on some controls (``name: (lower, upper)``, ``None`` keeps a bound).
+
+        The bounds of the model come from the Modelica ``min`` and ``max`` of its inputs; an ideal emitter
+        (``Q_flow`` in W) is written with ``min=0``, heating only: a negative lower bound lets the controller cool
+        with it (the equations hold, the emitter is a heat flow of either sign).
+        """
+        unknown = set(bounds) - set(self.control_names)
+        if unknown:
+            raise KeyError(f"Unknown controls: {sorted(unknown)}")
+        inputs = []
+        for original in self.model.description.inputs:
+            variable = original
+            if original.name in bounds:
+                lower, upper = bounds[original.name]
+                update = {"minimum": original.minimum if lower is None else float(lower)}
+                update |= {"maximum": original.maximum if upper is None else float(upper)}
+                variable = original.model_copy(update=update)
+            inputs.append(variable)
+        model = CasadiModel(
+            rhs=self.model.rhs, description=self.model.description.model_copy(update={"inputs": tuple(inputs)})
+        )
+        return replace(self, model=model)
+
     def with_parameters(self, values: Mapping[str, float] | Sequence[float] | np.ndarray) -> FastModel:
         """Copy of the model with other parameter values (a mapping of names or a full vector)."""
         if isinstance(values, Mapping):

@@ -86,16 +86,24 @@ class ModelPlant:
 
 
 def metered_energy(
-    model: FastModel, before: np.ndarray, after: np.ndarray, control: np.ndarray, time_step: float
+    model: FastModel,
+    before: np.ndarray,
+    after: np.ndarray,
+    control: np.ndarray,
+    time_step: float,
+    heat_cop: float = 1.0,
+    cooling_eer: float = 3.0,
 ) -> dict[str, float]:
     """Energy of one step [kWh], read from the meters: fuel, electricity bought and sold (the electricity meters and
-    the heat of the ideal emitters, netted with the production)."""
+    the heat of the ideal emitters through their COP, or their cooling through the EER, netted with the
+    production)."""
     drawn = {"fuel": 0.0, "electricity": 0.0, "electricity_production": 0.0}
     for name, carrier in model.meters.items():
         index = model.state_names.index(name)
         drawn[carrier] += float(after[index] - before[index])
+    flows = [float(control[model.control_names.index(name)]) for name in model.heat_controls]
     heat = (
-        sum(float(control[model.control_names.index(name)]) for name in model.heat_controls)
+        sum(max(flow, 0.0) / heat_cop + max(-flow, 0.0) / cooling_eer for flow in flows)
         * time_step
         / WATT_HOUR_TO_JOULE
     )
@@ -257,7 +265,7 @@ def run_closed_loop(
         after = plant.step(control, disturbance)
         estimator.predict(control, disturbance)
         previous = control
-        energy = metered_energy(model, before, after, control, dt)
+        energy = metered_energy(model, before, after, control, dt, settings.heat_cop, settings.cooling_eer)
         peak_so_far = max(peak_so_far, energy["bought"] * WATT_HOUR_TO_JOULE / dt)
         row = _record(model, now, control, disturbance, before, after, energy)
         row |= {

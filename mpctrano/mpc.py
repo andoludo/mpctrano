@@ -43,6 +43,8 @@ from mpctrano.tariff import Tariff
 WATT_HOUR_TO_JOULE = 3.6e6
 NET_SMOOTHING = 1e-3
 """Smoothing [kWh] of the positive part of the net electricity of a step."""
+HEAT_SMOOTHING = 1.0
+"""Smoothing [W] of the heating and cooling parts of the heat flow of an ideal emitter."""
 
 
 class MPCSettings(BaseModel):
@@ -83,6 +85,12 @@ class MPCSettings(BaseModel):
         "None: IPOPT's default",
     )
     default_heat_bound: float = Field(1e4, gt=0, description="Upper bound of a heat control [W] without a max")
+    heat_cop: float = Field(
+        1.0, gt=0, description="Heat per electricity of the ideal emitters (1: resistive, a heat pump: its COP)"
+    )
+    cooling_eer: float = Field(
+        3.0, gt=0, description="Cooling per electricity of the ideal emitters used to cool (a chiller: its EER)"
+    )
     ipopt: dict[str, float | int | str] = Field(
         default_factory=dict, description="IPOPT options added to trano's defaults (max_iter, tol, ...)"
     )
@@ -211,9 +219,14 @@ class ModelPredictiveController:
             """Energy metered over each step [kWh], (1, N)."""
             return ca.sum1(z[rows, 1:] - z[rows, :-1]) if rows else ca.MX.zeros(1, N)
 
-        heat = np.array([1.0 if name in model.heat_controls else 0.0 for name in model.control_names])
-        span = self.upper - self.lower
-        heat_energy = (ca.DM(heat * span).T @ v + float(heat @ self.lower)) * dt / WATT_HOUR_TO_JOULE
+        heat_rows = [i for i, name in enumerate(model.control_names) if name in model.heat_controls]
+        heat_energy: Any = ca.MX.zeros(1, N)
+        for i in heat_rows:  # the heat of an ideal emitter [W], bought at the electricity price through the COP / EER
+            flow = self.lower[i] + (self.upper[i] - self.lower[i]) * v[i, :]
+            heating = 0.5 * (flow + ca.sqrt(flow**2 + HEAT_SMOOTHING**2))
+            heat_energy = heat_energy + (heating / settings.heat_cop + (heating - flow) / settings.cooling_eer) * (
+                dt / WATT_HOUR_TO_JOULE
+            )
         net = drawn(self._meter_rows("electricity")) + heat_energy - drawn(self._meter_rows("electricity_production"))
         bought = 0.5 * (net + ca.sqrt(net**2 + NET_SMOOTHING**2))
         fuel = drawn(self._meter_rows("fuel"))
@@ -374,7 +387,7 @@ class ModelPredictiveController:
         rows = self._meter_rows("electricity")
         drawn = np.diff(states[rows], axis=1).sum(axis=0) if rows else np.zeros(N)
         heat = sum(controls[model.control_names.index(name)] for name in model.heat_controls) * dt / WATT_HOUR_TO_JOULE
-        return float(np.max((drawn + heat) * WATT_HOUR_TO_JOULE / dt))
+        return float(np.max((drawn + heat / settings.heat_cop) * WATT_HOUR_TO_JOULE / dt))
 
     def _warm_start(self, x0: np.ndarray, disturbances: np.ndarray, start_time: float) -> None:
         """Initial guess: a simulation of the model (CVODES) from ``x0``, consistent with the dynamics, under the

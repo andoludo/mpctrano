@@ -46,10 +46,10 @@ def _build(study: str, label: str, parts: dict[str, Any], force: bool) -> str:
     )
 
 
-def _envelope(force: bool) -> str:
+def _envelope(at: str, force: bool) -> str:
     started = time.perf_counter()
-    _module("flexibility").envelope(force=force)
-    return f"flexibility | envelope: {time.perf_counter() - started:.0f} s"
+    _module("flexibility").envelope(at, force=force)
+    return f"flexibility | envelope at {at}: {time.perf_counter() - started:.0f} s"
 
 
 @app.command()
@@ -73,7 +73,7 @@ def main(
         for phase, jobs in enumerate(pending):
             futures = [pool.submit(_build, *job, force) for job in jobs]
             if phase == 0 and "flexibility" in names:
-                futures.append(pool.submit(_envelope, force))
+                futures += [pool.submit(_envelope, at, force) for at in _module("flexibility").ENVELOPE_TIMES]
             for future in as_completed(futures):
                 typer.echo(future.result(), err=False)
     typer.echo(f"done in {time.perf_counter() - started:.0f} s")

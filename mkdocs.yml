@@ -34,12 +34,22 @@ theme:
   language: en
 plugins:
   - search
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
+      include_requirejs: true
+      ignore_h1_titles: true
 nav:
   - Workflow: index.md
   - Monitoring data: data.md
   - Calibration: calibration.md
   - State estimation: estimation.md
   - MPC, tariffs and flexibility: mpc.md
+  - Tutorials:
+      - About the tutorials: tutorials/index.md
+      - 00 Setup check: tutorials/00_setup_check.ipynb
+      - 01 A house with a heat pump: tutorials/01_house_heat_pump.ipynb
+      - 02 Flexibility use cases: tutorials/02_flexibility_use_cases.ipynb
 markdown_extensions:
   - admonition
   - tables

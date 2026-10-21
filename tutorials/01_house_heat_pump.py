@@ -22,8 +22,9 @@
 import pandas as pd
 from IPython.display import display
 
+from mpctrano import ComfortSpec, ModelPredictiveController, MPCSettings
 from mpctrano.notebook import closed_loop_explorer, kpi_table, plan_explorer, quick_mode
-from mpctrano.plot import plot_closed_loop, plot_states
+from mpctrano.plot import plot_closed_loop, plot_plan, plot_states
 from tutorials import _house
 
 pd.set_option("display.width", 200)
@@ -82,6 +83,16 @@ tariffs = _house.tariffs()
 display(plan_explorer(house, tariffs))
 
 # %% [markdown]
+# The widget needs a live kernel; the plan of its default selection (day-ahead prices, the standard band, a
+# 24-hour horizon), for the static rendering of this notebook:
+
+# %%
+horizon = 6 if quick_mode() else 24
+controller = ModelPredictiveController(model, MPCSettings(horizon=horizon), ComfortSpec(), tariffs["day-ahead"])
+plan = controller.solve(house.initial_state(), house.forecaster.forecast(_house.START, horizon, 3600.0))
+display(plot_plan(plan, model, "base house, day-ahead prices"))
+
+# %% [markdown]
 # What to look for:
 #
 # * **The morning recovery**: the setback ends at 7h; the plan starts the compressor before, so that the air is
@@ -108,6 +119,15 @@ dimensions = {
     "mismatch": ["mismatch"],
 }
 display(closed_loop_explorer(_house.CACHE, runs, _house.compute, dimensions))
+spike = _house.cached(
+    variant="base",
+    price="day-ahead + evening spike",
+    band="standard",
+    mismatch="mismatch",
+    estimator="mhe",
+    days=_house.DAYS,
+)
+display(plot_closed_loop(spike, "base house, day-ahead prices with an evening spike (the widget's static fallback)"))
 
 # %% [markdown]
 # ### MPC against the controllers of the YAML

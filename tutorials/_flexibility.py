@@ -51,7 +51,10 @@ ACTIVATIONS: dict[str, dict[str, Any]] = {
 }
 """Requests sized to the house: it draws 0.3 to 0.6 kW in the evening and its compressor about 1.2 kW at most."""
 PRICE_STEP = {"hour": 17.0, "duration": 3.0, "factor": 3.0}
-ENVELOPE_AT = START + pd.Timedelta(hours=6)
+ENVELOPE_TIMES = {"13h": START + pd.Timedelta(hours=13), "19h": START + pd.Timedelta(hours=19)}
+"""When the envelope is computed on the first day: at midday the house is in its band and the compressor idle
+(room to absorb, nothing to shed); in the evening the heat pump runs (room to shed). At 6h the morning recovery
+saturates the heat pump and any shed breaks the 7h set point."""
 ENVELOPE_DURATIONS = (1.0, 2.0, 4.0)
 
 
@@ -63,11 +66,22 @@ def _run(variant: str, name: str, tariff: Any, days_: float, band: tuple[float, 
     return scenario(f"{variant} | {name}", tariff, comfort_spec(*band), START, days_)
 
 
+def estimator(variant: str, run: Scenario) -> MovingHorizonEstimator:
+    """A moving horizon estimator started from the spun-up state the model expects (not the plant's)."""
+    house = building(variant)
+    return MovingHorizonEstimator(house.model, run.settings.time_step, run.start, x0=house.initial_state())
+
+
 def _closed_loop(variant: str, run: Scenario) -> ClosedLoopResult:
     """The closed loop of ``run`` against the true building of the variant, with moving horizon estimation."""
     house = building(variant)
-    mhe = MovingHorizonEstimator(house.model, run.settings.time_step, run.start, x0=house.initial_state())
-    return run_scenario(house.model, run, plant=house.plant(mismatch=True), forecaster=house.forecaster, estimator=mhe)
+    return run_scenario(
+        house.model,
+        run,
+        plant=house.plant(mismatch=True),
+        forecaster=house.forecaster,
+        estimator=estimator(variant, run),
+    )
 
 
 # --------------------------------------------------------------------------- implicit flexibility
@@ -170,6 +184,9 @@ def compute_activation(activation: str, days: float, **_: Any) -> ClosedLoopResu
     def plant() -> Any:
         return house.plant(mismatch=True)
 
+    def fresh_estimator() -> MovingHorizonEstimator:
+        return estimator("base", run)
+
     if activation == "price step":
         return flexibility_function(
             house.model,
@@ -180,9 +197,16 @@ def compute_activation(activation: str, days: float, **_: Any) -> ClosedLoopResu
             plant=plant,
             forecaster=house.forecaster,
             baseline=baseline,
+            estimator=fresh_estimator,
         ).response
     return respond(
-        house.model, run, _request(activation), plant=plant, forecaster=house.forecaster, baseline=baseline
+        house.model,
+        run,
+        _request(activation),
+        plant=plant,
+        forecaster=house.forecaster,
+        baseline=baseline,
+        estimator=fresh_estimator,
     ).response
 
 
@@ -222,18 +246,19 @@ def cached(**parts: Any) -> ClosedLoopResult:
     return CACHE.run(lambda: compute(**parts), **parts)
 
 
-def envelope(force: bool = False) -> pd.DataFrame:
-    """The flexibility envelope of the base house at 6h on the first day, day-ahead prices (cached as a CSV: about
-    twenty open-loop solves)."""
-    path = CACHE.directory / "envelope_base.csv"
+def envelope(time: str = "13h", force: bool = False) -> pd.DataFrame:
+    """The flexibility envelope of the base house at ``time`` on the first day (:data:`ENVELOPE_TIMES`), day-ahead
+    prices (cached as a CSV: about thirty open-loop solves)."""
+    path = CACHE.directory / f"envelope_base_{time}.csv"
     if path.exists() and not force:
         return pd.read_csv(path, index_col="duration_h")
+    at = ENVELOPE_TIMES[time]
     house = building("base")
     controller = ModelPredictiveController(house.model, MPCSettings(horizon=24), ComfortSpec(), tariffs()["day-ahead"])
     frame = FlexibilityEnvelope.compute(
         controller,
-        house.initial_state(start=ENVELOPE_AT),
-        house.forecaster.forecast(ENVELOPE_AT, 24, 3600.0),
+        house.initial_state(start=at),
+        house.forecaster.forecast(at, 24, 3600.0),
         durations=ENVELOPE_DURATIONS,
         iterations=5,
     ).frame

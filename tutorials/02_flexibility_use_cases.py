@@ -129,6 +129,7 @@ display(pd.concat(rows).round(2))
 # %%
 dimensions = {"variant": ["base", "old"], "capacity": list(study.CAPACITY)}
 display(closed_loop_explorer(study.CACHE, study.capacity_runs(), study.compute, dimensions))
+display(plot_closed_loop(capacity["old | 50 EUR/kW/year, 2.5 kW floor"], "old house under the Flemish capacity tariff"))
 
 # %% [markdown]
 # ## 3. Explicit flexibility: activation requests and the rebound
@@ -155,9 +156,10 @@ display(plot_activation(results["absorb 0.5 kW, 2 h at 13h"], "base house: absor
 # of the electricity bought; absorbing is bounded by the full-load power of the heat pump).
 
 # %%
-envelope = study.envelope()
-display(envelope.round(3))
-display(plot_envelope(envelope, f"base house at {study.ENVELOPE_AT:%Hh}, day-ahead prices"))
+for at in study.ENVELOPE_TIMES:
+    envelope = study.envelope(at)
+    display(envelope.round(3))
+    display(plot_envelope(envelope, f"base house at {at} on the first day, day-ahead prices"))
 
 # %% [markdown]
 # The **flexibility function** of Junker et al. characterises the response to a penalty (price) step rather than

@@ -82,11 +82,12 @@ plans live; CI runs them in quick mode (3 h, 6 h horizon).
 | `01_house_heat_pump` | the heat pump house: pipeline, plan widget, closed loop vs rule-based, estimation | ready (2026-10-21) |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready (2026-10-21) |
 | `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, IPOPT, before / after | ready (2026-10-21) |
-| `08_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel (decision 1) |
+| `09_apartment_block` | central heat pump, radiators, DHW tank | needs the DHW tank in FastModel (decision 1) |
 | `04_office_cooling` | ideal cooling at an EER, occupancy, capacity charge, summer day | ready (2026-10-21); a chiller in FastModel would add the part load (decision 2) |
 | `05_pv_battery_ev` | PV, battery and vehicle at the meter next to the thermal storage | ready (2026-10-21); storages in the controller (decision 3) |
-| `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | needs district models |
-| `07_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+| `06_your_building` | edit the YAML in a cell, regenerate, plan, MPC vs the controllers of the YAML, two versions side by side | ready (2026-10-21), everything live |
+| `07_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | needs district models |
+| `08_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
 
 The studies behind the notebooks (`tutorials/_house.py`, `_flexibility.py`, `_office.py`, `_pv.py`) define
 the cached closed loops (`tutorials/cache/`, `make cache`, about four hours on four cores); the notebooks
@@ -135,7 +136,7 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
 
 ## 4. Decisions left to the author (2026-10-21)
 
-1. **DHW tank in FastModel (Trano)**: notebook 08 (apartment block, the tank as the cheapest
+1. **DHW tank in FastModel (Trano)**: notebook 09 (apartment block, the tank as the cheapest
    flexibility) needs a tank with a draw-off disturbance in Trano's FastModel; the apartment YAMLs
    and the old notebook text are on the branch `ccr-c0c43f9d-7vxewf` for reference.
 2. **Chiller in FastModel (Trano)** or keep the constant EER of notebook 04.
@@ -144,8 +145,12 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
 4. **Price samples**: `tutorials/scripts/fetch_prices.py` needs network access to Energy-Charts /
    ENTSO-E (blocked in the container); the studies use the synthetic day-ahead signal until a
    sample is committed under `mpctrano/data/prices/`.
-5. **Pages**: the docs site publishes the executed notebooks (mkdocs-jupyter); the widgets of the
-   live sections are static there. A Binder or JupyterLite launch would make them interactive.
+5. **Pages and Colab**: the docs site publishes the executed notebooks (mkdocs-jupyter); the widgets
+   of the live sections are static there. Every notebook carries an *Open in Colab* badge: its first
+   cell clones the repository and installs mpctrano with the rumoca wheel of the GitHub release
+   `rumoca-0.10.3-c74cddf` (built by `.github/workflows/rumoca-wheel.yaml` on the tag; without a
+   wheel for the runtime's Python it builds rumoca from source, about ten minutes). Colab is the
+   interactive deployment unless a Binder or JupyterLite one is preferred.
 
 ## 5. Risks and mitigations
 

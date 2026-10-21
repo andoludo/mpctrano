@@ -1,6 +1,8 @@
 # %% [markdown]
 # # 05 - PV, a battery and an electric vehicle next to the thermal storage
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/05_pv_battery_ev.ipynb)
+#
 # **Learning objectives**
 #
 # 1. Put electrical storages next to the thermal one: a stationary battery and a vehicle charged at home are
@@ -17,6 +19,20 @@
 #
 # **Runtimes** (hourly steps, this container): one 24-hour plan of the PV house 10 to 50 s; one closed-loop day
 # with the storages 10 to 30 minutes.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd

@@ -1,6 +1,8 @@
 # %% [markdown]
 # # 02 - Flexibility use cases: what the house can do for the grid, and what it costs
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/02_flexibility_use_cases.ipynb)
+#
 # **Learning objectives**
 #
 # 1. Quantify **implicit flexibility**: what the price-aware controller saves against a price-agnostic one under
@@ -22,6 +24,20 @@
 #
 # **Runtimes** (this container): a two-day hourly closed loop about ten minutes; a 24-hour plan 5 to 20 s at
 # hourly steps, one to two minutes at 15-minute steps; the envelope about twenty plans.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd

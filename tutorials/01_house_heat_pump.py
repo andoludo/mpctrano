@@ -1,6 +1,8 @@
 # %% [markdown]
 # # 01 - A house with a heat pump: the reference implementation
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/01_house_heat_pump.ipynb)
+#
 # **Learning objectives**
 #
 # 1. Follow the pipeline from the Trano YAML to the CasADi model: what the FastModel of a house contains, which
@@ -17,6 +19,20 @@
 #
 # **Runtimes** (hourly steps, this container): Trano and rumoca about 10 s per model; one 24-hour plan 5 to 20 s;
 # one two-day closed loop with moving horizon estimation about ten minutes; the rule-based reference a second.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd

@@ -53,6 +53,7 @@ nav:
       - 03 Calibration from the YAML: tutorials/03_calibration_from_yaml.ipynb
       - 04 An office in summer: tutorials/04_office_cooling.ipynb
       - 05 PV, battery and vehicle: tutorials/05_pv_battery_ev.ipynb
+      - 06 Your building: tutorials/06_your_building.ipynb
 markdown_extensions:
   - admonition
   - tables

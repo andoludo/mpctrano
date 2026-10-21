@@ -1,6 +1,8 @@
 # %% [markdown]
 # # 04 - An office in summer: cooling, occupancy and the price of comfort
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/04_office_cooling.ipynb)
+#
 # **Learning objectives**
 #
 # 1. Model cooling with Trano's FastModel: the ideal emitter of a zone is a heat flow the controller decides;
@@ -15,6 +17,20 @@
 #
 # **Runtimes** (hourly steps, this container): Trano and rumoca about 15 s; one 24-hour plan of this two-zone
 # office one to two minutes (52 states, two heat flows); one closed-loop day about an hour.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd

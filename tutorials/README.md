@@ -11,15 +11,18 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 | `01_house_heat_pump` | a house with a heat pump: pipeline, plan widget, closed loop vs the controllers of the YAML, estimation | ready |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready |
 | `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, how IPOPT solves it, before and after | ready |
-| `08_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
 | `04_office_cooling` | an office in summer: ideal cooling at an EER, occupancy, capacity charge | ready |
 | `05_pv_battery_ev` | PV, a battery and a vehicle at the meter next to the thermal storage | ready |
-| `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
-| `07_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+| `06_your_building` | edit the YAML in a cell, regenerate the models, plan, MPC vs the controllers of the YAML | ready |
+| `07_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
+| `08_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+| `09_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
 
 The executed notebooks are published on the documentation site
 ([andoludo.github.io/mpctrano](https://andoludo.github.io/mpctrano/), section *Tutorials*): the figures are
-interactive there, the widgets of the live sections are not (they need a kernel: run the notebooks locally).
+interactive there, the widgets of the live sections are not (they need a kernel). To play with them without
+installing anything, open a notebook in Google Colab with its *Open in Colab* badge: the first cell clones the
+repository and installs mpctrano and the rumoca wheel (a minute; `06_your_building` is the one to edit).
 
 The script tutorials of the package itself (calibration, state estimation, tariffs) are in
 [`package/`](package/).
@@ -75,7 +78,8 @@ uv run python tutorials/scripts/build_cache.py --force      # recompute
 ```
 
 The runs are deterministic (fixed seeds and solver tolerances), so a rebuilt cache reproduces the
-committed one up to the solver's tolerance.
+committed one up to the solver's tolerance. `06_your_building` reads no cache: it writes the YAML of its cell to
+`tutorials/output/your_building/` and computes everything live.
 
 ## Price data
 

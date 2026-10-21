@@ -1,6 +1,8 @@
 # %% [markdown]
 # # 03 - Calibration: the YAML declares the parameters, IPOPT finds them
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/03_calibration_from_yaml.ipynb)
+#
 # **Learning objectives**
 #
 # 1. Declare the parameters to calibrate in the Trano YAML itself (`{value, parameter: true, min, max}`), keep it
@@ -17,6 +19,20 @@
 #
 # **Runtimes** (this container): one regeneration of the model by Trano and rumoca about 15 s (one per declared
 # parameter, for the sensitivities); the calibration of three days of hourly data, 38 states, two to five minutes.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd

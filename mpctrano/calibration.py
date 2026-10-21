@@ -39,8 +39,9 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, TypeVar
+from typing import Any, Literal, TypeVar
 
 import casadi as ca
 import numpy as np
@@ -258,6 +259,45 @@ def _initial_state(model: FastModel, data: _Data, spin_up_days: float = 2.0) -> 
     return state
 
 
+class _FiniteDifferences(ca.Callback):
+    """A scalar CasADi function with its gradient by central differences of a fixed step."""
+
+    def __init__(self, function: ca.Function, step: float) -> None:
+        ca.Callback.__init__(self)
+        self.function, self.step = function, step
+        self.n = int(function.size1_in(0))
+        self.construct("objective", {})
+
+    def get_n_in(self) -> int:
+        return 1
+
+    def get_n_out(self) -> int:
+        return 1
+
+    def get_sparsity_in(self, index: int) -> ca.Sparsity:
+        return ca.Sparsity.dense(self.n, 1)
+
+    def get_sparsity_out(self, index: int) -> ca.Sparsity:
+        return ca.Sparsity.dense(1, 1)
+
+    def eval(self, arg: Sequence[ca.DM]) -> list[ca.DM]:
+        return [self.function(arg[0])]
+
+    def has_jacobian(self) -> bool:
+        return True
+
+    def get_jacobian(
+        self, name: str, inames: Sequence[str], onames: Sequence[str], opts: Mapping[str, Any]
+    ) -> ca.Function:
+        theta, nominal = ca.MX.sym("theta", self.n), ca.MX.sym("f")
+        columns = []
+        for i in range(self.n):
+            e = ca.DM.zeros(self.n)
+            e[i] = self.step
+            columns.append((self.function(theta + e) - self.function(theta - e)) / (2 * self.step))
+        return ca.Function(name, [theta, nominal], [ca.hcat(columns)], list(inames), list(onames), dict(opts))
+
+
 def evaluate(
     model: FastModel, data: MonitoringData | pd.DataFrame | _Data, x0: np.ndarray | None = None
 ) -> tuple[FitMetrics, np.ndarray]:
@@ -457,21 +497,11 @@ class Calibrator:
             state = step(x0=state, p=inputs)["xf"]
             states.append(state)
         z = ca.hcat(states) - ca.DM(collocated.offset)
-        # the switching controllers (thermostats, hysteresis) make the adjoint gradient of the chain noisy near
-        # the optimum (IPOPT then stalls short of it): the gradient comes from finite differences of the objective,
-        # 2n + 1 simulations of a second each for n groups
-        objective_function = ca.Function(
-            "objective",
-            [theta],
-            [self._objective(z, theta, arrays)],
-            {
-                "enable_fd": True,
-                "enable_forward": False,
-                "enable_reverse": False,
-                "enable_jacobian": False,
-                "fd_method": "central",
-                "fd_options": {"h": FD_STEP},
-            },
+        # the switching controllers (thermostats, hysteresis) make the adjoint gradient of the chain noisy and the
+        # objective jumpy at a small scale (IPOPT then stalls short of the optimum): the gradient comes from wide
+        # central differences of the objective, 2n + 1 simulations of a second each for n groups
+        objective_function = _FiniteDifferences(
+            ca.Function("objective", [theta], [self._objective(z, theta, arrays)]), FD_STEP
         )
         objective = objective_function(theta)
         bounds = np.array([self._bounds(group) for group in self.groups])

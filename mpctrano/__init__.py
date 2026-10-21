@@ -26,7 +26,17 @@ from mpctrano.calibration import (
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
 from mpctrano.estimation import EstimatorSettings, MovingHorizonEstimator, PerfectEstimator, StateEstimator
-from mpctrano.flexibility import compare, price_response, shifted_energy, value_of_flexibility
+from mpctrano.flexibility import (
+    ActivationRequest,
+    ActivationResult,
+    FlexibilityEnvelope,
+    compare,
+    flexibility_function,
+    price_response,
+    respond,
+    shifted_energy,
+    value_of_flexibility,
+)
 from mpctrano.forecast import (
     DataForecaster,
     Forecaster,
@@ -62,6 +72,8 @@ except PackageNotFoundError:  # pragma: no cover - source checkout without insta
 __all__ = [
     "DEFAULT_GROUPS",
     "OPTIONAL_GROUPS",
+    "ActivationRequest",
+    "ActivationResult",
     "CalibrationResult",
     "CalibrationSettings",
     "Calibrator",
@@ -79,6 +91,7 @@ __all__ = [
     "FastModel",
     "FitMetrics",
     "FlatTariff",
+    "FlexibilityEnvelope",
     "ForecastNoise",
     "Forecaster",
     "MPCSettings",
@@ -107,10 +120,12 @@ __all__ = [
     "__version__",
     "compare",
     "evaluate",
+    "flexibility_function",
     "generate_monitoring_data",
     "perturb",
     "price_response",
     "random_factors",
+    "respond",
     "run_closed_loop",
     "run_rule_based",
     "run_scenario",

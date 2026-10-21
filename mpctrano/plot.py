@@ -227,10 +227,11 @@ def plot_activation(result: ActivationResult, title: str | None = None) -> Any: 
     return _style(figure, f"{title or 'Activation'}: {subtitle}", 620)
 
 
-def plot_envelope(envelope: FlexibilityEnvelope, title: str | None = None) -> Any:  # noqa: ANN401
-    """Power that can be shed (negative) or absorbed (positive) against the duration, with the cost of each plan."""
+def plot_envelope(envelope: FlexibilityEnvelope | pd.DataFrame, title: str | None = None) -> Any:  # noqa: ANN401
+    """Power that can be shed (negative) or absorbed (positive) against the duration, with the cost of each plan
+    (an envelope or its frame)."""
     go, make_subplots = _plotly()
-    frame = envelope.frame
+    frame = envelope if isinstance(envelope, pd.DataFrame) else envelope.frame
     figure = make_subplots(rows=1, cols=2, subplot_titles=("Power [kW]", "Extra cost of the plan [EUR]"))
     durations = [f"{duration:g} h" for duration in frame.index]
     figure.add_trace(go.Bar(x=durations, y=frame["up_kw"], name="absorb (up)", marker_color=SERIES[0]), row=1, col=1)

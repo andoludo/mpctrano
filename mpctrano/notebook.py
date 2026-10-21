@@ -36,7 +36,7 @@ from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import DEFAULT_START, Scenario
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, spin_up
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_rule_based, spin_up
 from mpctrano.tariff import FlatTariff, Tariff, TimeOfUseTariff
 
 QUICK_VARIABLE = "MPCTRANO_QUICK"
@@ -76,7 +76,7 @@ class TutorialBuilding:
     relative_std: float = 0.2
     seed: int = 0
     measurement_std: float = 0.1
-    _states: dict[tuple[bool, pd.Timestamp], np.ndarray] = field(default_factory=dict, init=False, repr=False)
+    _states: dict[tuple[bool, bool, pd.Timestamp], np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
     @cached_property
     def project(self) -> Project:
@@ -106,14 +106,17 @@ class TutorialBuilding:
         """The closed-loop model of the true building."""
         return self.project.true_closed_loop(relative_std=self.relative_std, seed=self.seed)
 
-    def initial_state(self, mismatch: bool = False, start: pd.Timestamp | str | None = None) -> np.ndarray:
-        """The state at ``start`` (default: :attr:`start`) after the spin-up, of the true building with
-        ``mismatch``."""
+    def initial_state(
+        self, mismatch: bool = False, start: pd.Timestamp | str | None = None, closed_loop: bool = False
+    ) -> np.ndarray:
+        """The state at ``start`` (default: :attr:`start`) after the spin-up: of the true building with ``mismatch``,
+        of the closed-loop model with ``closed_loop``."""
         start = pd.Timestamp(start or self.start)
-        key = (mismatch, start)
+        key = (mismatch, closed_loop, start)
         if key not in self._states:
-            model, closed_loop = (self.truth, self.true_closed_loop) if mismatch else (self.model, self.closed_loop)
-            self._states[key] = spin_up(model, closed_loop, start, self.spin_up_days)
+            reference = self.true_closed_loop if mismatch else self.closed_loop
+            model = reference if closed_loop else (self.truth if mismatch else self.model)
+            self._states[key] = spin_up(model, reference, start, self.spin_up_days)
         return self._states[key].copy()
 
     def plant(
@@ -128,6 +131,24 @@ class TutorialBuilding:
             x0=self.initial_state(mismatch, start),
             measurement_std=self.measurement_std if mismatch else 0.0,
             seed=self.seed,
+        )
+
+    def rule_based(self, run: Scenario, mismatch: bool = False) -> ClosedLoopResult:
+        """The controllers of the YAML over the period of ``run``, on the same building and from the same spun-up
+        state as the MPC, costed with its tariff and assessed against its comfort band."""
+        settings = run.settings
+        return run_rule_based(
+            self.true_closed_loop if mismatch else self.closed_loop,
+            WeatherForecaster.from_model(self.closed_loop, weather=self.forecaster.weather),
+            run.start,
+            run.steps,
+            settings.time_step,
+            run.comfort,
+            run.tariff,
+            fuel_price=settings.fuel_price,
+            feed_in_price=settings.feed_in_price,
+            x0=self.initial_state(mismatch, run.start, closed_loop=True),
+            name=f"{run.name} (rule based)",
         )
 
 

@@ -1,0 +1,37 @@
+{
+ "name": "old | day-ahead, price agnostic",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 25.345404418919006,
+  "sold_kwh": 0.0,
+  "energy_kwh": 25.345404418919006,
+  "energy_cost": 6.465693781745321,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 2.591539875139347,
+  "max_violation": 0.16858818401522058,
+  "peak_power_kw": 2.041787590874634,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.0,
+  "mean_price": 0.2551032003623908,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 1277.081477732001,
+ "parts": {
+  "study": "implicit",
+  "variant": "old",
+  "pricing": "agnostic",
+  "days": 2.0
+ }
+}

@@ -20,6 +20,7 @@ result), ``<yaml>-calibrated.yaml`` (the YAML with the calibrated values, as Tra
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Annotated
@@ -65,6 +66,8 @@ def main(
     temperature_noise: Annotated[float, typer.Option(help="Noise of the air temperature sensors [K].")] = 0.1,
     meter_noise: Annotated[float, typer.Option(help="Noise of the electricity meter readings [kWh].")] = 0.02,
     max_iterations: Annotated[int, typer.Option(help="IPOPT iterations at most.")] = 40,
+    workers: Annotated[int, typer.Option(help="Processes for the gradient (2 x fields simulations).")] = os.cpu_count()
+    or 1,
     output: Annotated[Path, typer.Option(help="Where the data, the result and the figure go.")] = HERE / "output",
     seed: int = 0,
 ) -> None:
@@ -107,7 +110,7 @@ def main(
         print(f"  {group.name}: {len(group.exponents)} parameters of the model")
 
     started = time.perf_counter()
-    calibrator = Calibrator(model, CalibrationSettings(groups=groups, max_iterations=max_iterations))
+    calibrator = Calibrator(model, CalibrationSettings(groups=groups, max_iterations=max_iterations, workers=workers))
     calibrated, result = calibrator.fit(training, validation)
     print(f"calibration ({result.method}): {result.status} in {result.iterations} iterations, "
           f"{time.perf_counter() - started:.0f} s")  # fmt: skip

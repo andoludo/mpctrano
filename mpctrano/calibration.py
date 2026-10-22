@@ -37,6 +37,8 @@ measured air temperatures and the meters only.
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import re
 import time
 from collections.abc import Mapping, Sequence
@@ -146,6 +148,9 @@ class CalibrationSettings(BaseModel):
     )
     spin_up_days: float = Field(
         2.0, gt=0, description="Days a closed-loop model runs before the data, with the candidate parameters"
+    )
+    workers: int = Field(
+        1, ge=1, description="Processes evaluating the finite differences of the shooting fit (2n simulations)"
     )
     verbose: bool = False
 
@@ -260,13 +265,15 @@ def _initial_state(model: FastModel, data: _Data, spin_up_days: float = 2.0) -> 
 
 
 class _FiniteDifferences(ca.Callback):
-    """A scalar CasADi function with its gradient by central differences of a fixed step."""
+    """A scalar CasADi function with its gradient by central differences of a fixed step, the ``2n`` evaluations
+    of the gradient spread over ``workers`` forked processes."""
 
-    def __init__(self, function: ca.Function, step: float) -> None:
+    def __init__(self, function: ca.Function, step: float, workers: int = 1) -> None:
         ca.Callback.__init__(self)
-        self.function, self.step = function, step
+        self.function, self.step, self.workers = function, step, workers
         self.n = int(function.size1_in(0))
         self.construct("objective", {})
+        self._gradient = _Gradient(self)
 
     def get_n_in(self) -> int:
         return 1
@@ -286,16 +293,57 @@ class _FiniteDifferences(ca.Callback):
     def has_jacobian(self) -> bool:
         return True
 
+    def points(self, theta: np.ndarray) -> list[np.ndarray]:
+        """The ``2n`` points of the central differences around ``theta``: plus then minus the step, field by field."""
+        points = []
+        for i in range(self.n):
+            e = np.zeros(self.n)
+            e[i] = self.step
+            points.extend([theta + e, theta - e])
+        return points
+
+    def evaluate(self, theta: np.ndarray) -> float:
+        return float(self.function(theta))
+
+    def gradient(self, theta: np.ndarray) -> np.ndarray:
+        points = self.points(theta)
+        if self.workers > 1 and hasattr(os, "fork"):
+            # forked workers share the CasADi objects of this process; a thread pool would race on them
+            with multiprocessing.get_context("fork").Pool(min(self.workers, len(points))) as pool:
+                values = pool.map(self.evaluate, points)
+        else:
+            values = [self.evaluate(point) for point in points]
+        return (np.asarray(values[0::2]) - np.asarray(values[1::2])) / (2 * self.step)
+
     def get_jacobian(
         self, name: str, inames: Sequence[str], onames: Sequence[str], opts: Mapping[str, Any]
     ) -> ca.Function:
-        theta, nominal = ca.MX.sym("theta", self.n), ca.MX.sym("f")
-        columns = []
-        for i in range(self.n):
-            e = ca.DM.zeros(self.n)
-            e[i] = self.step
-            columns.append((self.function(theta + e) - self.function(theta - e)) / (2 * self.step))
-        return ca.Function(name, [theta, nominal], [ca.hcat(columns)], list(inames), list(onames), dict(opts))
+        return self._gradient
+
+
+class _Gradient(ca.Callback):
+    """The Jacobian (one row) of :class:`_FiniteDifferences`: inputs ``theta`` and the nominal output."""
+
+    def __init__(self, objective: _FiniteDifferences) -> None:
+        ca.Callback.__init__(self)
+        self.objective = objective
+        self.construct("gradient", {})
+
+    def get_n_in(self) -> int:
+        return 2
+
+    def get_n_out(self) -> int:
+        return 1
+
+    def get_sparsity_in(self, index: int) -> ca.Sparsity:
+        return ca.Sparsity.dense(self.objective.n, 1) if index == 0 else ca.Sparsity.dense(1, 1)
+
+    def get_sparsity_out(self, index: int) -> ca.Sparsity:
+        return ca.Sparsity.dense(1, self.objective.n)
+
+    def eval(self, arg: Sequence[ca.DM]) -> list[ca.DM]:
+        theta = np.asarray(arg[0], dtype=float).ravel()
+        return [ca.DM(self.objective.gradient(theta).reshape(1, -1))]
 
 
 def evaluate(
@@ -479,8 +527,7 @@ class Calibrator:
             "p": ca.vertcat(t0, u, w, theta_sx),
             "ode": collocated.rhs(t0 + s, x, collocated._inputs(u, w), p),
         }
-        # tight tolerances: the objective is differentiated by finite differences
-        step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-8, "reltol": 1e-8})
+        step = ca.integrator("step", "cvodes", ode, 0.0, dt, {"abstol": 1e-6, "reltol": 1e-6})
         theta = ca.MX.sym("theta", len(self.groups))
         _, values = self._symbolic_parameters(theta)
         if model.control_names:
@@ -501,7 +548,7 @@ class Calibrator:
         # objective jumpy at a small scale (IPOPT then stalls short of the optimum): the gradient comes from wide
         # central differences of the objective, 2n + 1 simulations of a second each for n groups
         objective_function = _FiniteDifferences(
-            ca.Function("objective", [theta], [self._objective(z, theta, arrays)]), FD_STEP
+            ca.Function("objective", [theta], [self._objective(z, theta, arrays)]), FD_STEP, settings.workers
         )
         objective = objective_function(theta)
         bounds = np.array([self._bounds(group) for group in self.groups])

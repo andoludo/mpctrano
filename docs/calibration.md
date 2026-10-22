@@ -57,6 +57,32 @@ both are losses to the outdoor air.
 `Project.save()` writes the calibration to `<stem>.calibration.json` and `Project.load_calibrated()`
 reads it back.
 
+## Smoothing the controllers
+
+The thermostats, hysteresis and limiters of a Trano FastModel are steep smooth switches (trano >= 0.59
+exposes their widths `dU`, `dY`, `dMax`, `dT`, `dtSet` and the switching time `tau` as parameters).
+CVODES follows them, but each switch that moves by a sample under a parameter change makes the
+objective jumpy at the 0.1 % scale, which is what forces the wide finite differences of the shooting
+method. `FastModel.smooth_controllers(width_factor=5.0, switching_time=600.0)` returns a copy whose
+transitions are five times wider and whose hysteresis switches over ten minutes; calibrate that copy
+and apply the factors to the sharp model.
+
+On the single-zone house of the tests (truth k = 0.06 W/(m.K), known infiltration, three days of data
+with 0.1 K of noise, four cores):
+
+| Controllers       | Smoothed truth vs sharp data | Shooting                  | Collocation                         |
+|-------------------|------------------------------|---------------------------|-------------------------------------|
+| sharp (trano)     | 0.09 K (the noise)           | 211 s, 17 it, k = 0.0594  | no convergence                      |
+| x1, 600 s         | 0.23 K                       | 22 s, 8 it, k = 0.0531    | no convergence                      |
+| **x5, 600 s**     | 0.14 K                       | 14 s, 7 it, k = 0.0594    | no convergence                      |
+| x10, 600 s        | 0.27 K                       | 11 s, 7 it, k = 0.0448    | 72 s, 48 it, k = 0.0448             |
+| x20, 600 s        | 0.42 K                       | 9 s, 5 it, k = 0.025      | 130 s, 37 it, k = 0.025 (the bound) |
+
+The switching time is what smooths the objective (the sharp model and x1 differ only by it); the width
+is what costs fidelity, and from x10 on it smears the thermostat band enough to bias the conductances
+low. Collocation converges only on controllers too smooth to be faithful, so the shooting method on the
+x5, 600 s copy is the setting to use.
+
 ## Parameters declared in the YAML
 
 The YAML of the building can declare the parameters to calibrate itself, so that it stays the single

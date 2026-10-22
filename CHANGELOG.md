@@ -25,6 +25,9 @@ release pipeline.
   `tutorials/_house.py`, `_flexibility.py`, `_office.py` with their cached runs
   (`make cache`), the notebooks `01_house_heat_pump`, `02_flexibility_use_cases` and
   `04_office_cooling`; the docs site renders the executed notebooks (mkdocs-jupyter, `make docs`).
+- `scripts/calibrate_multizone.py` and `scripts/multizone_heat_pump.yaml`: a ready-to-run calibration of
+  a six-zone heat pump house on two weeks of monitoring data generated with Trano (`CalibrationSpec`
+  takes a `base_dir` for the weather file).
 - Calibration of closed-loop models by single shooting (`CalibrationSettings.method`, automatic for a
   model without control inputs): CVODES simulates the candidate model, spun up with its own
   controllers, inside the objective; IPOPT takes wide central differences and full steps.

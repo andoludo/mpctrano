@@ -135,6 +135,19 @@ the energy shifted in time, the share of energy bought below the median price, t
 power of each run, all from the meters of the simulated building. On the boiler house of the tests, over a January
 day, the MPC costs 12 % less than the controllers of the YAML with almost no discomfort.
 
+## Scripts
+
+`scripts/calibrate_multizone.py` is a ready-to-run calibration of a six-zone heat pump house declared in
+`scripts/multizone_heat_pump.yaml` (three fields marked `parameter: true` with their bounds): it generates two
+weeks of monitoring data by running the same YAML, at other values of those fields, with its own controllers over
+the Uccle weather (the air temperature of every room and the electricity meter of the heat pump, noisy), fits the
+model on ten days and validates it on the other four, and writes the data, the result, the calibrated YAML and a
+before/after figure to `scripts/output/`:
+
+```bash
+uv run python scripts/calibrate_multizone.py --help
+```
+
 ## Tutorials
 
 The interactive notebooks live in `tutorials/` (see `tutorials/README.md`; executed on

@@ -132,10 +132,12 @@ class CalibrationSpec:
     source: Path
     description: dict[str, Any]
     parameters: list[YamlParameter]
+    base_dir: Path | None = None
+    """Where the weather file of the building is looked up (the directory of the YAML by default)."""
     _directory: Path | None = field(default=None, init=False, repr=False)
 
     @classmethod
-    def from_yaml(cls, path: Path | str) -> CalibrationSpec:
+    def from_yaml(cls, path: Path | str, base_dir: Path | str | None = None) -> CalibrationSpec:
         source = Path(path).resolve()
         description = yaml.load(source.read_text(), Loader=_Loader)  # noqa: S506 - a SafeLoader with one tag
         if not isinstance(description, dict):
@@ -144,7 +146,12 @@ class CalibrationSpec:
             YamlParameter(path=p, **{k: v for k, v in node.items() if k != "parameter"})
             for p, node in _walk(description, "")
         ]
-        return cls(source=source, description=description, parameters=parameters)
+        return cls(
+            source=source,
+            description=description,
+            parameters=parameters,
+            base_dir=Path(base_dir).resolve() if base_dir is not None else None,
+        )
 
     @property
     def paths(self) -> list[str]:
@@ -185,7 +192,8 @@ class CalibrationSpec:
         self, library: str = FAST_MODEL_LIBRARY, values: Mapping[str, float] | None = None, name: str | None = None
     ) -> FastModel:
         """The model of the building with the parameters at ``values`` (nominal otherwise)."""
-        return FastModel.from_yaml(self.write(values), name=name, library=library, base_dir=self.source.parent)
+        base_dir = self.base_dir if self.base_dir is not None else self.source.parent
+        return FastModel.from_yaml(self.write(values), name=name, library=library, base_dir=base_dir)
 
     def sensitivities(
         self,

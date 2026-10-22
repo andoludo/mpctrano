@@ -50,6 +50,18 @@ def test_the_spec_collects_the_annotated_fields_and_writes_a_flat_yaml(tmp_path:
         spec["nope"]
 
 
+def test_the_multizone_script_yaml_declares_three_fields_and_finds_its_weather() -> None:
+    root = Path(__file__).resolve().parents[1]
+    spec = CalibrationSpec.from_yaml(root / "scripts" / "multizone_heat_pump.yaml", base_dir=MODELS)
+    assert spec.paths == [
+        "material[MINERAL_WOOL:001].thermal_conductivity",
+        "spaces[LIVINGROOM:001].parameters.ach",
+        "spaces[BEDROOM_2:001].parameters.ach",
+    ]
+    assert spec.base_dir == MODELS.resolve()
+    assert any(path.suffix == ".mos" for path in MODELS.iterdir())
+
+
 def test_a_value_outside_its_bounds_is_refused(tmp_path: Path) -> None:
     path = tmp_path / "bad.yaml"
     path.write_text(

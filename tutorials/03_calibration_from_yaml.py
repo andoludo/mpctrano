@@ -225,7 +225,7 @@ display(result_known.metrics().round(3))
 #   collocated problem non-smooth; the single-shooting fit (two decision variables, CVODES inside the objective,
 #   wide central differences) brings the air-temperature error from 1.35 K to 0.18 K on the training days and
 #   from 1.14 K to 0.15 K on two unseen days, with the energy use to match.
-# * **The data decide what is identifiable**: the free fit lands at a conductivity of 0.050 and 0.63 air changes
+# * **The data decide what is identifiable**: the free fit lands at a conductivity of 0.052 and 0.63 air changes
 #   per hour (true: 0.060 and 0.60) - the right total loss, split along a flat valley the objective barely
 #   feels; with the infiltration measured, the conductivity comes out at 0.0593. Declare in the YAML what a
 #   measurement cannot give, fix the rest.

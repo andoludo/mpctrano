@@ -8,6 +8,34 @@ release pipeline.
 
 ### Added
 
+- Flexibility quantification on FastModel (the Days 2 to 6 tutorial work ported): activation
+  requests with the delivered energy and the rebound (`respond`, `ActivationResult`), the
+  flexibility function (`flexibility_function`), the flexibility envelope (`FlexibilityEnvelope`),
+  the peak reduction in `compare`.
+- Tariffs: export price series, power floors and notice time of the demand response events,
+  `CapacityTariff` (monthly peaks); the controller takes per-solve caps and floors and the peak
+  already billed (`peak_so_far`), and reports the planned meter powers (`MPCSolution.meter`).
+- `spin_up`: a state after a few days of the controllers of the YAML; the running monthly peak
+  and the billed power in the closed-loop frame; PV generation and self-consumption in the metrics.
+- Cooling with ideal emitters: `FastModel.with_control_bounds` (a negative lower bound),
+  `MPCSettings.heat_cop` and `cooling_eer`.
+- `mpctrano.notebook` (`TutorialBuilding`, `ResultCache`, price options, widgets) and the plots of
+  plans, closed loops, states, activations and envelopes with a shared palette.
+- Tutorials: `tutorials/buildings/` (the house and its variants, the office), the studies
+  `tutorials/_house.py`, `_flexibility.py`, `_office.py` with their cached runs
+  (`make cache`), the notebooks `01_house_heat_pump`, `02_flexibility_use_cases` and
+  `04_office_cooling`; the docs site renders the executed notebooks (mkdocs-jupyter, `make docs`).
+- Calibration of closed-loop models by single shooting (`CalibrationSettings.method`, automatic for a
+  model without control inputs): CVODES simulates the candidate model, spun up with its own
+  controllers, inside the objective; IPOPT takes wide central differences and full steps.
+  `CalibrationSpec.groups(values=..., only=...)` measures the sensitivities around given values and
+  selects fields; `CalibrationResult.method`.
+- `tutorials/06_your_building`: the building is a YAML cell; the notebook regenerates the models,
+  plans with the widget and compares the MPC with the controllers of the YAML for two versions.
+- Every notebook opens in Google Colab (badge and a first cell that clones the repository and runs
+  `tutorials/_colab.setup()`); the `rumoca wheel` workflow builds the manylinux wheel of the pinned
+  rumoca commit and attaches it to the release `rumoca-0.10.3-c74cddf` that the Colab setup installs.
+
 - Notebook tooling: `notebook` extra (`plotly`, `ipywidgets`), jupytext pairing of the tutorial
   notebooks with percent scripts (`tutorials/NN_*.py` <-> `.ipynb`), `nbmake` execution of the
   notebooks in CI (`make notebooks`), a `pre-commit` configuration and this changelog.
@@ -44,6 +72,13 @@ release pipeline.
 - `random_factors` and `perturb`: a "true" building with its parameter groups at random values;
   `generate_monitoring_data` operates it with a thermostat with a random set point.
 - `units` module (`KELVIN`, `STATE_BOUNDS`).
+
+### Fixed
+
+- Calibration groups that move the same parameter of the model (a conductivity and a thickness both
+  move a layer conductance) compound their factors instead of overwriting each other.
+- `CalibrationSpec.sensitivities` perturbed the nominal YAML even when the base model was generated
+  at other values, so the exponents picked up every other difference.
 
 ### Changed
 

@@ -57,6 +57,47 @@ def perturb(
     return calibrator.calibrated({group.name: values[group.name] for group in calibrator.groups})
 
 
+def generate_closed_loop_data(
+    building: FastModel,
+    start: pd.Timestamp | str,
+    days: float,
+    time_step: float = 3600.0,
+    forecaster: Forecaster | None = None,
+    measurement_std: float = 0.05,
+    meter_std: float = 0.0,
+    seed: int | None = 0,
+    x0: np.ndarray | None = None,
+) -> SyntheticData:
+    """Monitoring data recorded on ``building`` operated by its own controllers (a closed-loop ``FastModel``).
+
+    The data has the disturbances, the measured air temperatures (``measurement_std`` [K]) and the readings of the
+    meters (``meter_std`` [kWh] on each reading); no control, as a monitoring system that logs the sensors and the
+    meters but not the valves records.
+    """
+    if building.control_names:
+        raise ValueError(f"{building.name} has controls {building.control_names}: give the closed-loop FastModel.")
+    generator = np.random.default_rng(seed)
+    steps = round(days * 86400 / time_step)
+    index = forecast_index(pd.Timestamp(start), steps + 1, time_step)
+    forecaster = forecaster or WeatherForecaster.from_model(building)
+    disturbances = forecaster.realisation(index[0], steps + 1, time_step)[building.disturbance_names].to_numpy()
+    start_time = float(seconds_of_year(index[:1])[0])
+    states = building.simulate(
+        building.initial_state if x0 is None else x0,
+        np.zeros((0, steps)),
+        disturbances.T[:, :steps],
+        time_step,
+        start_time=start_time,
+    )
+    truth = pd.DataFrame(states.T, index=index, columns=building.state_names)
+    data = pd.DataFrame(disturbances, index=index, columns=building.disturbance_names)
+    for name in building.comfort_states:
+        data[name] = truth[name] + generator.normal(0, measurement_std, len(index))
+    for name in building.meters:
+        data[name] = truth[name] + generator.normal(0, meter_std, len(index))
+    return SyntheticData(data=MonitoringData(data), states=truth, setpoints=pd.Series(np.nan, index=index))
+
+
 def generate_monitoring_data(
     building: FastModel,
     start: pd.Timestamp | str,

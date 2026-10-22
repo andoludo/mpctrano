@@ -1,0 +1,54 @@
+name: rumoca wheel
+
+# Build the rumoca wheel the tutorials need (rumoca main at the commit pinned in pyproject.toml: the CasADi export
+# of connected models, not released on PyPI) as a manylinux wheel, and attach it to a GitHub release, so that
+# Colab and pip users install it in seconds instead of compiling Rust for ten minutes. Run it by hand
+# (Actions > rumoca wheel > Run workflow): the release and its tag are created at the commit it runs on.
+
+on:
+  workflow_dispatch:
+
+env:
+  RUMOCA_REV: c74cddff6d7669fc2c3603d43529ab62e0964072
+  RUMOCA_TAG: rumoca-0.10.3-c74cddf
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rumoca
+        uses: actions/checkout@v4
+        with:
+          repository: CogniPilot/rumoca
+          ref: ${{ env.RUMOCA_REV }}
+          path: rumoca
+
+      - name: Build the manylinux wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: rumoca/crates/rumoca-bind-python
+          command: build
+          args: --release --out ../../../dist
+          manylinux: 2_28
+
+      - name: List the wheels
+        run: ls -l dist
+
+      - name: Upload the wheel as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rumoca-wheel
+          path: dist/*.whl
+
+      - name: Attach the wheel to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+          tag_name: ${{ env.RUMOCA_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.RUMOCA_TAG }}
+          body: |
+            rumoca main at `${{ env.RUMOCA_REV }}` (0.10.3), built as a manylinux wheel for the mpctrano tutorials.
+            The CasADi export of Trano's FastModel models needs this commit; the releases of rumoca on PyPI
+            (up to 0.10.2) stop at the connection equations of such models.
+          files: dist/*.whl

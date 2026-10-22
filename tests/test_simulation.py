@@ -18,7 +18,7 @@ from mpctrano import (
 from mpctrano.estimation import PerfectEstimator
 from mpctrano.simulation import ModelPlant, run_closed_loop, run_rule_based
 from mpctrano.units import KELVIN
-from tests.conftest import BOILER_HOUSE, START, WEATHER
+from tests.conftest import BOILER_HOUSE, HEAT_PUMP_HOUSE, START, WEATHER
 
 HOUSE = BOILER_HOUSE
 STEP = 3600.0
@@ -118,3 +118,26 @@ def test_mpc_beats_the_rule_based_controllers_under_a_time_of_use_tariff(
     assert mpc.metrics.total_cost < 0.95 * baseline.metrics.total_cost
     assert mpc.metrics.comfort_violation_kh < baseline.metrics.comfort_violation_kh
     assert mpc.metrics.low_price_share > baseline.metrics.low_price_share
+
+
+def test_spin_up_and_the_running_peak_of_a_capacity_tariff(heat_pump: FastModel) -> None:
+    """The spun-up state comes from the controllers of the YAML; the closed loop carries the peak of the month."""
+    from mpctrano import CapacityTariff, spin_up
+    from mpctrano.estimation import PerfectEstimator
+
+    closed_loop = FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastModel")
+    x0 = spin_up(heat_pump, closed_loop, START, days=2.0)
+    assert x0.shape == heat_pump.initial_state.shape
+    assert not np.allclose(x0, heat_pump.initial_state)
+    assert 285.0 < x0[heat_pump.state_names.index("space_001.TAir")] < 297.0
+    tariff = CapacityTariff(base=FlatTariff(price=0.25), capacity_price=60.0, minimum_peak_kw=0.0)
+    settings = MPCSettings(horizon=6)
+    controller = ModelPredictiveController(heat_pump, settings, ComfortSpec(), tariff)
+    plant = ModelPlant(heat_pump, STEP, START, x0=x0)
+    result = run_closed_loop(
+        controller, PerfectEstimator(plant), plant, WeatherForecaster.from_model(heat_pump), steps=4
+    )
+    frame = result.frame
+    assert frame["peak_so_far"].is_monotonic_increasing
+    assert frame["peak_so_far"].iloc[-1] == pytest.approx(frame["P_meter"].max(), rel=1e-6)
+    assert result.metrics.capacity_cost == pytest.approx(5.0 * frame["P_meter"].max() / 1000, rel=1e-6)

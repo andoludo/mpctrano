@@ -10,7 +10,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from mpctrano.tariff import Tariff
+    from mpctrano.tariff import CapacityTariff, Tariff
 
 
 class FitMetrics(BaseModel):
@@ -50,12 +50,17 @@ class FitMetrics(BaseModel):
 
 @dataclass(frozen=True)
 class Prices:
-    """Prices of the carriers over the steps of a run [EUR/kWh] and the capacity charge [EUR/kW]."""
+    """Prices of the carriers over the steps of a run [EUR/kWh] and the capacity charge [EUR/kW].
+
+    With a :class:`~mpctrano.tariff.CapacityTariff` the capacity cost is that of the monthly peaks (``capacity``),
+    otherwise ``capacity_charge`` times the peak of the run.
+    """
 
     electricity: np.ndarray
     feed_in: np.ndarray
     fuel: np.ndarray
     capacity_charge: float = 0.0
+    capacity: CapacityTariff | None = None
 
     @classmethod
     def of(
@@ -65,19 +70,24 @@ class Prices:
         fuel_price: float | None = None,
         feed_in_price: float | None = None,
     ) -> Prices:
-        """The prices of ``tariff`` on ``index``; the fuel and the electricity sold at the tariff price unless
-        given."""
+        """The prices of ``tariff`` on ``index``. The fuel is bought at ``fuel_price``, the electricity sold at
+        ``feed_in_price``, or else at the export price of the tariff when it has one, at its energy price otherwise
+        (net metering)."""
+        from mpctrano.tariff import CapacityTariff
+
         signal = tariff.signal(index)
         steps = len(index)
 
         def price(value: float | None) -> np.ndarray:
             return signal.prices.copy() if value is None else np.full(steps, float(value))
 
+        feed_in = signal.export.copy() if feed_in_price is None and tariff.has_export_price else price(feed_in_price)
         return cls(
             electricity=signal.prices,
-            feed_in=price(feed_in_price),
+            feed_in=feed_in,
             fuel=price(fuel_price),
             capacity_charge=signal.capacity_charge,
+            capacity=tariff if isinstance(tariff, CapacityTariff) else None,
         )
 
 
@@ -94,6 +104,10 @@ class ControlMetrics(BaseModel):
     max_violation: float = Field(description="Largest band violation [K]")
     peak_power_kw: float = Field(description="Peak electric power bought [kW]")
     peak_fuel_power_kw: float = Field(description="Peak fuel power [kW]")
+    generation_kwh: float = Field(0.0, description="Electricity produced on site (PV) [kWh]")
+    self_consumption: float = Field(
+        float("nan"), description="Share of the production consumed on site (NaN without production)"
+    )
     low_price_share: float = Field(description="Share of the energy bought below the median electricity price")
     mean_price: float = Field(description="Average price of the energy bought [EUR/kWh]")
     steps: int
@@ -112,10 +126,12 @@ class ControlMetrics(BaseModel):
         upper: np.ndarray,
         time_step: float,
     ) -> ControlMetrics:
-        """``energy`` has the ``fuel``, ``bought`` and ``sold`` energy of each step [kWh]; ``temperatures``,
-        ``lower`` and ``upper`` are ``(n_zones, N)``, the temperatures at the end of each step."""
+        """``energy`` has the ``fuel``, ``bought`` and ``sold`` energy of each step [kWh] (and the ``generated``
+        energy with on-site production), on a time index; ``temperatures``, ``lower`` and ``upper`` are
+        ``(n_zones, N)``, the temperatures at the end of each step."""
         hours = time_step / 3600
         fuel, bought, sold = (energy[name].to_numpy(dtype=float) for name in ("fuel", "bought", "sold"))
+        generated = float(energy["generated"].sum()) if "generated" in energy else 0.0
         purchased = fuel + bought
         cost_of_energy = prices.fuel * fuel + prices.electricity * bought - prices.feed_in * sold
         violation = np.maximum(lower - temperatures, 0) + np.maximum(temperatures - upper, 0)
@@ -123,17 +139,24 @@ class ControlMetrics(BaseModel):
         steps = len(energy)
         cheap = prices.electricity < float(np.median(prices.electricity)) if steps else np.zeros(0, dtype=bool)
         peak = float(bought.max() / hours) if steps else 0.0
+        capacity_cost = (
+            prices.capacity.capacity_cost(pd.DatetimeIndex(energy.index), bought / hours * 1000)
+            if prices.capacity is not None and steps
+            else prices.capacity_charge * peak
+        )
         return cls(
             fuel_kwh=float(fuel.sum()),
             electricity_kwh=float(bought.sum()),
             sold_kwh=float(sold.sum()),
             energy_kwh=total,
             energy_cost=float(cost_of_energy.sum()),
-            capacity_cost=prices.capacity_charge * peak,
+            capacity_cost=capacity_cost,
             comfort_violation_kh=float(np.sum(violation) * hours),
             max_violation=float(np.max(violation)) if violation.size else 0.0,
             peak_power_kw=peak,
             peak_fuel_power_kw=float(fuel.max() / hours) if steps else 0.0,
+            generation_kwh=generated,
+            self_consumption=1 - float(sold.sum()) / generated if generated > 0 else float("nan"),
             low_price_share=float(purchased[cheap].sum() / total) if total > 0 else 0.0,
             mean_price=float((prices.fuel * fuel + prices.electricity * bought).sum() / total)
             if total > 0

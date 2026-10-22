@@ -1,0 +1,18 @@
+[
+ {
+  "name": "material[ROCKWOOL:CAL].thermal_conductivity",
+  "value": 0.04,
+  "lower": 0.025,
+  "upper": 0.08,
+  "exponents": {
+   "externalwall_0.constructionType.k[2]": 1.0,
+   "externalwall_0.G[2]": 1.0,
+   "externalwall_1.constructionType.k[2]": 1.0,
+   "externalwall_1.G[2]": 1.0,
+   "externalwall_2.constructionType.k[2]": 1.0,
+   "externalwall_2.G[2]": 1.000000000000001
+  },
+  "prior_std": 0.5,
+  "mode": "field"
+ }
+]

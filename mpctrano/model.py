@@ -177,12 +177,18 @@ class FastModel:
 
     @classmethod
     def from_yaml(
-        cls, path: Path | str, name: str | None = None, roles: Roles | None = None, library: str = FAST_MODEL_LIBRARY
+        cls,
+        path: Path | str,
+        name: str | None = None,
+        roles: Roles | None = None,
+        library: str = FAST_MODEL_LIBRARY,
+        base_dir: Path | None = None,
     ) -> FastModel:
         """Generate the model with Trano from a building description.
 
         ``library`` is ``FastModelMPC`` (the controls of the systems are inputs, for MPC) or ``FastModel`` (the
         closed loop with the controllers of the YAML: the baseline of :func:`mpctrano.simulation.run_rule_based`).
+        The weather file is looked up in ``base_dir`` (the directory of the YAML by default).
         """
         from trano.data_models.conversion import convert_network
         from trano.elements.library.library import Library
@@ -192,7 +198,7 @@ class FastModel:
         path = Path(path).resolve()
         library_ = Library.from_configuration(library)
         network = convert_network(name or _package_name(path.stem), path, library=library_)
-        return cls.from_network(network, roles=roles, base_dir=path.parent)
+        return cls.from_network(network, roles=roles, base_dir=base_dir or path.parent)
 
     def write(self, directory: Path | str, stem: str | None = None) -> Path:
         """Write the Modelica package (``<stem>.mo``)."""
@@ -309,6 +315,30 @@ class FastModel:
         """Parameter names matching any of the ``fnmatch`` patterns (e.g. ``"*.G"``, ``"space_001.*"``)."""
         patterns = list(patterns)
         return [name for name in self.parameter_names if any(fnmatch.fnmatch(name, pattern) for pattern in patterns)]
+
+    def with_control_bounds(self, bounds: Mapping[str, tuple[float | None, float | None]]) -> FastModel:
+        """Copy of the model with other bounds on some controls (``name: (lower, upper)``, ``None`` keeps a bound).
+
+        The bounds of the model come from the Modelica ``min`` and ``max`` of its inputs; an ideal emitter
+        (``Q_flow`` in W) is written with ``min=0``, heating only: a negative lower bound lets the controller cool
+        with it (the equations hold, the emitter is a heat flow of either sign).
+        """
+        unknown = set(bounds) - set(self.control_names)
+        if unknown:
+            raise KeyError(f"Unknown controls: {sorted(unknown)}")
+        inputs = []
+        for original in self.model.description.inputs:
+            variable = original
+            if original.name in bounds:
+                lower, upper = bounds[original.name]
+                update = {"minimum": original.minimum if lower is None else float(lower)}
+                update |= {"maximum": original.maximum if upper is None else float(upper)}
+                variable = original.model_copy(update=update)
+            inputs.append(variable)
+        model = CasadiModel(
+            rhs=self.model.rhs, description=self.model.description.model_copy(update={"inputs": tuple(inputs)})
+        )
+        return replace(self, model=model)
 
     def with_parameters(self, values: Mapping[str, float] | Sequence[float] | np.ndarray) -> FastModel:
         """Copy of the model with other parameter values (a mapping of names or a full vector)."""

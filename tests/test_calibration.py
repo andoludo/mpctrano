@@ -1,5 +1,6 @@
 """Calibration of Trano's single-zone hydronic house as a FastModel, on data of a perturbed copy."""
 
+import casadi as ca
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,6 +13,7 @@ from mpctrano.calibration import (
     CalibrationSettings,
     Calibrator,
     ParameterGroup,
+    YamlGroup,
     evaluate,
 )
 from mpctrano.units import KELVIN
@@ -62,6 +64,24 @@ def test_groups_scale_or_set_their_parameters(house: FastModel) -> None:
     assert model.parameter("externalwall_0.G[2]") == pytest.approx(2 * house.parameter("externalwall_0.G[2]"))
     assert model.parameter("space_001.ACH") == 0.7
     assert model.parameter("space_001.mSenFac") == house.parameter("space_001.mSenFac")
+
+
+def test_the_factors_of_groups_sharing_a_parameter_compound(house: FastModel) -> None:
+    """A conductivity and a thickness both move a layer conductance: doubling both leaves it unchanged."""
+    conductivity = YamlGroup(name="k", value=0.04, lower=0.01, upper=0.1, exponents={"externalwall_0.G[2]": 1.0})
+    thickness = YamlGroup(
+        name="x", value=0.1, lower=0.02, upper=0.3, exponents={"externalwall_0.G[2]": -1.0, "externalwall_0.C[2]": 1.0}
+    )
+    calibrator = Calibrator(house, CalibrationSettings(groups=(conductivity, thickness)))
+    model = calibrator.calibrated({"k": 0.08, "x": 0.2})
+    assert model.parameter("externalwall_0.G[2]") == pytest.approx(house.parameter("externalwall_0.G[2]"))
+    assert model.parameter("externalwall_0.C[2]") == pytest.approx(2 * house.parameter("externalwall_0.C[2]"))
+    theta = ca.SX.sym("theta", 2)
+    symbolic, values = calibrator._symbolic_parameters(theta)
+    at = ca.Function("p", [theta], [symbolic, values["k"], values["x"]])
+    vector, k, x = at(np.log([2.0, 2.0]))
+    assert np.allclose(np.asarray(vector).ravel(), np.nan_to_num(model.parameters))  # NaN parameters are zeroed
+    assert (float(k), float(x)) == pytest.approx((0.08, 0.2))
 
 
 def test_synthetic_data_is_plausible(house: FastModel, recorded: tuple[pd.DataFrame, pd.DataFrame]) -> None:

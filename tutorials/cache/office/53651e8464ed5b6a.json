@@ -1,0 +1,37 @@
+{
+ "name": "office | day-ahead",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 12.46739041381077,
+  "sold_kwh": 0.0,
+  "energy_kwh": 12.46739041381077,
+  "energy_cost": 3.182745367969175,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.7399540385933392,
+  "max_violation": 0.1624374983351231,
+  "peak_power_kw": 1.819908513322933,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.6879136415134692,
+  "mean_price": 0.25528561008593137,
+  "steps": 24
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "openplan_001",
+  "meeting_001"
+ ],
+ "comfort_states": [
+  "openplan_001.TAir",
+  "meeting_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 1978.0768743629997,
+ "parts": {
+  "price": "day-ahead",
+  "days": 1.0
+ }
+}

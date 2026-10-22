@@ -1,0 +1,108 @@
+# A small office building: an open-plan office (200 m2, large south glazing) and a meeting area (80 m2) on one
+# floor, externally insulated masonry, a warm flat roof and an insulated slab, occupied on weekdays from 8h to 18h.
+# Each zone is heated and cooled by an ideal emitter (a heat flow the controller decides, positive or negative):
+# the chiller is a constant EER in the controller settings, the heating a heat pump COP. Summer scenarios: the
+# gains of the occupants and of the sun drive the cooling.
+default: !include_default
+spaces:
+  - occupancy:
+      parameters:
+        occupancy: 3600*{8, 18}
+        gain: "[40; 75; 40]"
+        heat_gain_if_occupied: 1/12/3
+    parameters:
+      floor_area: 200.0
+      average_room_height: 3.0
+    id: OPENPLAN:001
+    external_boundaries:
+      external_walls:
+        - surface: 60
+          azimuth: 0
+          tilt: wall
+          construction: ETICSWALL:001
+        - surface: 30
+          azimuth: 1.57
+          tilt: wall
+          construction: ETICSWALL:001
+        - surface: 200
+          azimuth: 0
+          tilt: ceiling
+          construction: FLATROOF:001
+      windows:
+        - surface: 36.0
+          construction: INS2AR2020:001
+          azimuth: 0
+          tilt: wall
+        - surface: 8.0
+          construction: INS2AR2020:001
+          azimuth: 1.57
+          tilt: wall
+      floor_on_grounds:
+        - surface: 200.0
+          construction: FLOORONGROUND:001
+    emissions:
+      - radiator:
+          id: EMITTER:001
+          variant: ideal
+          parameters:
+            nominal_heating_power_positive_for_heating: 12000
+          control:
+            emission_control:
+              id: EMISSION_CONTROL:001
+              parameters:
+                schedule: 3600*{7, 19}
+                temperature_heating_setpoint: 294.15
+                temperature_heating_setback: 289.15
+  - occupancy:
+      parameters:
+        occupancy: 3600*{9, 17}
+        gain: "[40; 75; 40]"
+        heat_gain_if_occupied: 1/8/3
+    parameters:
+      floor_area: 80.0
+      average_room_height: 3.0
+    id: MEETING:001
+    external_boundaries:
+      external_walls:
+        - surface: 30
+          azimuth: 3.14
+          tilt: wall
+          construction: ETICSWALL:001
+        - surface: 30
+          azimuth: -1.57
+          tilt: wall
+          construction: ETICSWALL:001
+        - surface: 80
+          azimuth: 0
+          tilt: ceiling
+          construction: FLATROOF:001
+      windows:
+        - surface: 10.0
+          construction: INS2AR2020:001
+          azimuth: 3.14
+          tilt: wall
+        - surface: 6.0
+          construction: INS2AR2020:001
+          azimuth: -1.57
+          tilt: wall
+      floor_on_grounds:
+        - surface: 80.0
+          construction: FLOORONGROUND:001
+    emissions:
+      - radiator:
+          id: EMITTER:002
+          variant: ideal
+          parameters:
+            nominal_heating_power_positive_for_heating: 5000
+          control:
+            emission_control:
+              id: EMISSION_CONTROL:002
+              parameters:
+                schedule: 3600*{7, 19}
+                temperature_heating_setpoint: 294.15
+                temperature_heating_setback: 289.15
+internal_walls:
+  - space_1: OPENPLAN:001
+    space_2: MEETING:001
+    construction: INTERNALWALLLIGHT:001
+    surface: 36

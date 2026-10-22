@@ -137,7 +137,9 @@ day, the MPC costs 12 % less than the controllers of the YAML with almost no dis
 
 ## Tutorials
 
-The interactive notebooks live in `tutorials/` (see `tutorials/README.md`). The `tutorials/package/` scripts walk
+The interactive notebooks live in `tutorials/` (see `tutorials/README.md`; executed on
+[andoludo.github.io/mpctrano](https://andoludo.github.io/mpctrano/), each with an *Open in Colab* badge;
+`06_your_building` takes the building as a YAML cell). The `tutorials/package/` scripts walk
 through the package on a single-zone house heated by an air-to-water heat pump from the Trano test suite
 (`uv run python tutorials/package/01_model_from_trano.py`, figures written to `tutorials/output/`):
 

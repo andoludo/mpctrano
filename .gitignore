@@ -223,3 +223,6 @@ tutorials/output/
 # mkdocs
 /site
 tutorials/**/trano.log
+
+# copies of the executed notebooks made by `make docs`
+docs/tutorials/*.ipynb

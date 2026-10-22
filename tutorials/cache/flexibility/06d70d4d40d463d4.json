@@ -1,0 +1,37 @@
+{
+ "name": "pv | day-ahead",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 6.296882436023726,
+  "sold_kwh": 0.013345977861305869,
+  "energy_kwh": 6.296882436023726,
+  "energy_cost": 1.5298848159040406,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 1.5947911403839043,
+  "max_violation": 0.14679066553173925,
+  "peak_power_kw": 0.9871002793169943,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 9.277551853052776,
+  "self_consumption": 0.9985614763385112,
+  "low_price_share": 0.7579000838260473,
+  "mean_price": 0.24305755424517325,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 853.5836266129991,
+ "parts": {
+  "study": "pv",
+  "variant": "pv",
+  "price": "day-ahead",
+  "days": 2.0
+ }
+}

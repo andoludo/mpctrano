@@ -94,3 +94,37 @@ comparable):
 * `comfort_violation_kh`, `max_violation`, `peak_power_kw`.
 
 `price_response(run)` gives the energy bought at each price level.
+
+## Cooling with ideal emitters
+
+The ideal emitter of a zone (`radiator` of variant `ideal` in the YAML) is a heat flow input of the
+`FastModelMPC` model, which Trano bounds to heating (`min=0`). `FastModel.with_control_bounds` gives it
+a negative lower bound: the same equations cool the zone. The controller costs its heat at
+`MPCSettings.heat_cop` and its cooling at `MPCSettings.cooling_eer` (electricity per unit of heat or
+cooling); the closed loop meters it alike.
+
+```python
+office = FastModel.from_yaml("office.yaml").with_control_bounds({"emitter_001_Q.Q_flow": (-12000.0, None)})
+settings = MPCSettings(horizon=24, heat_cop=3.5, cooling_eer=3.0)
+```
+
+## Electrical storages at the meter
+
+A stationary battery and an electric vehicle are optimised in the balance of the meter next to the
+thermal storage of the building (`mpctrano.storage`): linear state-of-charge models with a round-trip
+efficiency and power bounds; the vehicle charges while plugged in (`arrival_hour` to `departure_hour`),
+leaves with at least `departure_energy_kwh` (soft, at `missing_energy_price`) and comes back
+`driven_kwh` lower. The controller carries their state from one solve to the next
+(`ModelPredictiveController.advance`, called by the closed loop) and reports the plan in
+`MPCSolution.storage`.
+
+```python
+settings = MPCSettings(
+    horizon=24,
+    batteries=(Battery(capacity_kwh=8, max_charge_w=3000, max_discharge_w=3000),),
+    vehicles=(ElectricVehicle(capacity_kwh=50, max_charge_w=7400, arrival_hour=18, departure_hour=7, driven_kwh=12),),
+)
+```
+
+The energy stored in a battery at the end of the horizon is valued at the mean price of the horizon,
+so that the controller does not empty it before the end.

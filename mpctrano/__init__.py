@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from mpctrano.calibration import (
     DEFAULT_GROUPS,
+    YamlGroup,
     OPTIONAL_GROUPS,
     CalibrationResult,
     CalibrationSettings,
@@ -26,7 +27,17 @@ from mpctrano.calibration import (
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
 from mpctrano.estimation import EstimatorSettings, MovingHorizonEstimator, PerfectEstimator, StateEstimator
-from mpctrano.flexibility import compare, price_response, shifted_energy, value_of_flexibility
+from mpctrano.flexibility import (
+    ActivationRequest,
+    ActivationResult,
+    FlexibilityEnvelope,
+    compare,
+    flexibility_function,
+    price_response,
+    respond,
+    shifted_energy,
+    value_of_flexibility,
+)
 from mpctrano.forecast import (
     DataForecaster,
     Forecaster,
@@ -41,9 +52,18 @@ from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
 from mpctrano.scenarios import Scenario, run_scenario, run_scenario_rule_based, scenario_catalogue
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based
-from mpctrano.synthetic import SyntheticData, generate_monitoring_data, perturb, random_factors
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based, spin_up
+from mpctrano.storage import Battery, ElectricVehicle
+from mpctrano.synthetic import (
+    SyntheticData,
+    generate_closed_loop_data,
+    generate_monitoring_data,
+    perturb,
+    random_factors,
+)
+from mpctrano.yaml_parameters import CalibrationSpec, YamlParameter
 from mpctrano.tariff import (
+    CapacityTariff,
     DemandResponseEvent,
     DemandResponseTariff,
     DynamicTariff,
@@ -61,9 +81,14 @@ except PackageNotFoundError:  # pragma: no cover - source checkout without insta
 __all__ = [
     "DEFAULT_GROUPS",
     "OPTIONAL_GROUPS",
+    "ActivationRequest",
+    "ActivationResult",
+    "Battery",
     "CalibrationResult",
     "CalibrationSettings",
+    "CalibrationSpec",
     "Calibrator",
+    "CapacityTariff",
     "ClosedLoopResult",
     "ComfortSchedule",
     "ComfortSpec",
@@ -73,10 +98,12 @@ __all__ = [
     "DemandResponseEvent",
     "DemandResponseTariff",
     "DynamicTariff",
+    "ElectricVehicle",
     "EstimatorSettings",
     "FastModel",
     "FitMetrics",
     "FlatTariff",
+    "FlexibilityEnvelope",
     "ForecastNoise",
     "Forecaster",
     "MPCSettings",
@@ -102,13 +129,18 @@ __all__ = [
     "TimeOfUseTariff",
     "WeatherFile",
     "WeatherForecaster",
+    "YamlGroup",
+    "YamlParameter",
     "__version__",
     "compare",
     "evaluate",
+    "flexibility_function",
+    "generate_closed_loop_data",
     "generate_monitoring_data",
     "perturb",
     "price_response",
     "random_factors",
+    "respond",
     "run_closed_loop",
     "run_rule_based",
     "run_scenario",
@@ -116,5 +148,6 @@ __all__ = [
     "scenario_catalogue",
     "shifted_energy",
     "simulate_fit",
+    "spin_up",
     "value_of_flexibility",
 ]

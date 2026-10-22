@@ -144,8 +144,8 @@ class PriceSignal(RetailComponents):
         return self.series / MWH_TO_KWH * self.export_share
 
     def tariff(self, capacity_charge: float = 0.0) -> DynamicTariff:
-        """The retail price as the tariff of the controller."""
-        return DynamicTariff(series=self.retail(), capacity_charge=capacity_charge)
+        """The retail price (and the export remuneration) as the tariff of the controller."""
+        return DynamicTariff(series=self.retail(), export_series=self.export(), capacity_charge=capacity_charge)
 
     def statistics(self) -> pd.Series:
         """Mean, spread and the share of negative intervals of the wholesale price [EUR/MWh]."""

@@ -1,0 +1,37 @@
+{
+ "name": "base | capacity 150 EUR/kW/year, no floor",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 14.251917535076823,
+  "sold_kwh": 0.0,
+  "energy_kwh": 14.251917535076823,
+  "energy_cost": 4.0725693628065285,
+  "capacity_cost": 4.291373414454025,
+  "comfort_violation_kh": 1.6361749872710334,
+  "max_violation": 0.1395785967787333,
+  "peak_power_kw": 0.343309873156322,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.41773732968104543,
+  "mean_price": 0.2857558888327216,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 987.2594273049999,
+ "parts": {
+  "study": "capacity",
+  "variant": "base",
+  "capacity": "150 EUR/kW/year, no floor",
+  "days": 2.0
+ }
+}

@@ -97,7 +97,8 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # the rumoca-* tags are the releases of the rumoca wheel workflow, not versions of mpctrano
+    if: startsWith(github.ref, 'refs/tags/') && !startsWith(github.ref, 'refs/tags/rumoca-')
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

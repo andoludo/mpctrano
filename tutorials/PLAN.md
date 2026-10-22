@@ -1,7 +1,9 @@
 # Plan: interactive MPC and energy-flexibility tutorials in mpctrano
 
 Status: **re-planned on 2026-10-15 on Trano's `FastModel` library; phases A and B and Day 7 done on
-2026-10-21** (notebooks 01, 02, 04 and 05, the flexibility library, the cached studies, the docs site).
+2026-10-21** (notebooks 01 to 06, the flexibility library, the calibration from the YAML, the cached
+studies, the docs site and the Colab launch; the caches and the executed notebooks finished on
+2026-10-22).
 The YAML stays the single source of truth: Trano renders it into the `FastModelMPC` model (the
 controls of the systems as inputs) and the closed-loop `FastModel` (the controllers of the YAML),
 rumoca translates them into CasADi, and mpctrano contains no building or system physics, with one
@@ -150,7 +152,18 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
    cell clones the repository and installs mpctrano with the rumoca wheel of the GitHub release
    `rumoca-0.10.3-c74cddf` (built by `.github/workflows/rumoca-wheel.yaml` on the tag; without a
    wheel for the runtime's Python it builds rumoca from source, about ten minutes). Colab is the
-   interactive deployment unless a Binder or JupyterLite one is preferred.
+   interactive deployment unless a Binder or JupyterLite one is preferred. The wheel workflow has to
+   be run by hand once from `main` (Actions > rumoca wheel) to create the release.
+6. **Calibration of a closed-loop model** (notebook 03): the collocated problem does not converge on
+   a model with thermostats and hysteresis inside, so such a model is fitted by single shooting
+   (`CalibrationSettings.method`, automatic): IPOPT with wide central differences and full steps on
+   the simulated objective. Two things follow for the author to weigh: (a) the parameters a
+   thermostat-controlled house can identify are few - the walls and the infiltration trade along a
+   flat valley, a conductivity and a thickness only enter as `k / x` - so the YAML should declare
+   what a measurement cannot give and nothing more; (b) the fit of such data lands at about 0.17 K
+   RMSE rather than the 0.1 K of the sensor, because a switching time one integration step off
+   moves the hourly sample: finer data (15 minutes) or a smoothed thermostat in Trano's FastModel
+   would close that gap.
 
 ## 5. Risks and mitigations
 

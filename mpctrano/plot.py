@@ -6,6 +6,7 @@ hover on every trace) so that the tutorials read as one system.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
@@ -36,9 +37,14 @@ LAYOUT: dict[str, Any] = {
 def _plotly() -> tuple[Any, Any]:
     try:
         import plotly.graph_objects as go
+        import plotly.io as pio
         from plotly.subplots import make_subplots
     except ImportError as error:  # pragma: no cover
         raise ImportError("Install plotly (`pip install mpctrano[plot]`) to draw the figures.") from error
+    if pio.renderers.default in ("plotly_mimetype", "plotly_mimetype+notebook") and "IPython" in sys.modules:
+        # an HTML rendering next to the plotly mimetype: the executed notebooks keep their figures when rendered
+        # without a plotly-aware front end (the documentation site, nbviewer)
+        pio.renderers.default = "plotly_mimetype+notebook_connected"
     return go, make_subplots
 
 

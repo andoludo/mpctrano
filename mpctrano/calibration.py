@@ -516,7 +516,7 @@ class Calibrator:
             # steps, and the solve is over once the objective settles within a percent
             "acceptable_tol": 1.0,
             "acceptable_obj_change_tol": 1e-2,
-            "acceptable_iter": 5,
+            "acceptable_iter": 3,
             "accept_every_trial_step": "yes",
         }
         solver = ca.nlpsol(

@@ -218,7 +218,20 @@ display(result_known.metrics().round(3))
 # %% [markdown]
 # ## Key takeaways
 #
-# TAKEAWAYS
+# * **The YAML is the specification of the calibration too**: three fields carry `{value, parameter: true, min, max}`,
+#   `CalibrationSpec` writes the flat copy Trano reads and measures which parameters of the CasADi model each field
+#   moves; the fit adjusts the fields within their bounds and the model follows.
+# * **A closed-loop model is calibrated by simulation, not collocation**: its thermostat and hysteresis make the
+#   collocated problem non-smooth; the single-shooting fit (two decision variables, CVODES inside the objective,
+#   wide central differences) brings the air-temperature error from 1.35 K to 0.18 K on the training days and
+#   from 1.14 K to 0.15 K on two unseen days, with the energy use to match.
+# * **The data decide what is identifiable**: the free fit lands at a conductivity of 0.050 and 0.63 air changes
+#   per hour (true: 0.060 and 0.60) - the right total loss, split along a flat valley the objective barely
+#   feels; with the infiltration measured, the conductivity comes out at 0.0593. Declare in the YAML what a
+#   measurement cannot give, fix the rest.
+# * **The remaining 0.17 K is the switching**: a thermostat that flips one integration step earlier moves the hourly
+#   sample; the fitted model has the right parameters but not the exact switching times, which is what IPOPT's
+#   jumpy log in section 4 shows.
 #
 # ## Further reading
 #

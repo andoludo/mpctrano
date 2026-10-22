@@ -1,0 +1,37 @@
+{
+ "name": "base | day-ahead (down 0.3 kW)",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 12.794376845092762,
+  "sold_kwh": 0.0,
+  "energy_kwh": 12.794376845092762,
+  "energy_cost": 3.2383728726887697,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 1.4223269241796856,
+  "max_violation": 0.13487161025494743,
+  "peak_power_kw": 0.9402206860544347,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.6249357142998526,
+  "mean_price": 0.25310907376710856,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 906.9866425899997,
+ "parts": {
+  "study": "activation",
+  "variant": "base",
+  "activation": "shed 0.3 kW, 2 h at 17h",
+  "days": 2.0
+ }
+}

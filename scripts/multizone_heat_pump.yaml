@@ -199,9 +199,9 @@ spaces:
     variant: infiltration
     occupancy:
       parameters:
-      ach: {value: 0.5, parameter: true, min: 0.1, max: 2.0}
         occupancy: 3600*{7, 19}
     parameters:
+      ach: {value: 0.5, parameter: true, min: 0.1, max: 2.0}
       floor_area: 27.11
       average_room_height: 2.4
     external_boundaries:
@@ -322,9 +322,9 @@ spaces:
     variant: infiltration
     occupancy:
       parameters:
-      ach: {value: 0.5, parameter: true, min: 0.1, max: 2.0}
         occupancy: 3600*{8,23}
     parameters:
+      ach: {value: 0.5, parameter: true, min: 0.1, max: 2.0}
       floor_area: 15.7
       average_room_height: 2.4
     external_boundaries:

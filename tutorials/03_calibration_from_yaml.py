@@ -65,16 +65,22 @@ display(pd.DataFrame([parameter.model_dump(by_alias=True) for parameter in spec.
 # by 20 % and the exponent of every parameter that moved is read. The conductivity moves the conductance of the
 # insulation layer of the three walls (exponent 1), the thickness moves it with -1 and the capacities of the
 # neighbouring nodes a little, the infiltration rate is the `ACH` of the zone.
+#
+# The table also says what *not* to calibrate together: the conductivity and the thickness enter the model through
+# the same conductance (`k / x`, exponents +1 and -1), the capacities they move a little apart; no data on the air
+# temperature tells them apart. The study keeps the thickness as drawn (a drawing is a measurement) and
+# calibrates the conductivity and the infiltration rate.
 
 # %%
-groups = study.groups()
-for group in groups:
+for group in study.declared_groups():
     moved = {
         name: round(exponent, 3)
         for name, exponent in group.exponents.items()
         if not name.startswith(("externalwall_1", "externalwall_2"))
     }
     print(f"{group.name}: value {group.value:g} in [{group.lower:g}, {group.upper:g}] -> {moved} (and the other walls)")
+groups = study.groups()
+print("calibrated:", [group.name for group in groups])
 
 # %% [markdown]
 # ## 2. The true building and its monitoring data
@@ -155,16 +161,15 @@ if quick_mode():
     print("cached result:", result.status, "in", result.iterations, "iterations,", f"{result.solve_time:.0f} s")
 else:
     with timed("calibration"):
-        calibrated, result = Calibrator(model, CalibrationSettings(groups=groups, verbose=True)).fit(
-            training, validation
-        )
+        settings = CalibrationSettings(groups=groups, verbose=True, max_iterations=60)
+        calibrated, result = Calibrator(model, settings).fit(training, validation)
 print(
     f"{result.method}: {result.variables} decision variables, {result.iterations} iterations, "
     f"{result.solve_time:.0f} s, {result.status}"
 )
 
 # %% [markdown]
-# ## 5. After: the fit on the training and validation days, and what the three fields became
+# ## 5. After: the fit on the training and validation days, and what the two fields became
 
 # %%
 recovered = pd.DataFrame({"assumed (YAML)": spec.nominal, "calibrated": result.factors, "true": truth["true value"]})
@@ -184,11 +189,10 @@ display(plot_fit(after_validation, "after calibration: validation days (dotted: 
 # ## 6. Identifiability: what the data can and cannot tell apart
 #
 # The calibrated model reproduces the air temperature and the electricity of the true building on days it has not
-# seen, but the three fields did not land on their true values: the conductivity and the thickness of the insulation
-# enter the model only through the conductance of the layer (`k / x`, exponents +1 and -1 above), and a leakier
-# house and a worse insulation are both a loss proportional to the indoor-outdoor temperature difference. The data
-# of a thermostat-controlled house fix the **total** loss; how it splits between walls and infiltration is a flat
-# valley of the objective, and the prior (the YAML) decides where along it the fit stops.
+# seen, but the two fields did not land on their true values: a leakier house and a worse insulation are both a
+# loss proportional to the indoor-outdoor temperature difference. The data of a thermostat-controlled house fix the
+# **total** loss; how it splits between the walls and the infiltration is a flat valley of the objective, and the
+# prior (the YAML) and the first steps of IPOPT decide where along it the fit stops.
 #
 # What a measurement can add: a blower-door test gives the infiltration rate. With the YAML regenerated at that
 # rate and the conductivity as the only declared parameter, the same fit recovers it.

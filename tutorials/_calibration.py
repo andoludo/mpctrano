@@ -44,6 +44,9 @@ TRUTH = {
 }
 """The values of the declared parameters in the true building (the YAML holds the assumed ones); the thickness
 of the insulation is as drawn."""
+CALIBRATED = (CONDUCTIVITY, INFILTRATION)
+"""The declared fields the free fit adjusts: the thickness is left as drawn, it enters the model with the
+conductivity only (``k / x``) and the two cannot be told apart."""
 NOISE = {"measurement_std": 0.1, "meter_std": 0.02}
 """Sensor noise [K] and meter noise [kWh] of the recorded data."""
 
@@ -65,8 +68,8 @@ def truth() -> FastModel:
     return spec().model(CLOSED_LOOP_LIBRARY, TRUTH)
 
 
-def groups(force: bool = False) -> tuple[YamlGroup, ...]:
-    """The calibration groups of the declared parameters (their sensitivities cached as JSON)."""
+def declared_groups(force: bool = False) -> tuple[YamlGroup, ...]:
+    """The calibration groups of every declared parameter (their sensitivities cached as JSON)."""
     path = CACHE / "groups.json"
     if path.exists() and not force:
         return tuple(YamlGroup.model_validate(item) for item in json.loads(path.read_text()))
@@ -74,6 +77,11 @@ def groups(force: bool = False) -> tuple[YamlGroup, ...]:
     result = spec().groups(model(), CLOSED_LOOP_LIBRARY)
     path.write_text(json.dumps([group.model_dump() for group in result], indent=1))
     return result
+
+
+def groups(force: bool = False) -> tuple[YamlGroup, ...]:
+    """The groups of the free fit (:data:`CALIBRATED`)."""
+    return tuple(group for group in declared_groups(force) if group.name in CALIBRATED)
 
 
 def recorded(force: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:

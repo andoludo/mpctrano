@@ -137,7 +137,17 @@ display(
 # %% [markdown]
 # ## Key takeaways
 #
-# TAKEAWAYS
+# * **The storages sit in one balance**: the heat pump, the buffer and the walls (through the FastModel), the battery
+#   and the vehicle (exact linear models in the controller) share the meter; the controller dispatches them together
+#   against the same price. In January the 20 m2 of PV give 5 kWh a day, and the MPC consumes all of it on site
+#   (self-consumption 1.00) where the controllers of the YAML export more than half (2.7 kWh sold, 0.46).
+# * **The battery earns little under day-ahead prices and more under negative ones**: 0.70 to 0.66 EUR a day with
+#   the winter spread of the day-ahead signal; 0.70 to 0.50 EUR when the midday prices go negative, because the
+#   battery is paid to charge (7.5 kWh charged, 4.3 kWh bought for a house that needs 2.9).
+# * **The vehicle is a deadline, not a storage**: the 12 kWh it needs by 7h are charged in the cheapest night hours
+#   (5.2 kWh over the day from a half-full battery); its 7.4 kW charger sets the peak of the house (8.4 kW under
+#   day-ahead prices, 4.9 kW when the negative midday hours spread the charging) - the capacity tariff of
+#   tutorial 02 is what would tame it.
 #
 # ## Further reading
 #

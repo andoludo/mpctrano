@@ -264,6 +264,15 @@ def _initial_state(model: FastModel, data: _Data, spin_up_days: float = 2.0) -> 
     return state
 
 
+_FORKED_FUNCTION: ca.Function | None = None
+"""The objective the forked workers of :class:`_FiniteDifferences` evaluate (set before the fork)."""
+
+
+def _evaluate_forked(theta: np.ndarray) -> float:
+    assert _FORKED_FUNCTION is not None
+    return float(_FORKED_FUNCTION(theta))
+
+
 class _FiniteDifferences(ca.Callback):
     """A scalar CasADi function with its gradient by central differences of a fixed step, the ``2n`` evaluations
     of the gradient spread over ``workers`` forked processes."""
@@ -308,9 +317,12 @@ class _FiniteDifferences(ca.Callback):
     def gradient(self, theta: np.ndarray) -> np.ndarray:
         points = self.points(theta)
         if self.workers > 1 and hasattr(os, "fork"):
-            # forked workers share the CasADi objects of this process; a thread pool would race on them
+            # forked workers inherit the CasADi function through the module global (a CasADi object cannot be
+            # pickled to a worker; a thread pool would race on it)
+            global _FORKED_FUNCTION  # noqa: PLW0603
+            _FORKED_FUNCTION = self.function
             with multiprocessing.get_context("fork").Pool(min(self.workers, len(points))) as pool:
-                values = pool.map(self.evaluate, points)
+                values = pool.map(_evaluate_forked, points)
         else:
             values = [self.evaluate(point) for point in points]
         return (np.asarray(values[0::2]) - np.asarray(values[1::2])) / (2 * self.step)

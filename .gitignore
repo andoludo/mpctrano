@@ -219,6 +219,7 @@ __marimo__/
 
 # mpctrano outputs
 tutorials/output/
+scripts/output/
 
 # mkdocs
 /site

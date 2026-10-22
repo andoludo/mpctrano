@@ -514,7 +514,7 @@ class Calibrator:
             # the small-scale jumps of the objective (a thermostat flipping one integration step earlier) defeat a
             # sufficient-decrease test and keep the objective changing by a fraction of a percent: full quasi-Newton
             # steps, and the solve is over once the objective settles within a percent
-            "acceptable_tol": 1.0,
+            "acceptable_tol": 10.0,  # the scaled dual infeasibility stays above 1 in the valley: not the criterion
             "acceptable_obj_change_tol": 1e-2,
             "acceptable_iter": 3,
             "accept_every_trial_step": "yes",

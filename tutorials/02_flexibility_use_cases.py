@@ -207,7 +207,21 @@ display(plot_closed_loop(pv["pv | day-ahead + negative midday"], "PV house: nega
 # %% [markdown]
 # ## Key takeaways
 #
-# TAKEAWAYS
+# * **Implicit flexibility is worth little with a flat winter price**: the price-aware controller shifts 0.8 kWh
+#   (base house) to 3.2 kWh (old house) into the cheap hours over two days and saves 0.45 % of the bill. The
+#   synthetic day-ahead signal has a small spread in January; the saving scales with the spread, not with the
+#   building (`tutorials/scripts/fetch_prices.py` brings a real year in). The 15-minute plan costs twenty times the
+#   solve for a 3 % different answer: the hour is the right step for a heavy house.
+# * **A capacity tariff is the strong signal**: at 150 EUR/kW/year without a floor the base house cuts its monthly
+#   peak by 81 % (1.77 to 0.34 kW) and the old house by 78 %, trading a little comfort (1.6 against 1.0 K.h); with a
+#   2.5 kW floor the base house has nothing to gain (its peak is below the floor) and pays the floor.
+# * **Explicit activations are delivered when the plan has room**: a 1 kW absorption at 13h is delivered in full with
+#   a 0.6 kWh rebound over the next three hours; a 0.3 kW shed at 17h is delivered at 83 % over two hours and 57 %
+#   over four, because the evening plan is already lean. The envelope says the same: at 13h and 19h the house
+#   can absorb 1.3 to 1.5 kW for hours, it can shed almost nothing.
+# * **PV without a battery does not react to negative prices**: with 9.3 kWh of January PV consumed on site and
+#   nothing to charge, the controller's day costs the same (1.53 EUR) whether midday prices go negative or not;
+#   tutorial 05 adds the storages that make them count.
 #
 # ## Further reading
 #

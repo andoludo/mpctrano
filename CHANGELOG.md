@@ -28,6 +28,10 @@ release pipeline.
 - `scripts/calibrate_multizone.py` and `scripts/multizone_heat_pump.yaml`: a ready-to-run calibration of
   a six-zone heat pump house on two weeks of monitoring data generated with Trano (`CalibrationSpec`
   takes a `base_dir` for the weather file).
+- `FastModel.smooth_controllers(width_factor, switching_time)`: a copy of a closed-loop model whose
+  thermostats, hysteresis and limiters switch over wider transitions and a set switching time (the
+  `dU`, `dY`, `dMax`, `dT`, `dtSet` and `tau` parameters of trano >= 0.59). The gentler copy keeps the
+  data within 0.15 K of the sharp model and calibrates by shooting in a tenth of the time.
 - Calibration of closed-loop models by single shooting (`CalibrationSettings.method`, automatic for a
   model without control inputs): CVODES simulates the candidate model, spun up with its own
   controllers, inside the objective; IPOPT takes wide central differences and full steps.

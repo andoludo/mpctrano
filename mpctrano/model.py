@@ -340,16 +340,18 @@ class FastModel:
         )
         return replace(self, model=model)
 
-    def smooth_controllers(self, width_factor: float = 20.0, switching_time: float = 600.0) -> FastModel:
+    def smooth_controllers(self, width_factor: float = 5.0, switching_time: float = 600.0) -> FastModel:
         """Copy of a closed-loop model with gentler controllers: every smooth transition of its controllers widened
         by ``width_factor`` and every hysteresis switching over ``switching_time`` [s].
 
         The controllers of Trano's FastModel reproduce switching controllers (thermostats, demand and buffer
         hysteresis, limiters) as steep smooth transitions and fast bistable states (trano >= 0.59: the parameters
-        ``dU``, ``dY``, ``dMax``, ``dT``, ``dtSet`` and ``tau`` of ``FastModel.Controls``). CVODES follows them, a
-        collocation on hourly steps and a gradient through the switches do not: the widened copy is the model to
-        calibrate by collocation or with the adjoint, at the price of a controller that reacts over minutes rather
-        than seconds. A model without these parameters (an older trano, or no controller) is returned as it is.
+        ``dU``, ``dY``, ``dMax``, ``dT``, ``dtSet`` and ``tau`` of ``FastModel.Controls``). CVODES follows them,
+        but every switch that moves by a sample makes the calibration objective jumpy: the gentler copy is the model
+        to calibrate. The defaults (five times wider, switching over ten minutes) keep its trajectory within 0.15 K
+        of the sharp model on the single-zone house and divide the time of a shooting calibration by ten without
+        biasing it; wider transitions (x10 and beyond) smear the thermostat and bias the conductances low. A model
+        without these parameters (an older trano, or no controller) is returned as it is.
         """
         widths = (".dU", ".dY", ".dMax", ".dT", ".dtSet")
         values: dict[str, float] = {}

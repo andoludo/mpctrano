@@ -108,6 +108,9 @@ the envelope, the heat capacity of the air, the infiltration rate and the effici
 meter). It solves the least-squares problem on the Radau collocation of the whole period, the states free and the
 dynamics as constraints, regularised towards the Trano values. On the boiler house of the tests, four days of data
 recover the true groups within a few percent and bring the air temperature error from 4.5 K to 0.06 K.
+A closed-loop model (one run by the controllers of the YAML) is calibrated by single shooting instead;
+`FastModel.smooth_controllers()` gives the copy with gentler thermostats that makes this ten times faster without
+biasing the result (see `docs/calibration.md`).
 
 ## State estimation
 

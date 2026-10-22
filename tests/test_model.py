@@ -74,3 +74,37 @@ def test_the_temperature_states_have_their_unit(heat_pump: FastModel) -> None:
     assert units["radiator_001.T[1]"] == "K"
     assert units["boiler_001.T"] == "K"
     assert units["boiler_001.EEle"] == "kWh"
+
+
+def test_smooth_controllers_widens_the_transitions_and_slows_the_switches() -> None:
+    from mpctrano import CalibrationSpec, spin_up
+    from mpctrano.model import CLOSED_LOOP_LIBRARY
+    from tests.conftest import MODELS
+
+    spec = CalibrationSpec.from_yaml(MODELS / "single_zone_calibration.yaml")
+    closed_loop = spec.model(CLOSED_LOOP_LIBRARY)
+    widths = tuple(n for n in closed_loop.parameter_names if n.endswith((".dU", ".dY", ".dMax", ".dT", ".dtSet")))
+    switches = tuple(n for n in closed_loop.parameter_names if n.endswith(".tau"))
+    if not widths or not switches:
+        pytest.skip("The installed trano does not expose the smoothing of its controllers as parameters.")
+
+    smooth = closed_loop.smooth_controllers(width_factor=5.0, switching_time=600.0)
+
+    before = dict(zip(closed_loop.parameter_names, closed_loop.parameters, strict=True))
+    after = dict(zip(smooth.parameter_names, smooth.parameters, strict=True))
+    assert smooth is not closed_loop
+    assert smooth.parameter_names == closed_loop.parameter_names
+    for name in widths:
+        assert after[name] == pytest.approx(5.0 * before[name])
+    for name in switches:
+        assert after[name] == 600.0
+    untouched = set(closed_loop.parameter_names) - set(widths) - set(switches)
+    np.testing.assert_array_equal([after[n] for n in untouched], [before[n] for n in untouched])  # NaN-safe
+    # the sharp model is left as it was, and the gentler copy still runs its own closed loop
+    np.testing.assert_array_equal(closed_loop.parameters, spec.model(CLOSED_LOOP_LIBRARY).parameters)
+    state = spin_up(smooth, smooth, START, days=0.25)
+    assert np.all(np.isfinite(state))
+
+
+def test_smooth_controllers_leaves_a_model_without_controllers_alone(house: FastModel) -> None:
+    assert house.smooth_controllers() is house

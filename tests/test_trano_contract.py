@@ -156,3 +156,21 @@ def test_names_that_collide_without_their_containers_are_an_error() -> None:
 def test_a_flat_model_is_left_as_it_is() -> None:
     model = translated(BOILER_HOUSE, FAST_MODEL_LIBRARY, include_container=False)
     assert without_containers(model) is model
+
+
+@pytest.mark.parametrize("library", LIBRARIES)
+def test_a_network_that_uses_the_library_beside_it_gives_the_same_model(library: str) -> None:
+    """``trano create-model --no-embed-libraries``: the package holds no copy of FastSmoothBuildings, rumoca reads it
+    from the folder the network names, and the model is the one of the package that embeds it."""
+    library_ = Library.from_configuration(library).model_copy(update={"embed_libraries": False})
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        network = convert_network(HEAT_PUMP_HOUSE.stem, HEAT_PUMP_HOUSE, library=library_)
+    assert network.libraries
+
+    beside = FastModel.from_network(network).model.description
+    embedded = without_containers(translated(HEAT_PUMP_HOUSE, library, include_container=False)).description
+
+    assert beside.state_names == embedded.state_names
+    assert beside.input_names == embedded.input_names
+    np.testing.assert_array_equal(beside.initial_state, embedded.initial_state)

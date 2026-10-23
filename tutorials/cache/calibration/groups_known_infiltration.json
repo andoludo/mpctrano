@@ -6,11 +6,20 @@
   "upper": 0.08,
   "exponents": {
    "externalwall_0.constructionType.k[2]": 1.0,
-   "externalwall_0.G[2]": 1.0,
+   "externalwall_0.k[3]": 1.0,
+   "externalwall_0.k[4]": 1.0,
+   "externalwall_0.G[3]": 1.0,
+   "externalwall_0.G[4]": 1.0,
    "externalwall_1.constructionType.k[2]": 1.0,
-   "externalwall_1.G[2]": 1.0,
+   "externalwall_1.k[3]": 1.0,
+   "externalwall_1.k[4]": 1.0,
+   "externalwall_1.G[3]": 1.0,
+   "externalwall_1.G[4]": 1.0,
    "externalwall_2.constructionType.k[2]": 1.0,
-   "externalwall_2.G[2]": 1.000000000000001
+   "externalwall_2.k[3]": 1.0,
+   "externalwall_2.k[4]": 1.0,
+   "externalwall_2.G[3]": 1.000000000000001,
+   "externalwall_2.G[4]": 1.000000000000001
   },
   "prior_std": 0.5,
   "mode": "field"

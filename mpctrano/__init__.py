@@ -4,7 +4,7 @@ Workflow::
 
     from mpctrano import MonitoringData, Project, scenario_catalogue
 
-    project = Project.from_yaml("house.yaml")                  # Trano generates the FastModelMPC model
+    project = Project.from_yaml("house.yaml")                  # Trano generates the FastSmoothBuildingsMPC model
     project.calibrate(MonitoringData.from_csv("monitoring.csv"))  # IPOPT least squares on the parameter groups
     scenario = scenario_catalogue()["time_of_use"]
     mpc = project.run(scenario)                                # state estimation + MPC

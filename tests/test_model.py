@@ -1,4 +1,4 @@
-"""FastModel: the ``FastModelMPC`` models of Trano's single-zone houses, with a gas boiler or a heat pump."""
+"""FastModel: the ``FastSmoothBuildingsMPC`` models of Trano's single-zone houses, with a gas boiler or a heat pump."""
 
 import numpy as np
 import pandas as pd

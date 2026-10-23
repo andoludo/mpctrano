@@ -98,7 +98,7 @@ comparable):
 ## Cooling with ideal emitters
 
 The ideal emitter of a zone (`radiator` of variant `ideal` in the YAML) is a heat flow input of the
-`FastModelMPC` model, which Trano bounds to heating (`min=0`). `FastModel.with_control_bounds` gives it
+`FastSmoothBuildingsMPC` model, which Trano bounds to heating (`min=0`). `FastModel.with_control_bounds` gives it
 a negative lower bound: the same equations cool the zone. The controller costs its heat at
 `MPCSettings.heat_cop` and its cooling at `MPCSettings.cooling_eer` (electricity per unit of heat or
 cooling); the closed loop meters it alike.

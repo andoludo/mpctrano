@@ -5,7 +5,7 @@ of truth: Trano renders it into Modelica models with its `FastModel` library, mp
 them on monitoring data, estimates their state and controls the systems of the building.
 
 ```
- house.yaml ──trano (FastModelMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
+ house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
             ──trano (FastModel)─────▶ the same building with the controllers of the YAML (rule-based reference)
 ```
 
@@ -14,12 +14,12 @@ them on monitoring data, estimates their state and controls the systems of the b
 ```python
 from mpctrano import FastModel
 
-model = FastModel.from_yaml("house.yaml")                       # calls Trano (FastModelMPC library)
-model = FastModel.from_file("house.mo")                         # or the package of `trano create-model house.yaml FastModelMPC`
-closed_loop = FastModel.from_yaml("house.yaml", library="FastModel")  # the controllers of the YAML
+model = FastModel.from_yaml("house.yaml")                       # calls Trano (FastSmoothBuildingsMPC library)
+model = FastModel.from_file("house.mo")                         # or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`
+closed_loop = FastModel.from_yaml("house.yaml", library="FastSmoothBuildings")  # the controllers of the YAML
 ```
 
-The `FastModelMPC` model is close to the Buildings library: layered walls and floors, windows with
+The `FastSmoothBuildingsMPC` model is close to the Buildings library: layered walls and floors, windows with
 the angular optics of their glazing, convection and long-wave exchanges in the room, infiltration,
 the hydronic circuits of the YAML (radiators, valves, mixing valves, pumps, boilers, air-to-water
 heat pumps and their buffer), ventilation units with heat recovery and PV arrays. The controls of

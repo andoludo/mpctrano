@@ -39,7 +39,7 @@ def generate(
     output: Annotated[Path | None, typer.Option(help="Output directory (default: next to the YAML)")] = None,
     closed_loop: Annotated[bool, typer.Option(help="Also write the closed-loop FastModel (rule-based)")] = False,
 ) -> None:
-    """Generate the FastModelMPC package (the controls of the systems as inputs) with Trano."""
+    """Generate the FastSmoothBuildingsMPC package (the controls of the systems as inputs) with Trano."""
     directory = output or building.parent
     for library, suffix in ((FAST_MODEL_LIBRARY, ""), (CLOSED_LOOP_LIBRARY, ".closed_loop")):
         if library == CLOSED_LOOP_LIBRARY and not closed_loop:

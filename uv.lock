@@ -2574,7 +2574,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'notebook'", specifier = ">=15" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "rumoca", git = "https://github.com/CogniPilot/rumoca?subdirectory=crates%2Frumoca-bind-python&rev=c74cddff6d7669fc2c3603d43529ab62e0964072" },
-    { name = "trano", specifier = ">=0.61.0,<1" },
+    { name = "trano", specifier = ">=0.63.0,<1" },
     { name = "trano-optimization", specifier = ">=0.3.0,<1" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
@@ -4738,7 +4738,7 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.61.0"
+version = "0.63.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4758,9 +4758,9 @@ dependencies = [
     { name = "typer" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d8/71/6079b61eafc70db1e1eeba738d01c46696abe89ca55742aff1d289365589/trano-0.61.0.tar.gz", hash = "sha256:8af1d22c9b8418d48862e603a034e186908a4325025ebb95130bf4a10da0776f", size = 255999, upload-time = "2026-10-23T20:04:36.463Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/27/1523581f625cb7780a28c43b0d33d2930a5489ff305af12083b35ba4a109/trano-0.63.0.tar.gz", hash = "sha256:0acc25519fedef79b7323d3f04104d8360c99f574bbea62ea9a4805e9e4289d1", size = 256719, upload-time = "2026-10-23T21:26:36.742Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/1d/db4f3b78d95378c5510218b883b891454da365b15ed45f081abf2b98ff39/trano-0.61.0-py3-none-any.whl", hash = "sha256:9833b8635d6aaa758681e26867859217f3424fc9ad0c1890da2390bccb5ff71b", size = 312451, upload-time = "2026-10-23T20:04:35.068Z" },
+    { url = "https://files.pythonhosted.org/packages/81/c6/2a195d85445188083ec0c87aa9922e45bc1b88c93a0a0619ed622cfe2a85/trano-0.63.0-py3-none-any.whl", hash = "sha256:641a7d4f3b6ea2b0b6e1bffb39cfc7c3bdecda03fb70efc8da4edfeeaaa9e194", size = 313193, upload-time = "2026-10-23T21:26:35.47Z" },
 ]
 
 [[package]]

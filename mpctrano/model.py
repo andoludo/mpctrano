@@ -112,14 +112,17 @@ class FastModel:
         roles: Roles | None = None,
         base_dir: Path | None = None,
         occupancy: Mapping[str, OccupancySchedule] | None = None,
+        roots: Sequence[Path | str] = (),
     ) -> FastModel:
         """Translate ``model`` (``<package>.building_mpc``) of the Modelica ``source`` with rumoca.
 
         The weather file is read from the weather reader of the runnable model; the ``occupancy`` schedules (by
-        occupancy model name) cannot be read from the source and default to no gains.
+        occupancy model name) cannot be read from the source and default to no gains. ``roots`` are the folders of
+        the libraries the source uses without embedding them (``trano create-model --no-embed-libraries``:
+        ``fastsmoothbuildings.LIBRARY``).
         """
         try:
-            casadi_model = CasadiModel.from_modelica(source, model)
+            casadi_model = CasadiModel.from_modelica(source, model, roots=roots)
         except Exception as error:
             if not rumoca_exports_fast_models():
                 raise ModelError(
@@ -147,10 +150,12 @@ class FastModel:
         model: str | None = None,
         roles: Roles | None = None,
         occupancy: Mapping[str, OccupancySchedule] | None = None,
+        roots: Sequence[Path | str] = (),
     ) -> FastModel:
         """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``.
 
         The package can be containerised (``trano create-model`` writes it so): the container prefixes are stripped.
+        A package written with ``--no-embed-libraries`` needs the folder of FastSmoothBuildings in ``roots``.
         """
         path = Path(modelica)
         return cls.from_source(
@@ -159,6 +164,7 @@ class FastModel:
             roles=roles,
             base_dir=path.parent,
             occupancy=occupancy,
+            roots=roots,
         )
 
     @classmethod
@@ -173,6 +179,7 @@ class FastModel:
             roles=roles,
             base_dir=base_dir,
             occupancy=network_occupancy(network),
+            roots=network.libraries,
         )
 
     @classmethod

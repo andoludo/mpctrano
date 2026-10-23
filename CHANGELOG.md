@@ -6,6 +6,12 @@ release pipeline.
 
 ## [Unreleased]
 
+### Added
+
+- `FastModel.from_source` and `FastModel.from_file` take `roots`, the folders of the Modelica libraries a package uses
+  without embedding them (`trano create-model --no-embed-libraries`, trano >= 0.63); `FastModel.from_network` passes
+  the folders the network names (`Network.libraries`).
+
 ### Changed
 
 - Trano's FastModel library is now FastSmoothBuildings (its own repository and PyPI package): the models are

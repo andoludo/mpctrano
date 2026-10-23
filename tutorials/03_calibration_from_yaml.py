@@ -18,7 +18,7 @@
 # calibration is solved live when the notebook does not run in quick mode (a few minutes).
 #
 # **Runtimes** (this container): one regeneration of the model by Trano and rumoca about 15 s (one per declared
-# parameter, for the sensitivities); the calibration of three days of hourly data, 38 states, two to five minutes.
+# parameter, for the sensitivities); the calibration of three days of hourly data, 57 states, two to five minutes.
 
 # %%
 import sys
@@ -223,13 +223,13 @@ display(result_known.metrics().round(3))
 #   moves; the fit adjusts the fields within their bounds and the model follows.
 # * **A closed-loop model is calibrated by simulation, not collocation**: its thermostat and hysteresis make the
 #   collocated problem non-smooth; the single-shooting fit (two decision variables, CVODES inside the objective,
-#   wide central differences) brings the air-temperature error from 1.35 K to 0.18 K on the training days and
-#   from 1.14 K to 0.15 K on two unseen days, with the energy use to match.
-# * **The data decide what is identifiable**: the free fit lands at a conductivity of 0.052 and 0.63 air changes
+#   wide central differences) brings the air-temperature error from 1.38 K to 0.10 K on the training days and
+#   from 1.13 K to 0.10 K on two unseen days, with the energy use to match.
+# * **The data decide what is identifiable**: the free fit lands at a conductivity of 0.055 and 0.62 air changes
 #   per hour (true: 0.060 and 0.60) - the right total loss, split along a flat valley the objective barely
-#   feels; with the infiltration measured, the conductivity comes out at 0.0593. Declare in the YAML what a
+#   feels; with the infiltration measured, the conductivity comes out at 0.0594. Declare in the YAML what a
 #   measurement cannot give, fix the rest.
-# * **The remaining 0.17 K is the switching**: a thermostat that flips one integration step earlier moves the hourly
+# * **The remaining 0.1 K is the switching**: a thermostat that flips one integration step earlier moves the hourly
 #   sample; the fitted model has the right parameters but not the exact switching times, which is what IPOPT's
 #   jumpy log in section 4 shows.
 #

@@ -1,5 +1,6 @@
 """Calibration parameters declared in the YAML: parsing, flattening, sensitivities and a closed-loop calibration."""
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -78,12 +79,16 @@ def test_the_sensitivities_are_measured_on_the_model() -> None:
     assert model.control_names == []
     groups = spec.groups(model, CLOSED_LOOP_LIBRARY)
     by_name = {group.name: group for group in groups}
+    # the closed-loop model splits the rockwool layer of each of the three walls into sublayers: the conductivity
+    # moves the conductance of each of them, the thickness divides it and adds to their capacities
     conductivity = by_name["material[ROCKWOOL:CAL].thermal_conductivity"].exponents
-    assert {name for name in conductivity if name.endswith(".G[2]")} == {f"externalwall_{i}.G[2]" for i in range(3)}
-    assert all(conductivity[f"externalwall_{i}.G[2]"] == pytest.approx(1.0) for i in range(3))
+    conductances = {name: exponent for name, exponent in conductivity.items() if re.search(r"\.G\[\d+\]$", name)}
+    assert {name.split(".")[0] for name in conductances} == {f"externalwall_{i}" for i in range(3)}
+    assert all(exponent == pytest.approx(1.0) for exponent in conductances.values())
     thickness = by_name["constructions[CAVITYWALL:CAL].layers[1].thickness"].exponents
-    assert thickness["externalwall_0.G[2]"] == pytest.approx(-1.0)
-    assert 0 < thickness["externalwall_0.C[2]"] < 0.2
+    assert all(thickness[name] == pytest.approx(-1.0) for name in conductances)
+    capacities = [exponent for name, exponent in thickness.items() if re.search(r"^externalwall_0\.C\[\d+\]$", name)]
+    assert any(0 < exponent < 0.2 for exponent in capacities)  # the node shared with the next layer
     infiltration = by_name["spaces[SPACE:001].parameters.ach"].exponents
     assert infiltration == {"space_001.ACH": pytest.approx(1.0)}
 
@@ -112,7 +117,10 @@ def test_the_closed_loop_model_is_calibrated_on_noisy_data_from_the_yaml_truth()
     assert result.method == "shooting" and result.variables == 1
     assert result.factors[conductivity] == pytest.approx(0.06, rel=0.1)
     assert result.training_after.rmse_mean < 0.6 * result.training_before.rmse_mean
-    assert calibrated.parameter("externalwall_0.G[2]") == pytest.approx(
-        model.parameter("externalwall_0.G[2]") * result.factors[conductivity] / 0.04, rel=1e-6
-    )
+    conductances = [name for name in groups[0].exponents if re.search(r"\.G\[\d+\]$", name)]
+    assert conductances
+    for name in conductances:  # every sublayer of the rockwool scaled by the calibrated conductivity
+        assert calibrated.parameter(name) == pytest.approx(
+            model.parameter(name) * result.factors[conductivity] / 0.04, rel=1e-6
+        )
     assert not np.allclose(calibrated.parameters, model.parameters, equal_nan=True)

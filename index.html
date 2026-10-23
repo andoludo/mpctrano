@@ -978,17 +978,17 @@
 <p>mpctrano sits downstream of Trano. The building description (<code>house.yaml</code>) stays the single source
 of truth: Trano renders it into Modelica models with its <code>FastModel</code> library, mpctrano calibrates
 them on monitoring data, estimates their state and controls the systems of the building.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a> house.yaml ──trano (FastModelMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a> house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>            ──trano (FastModel)─────▶ the same building with the controllers of the YAML (rule-based reference)
 </code></pre></div>
 <h2 id="1-model">1. Model</h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mpctrano</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastModel</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">)</span>                       <span class="c1"># calls Trano (FastModelMPC library)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"house.mo"</span><span class="p">)</span>                         <span class="c1"># or the package of `trano create-model house.yaml FastModelMPC`</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">closed_loop</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">,</span> <span class="n">library</span><span class="o">=</span><span class="s2">"FastModel"</span><span class="p">)</span>  <span class="c1"># the controllers of the YAML</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">)</span>                       <span class="c1"># calls Trano (FastSmoothBuildingsMPC library)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"house.mo"</span><span class="p">)</span>                         <span class="c1"># or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">closed_loop</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">,</span> <span class="n">library</span><span class="o">=</span><span class="s2">"FastSmoothBuildings"</span><span class="p">)</span>  <span class="c1"># the controllers of the YAML</span>
 </code></pre></div>
-<p>The <code>FastModelMPC</code> model is close to the Buildings library: layered walls and floors, windows with
+<p>The <code>FastSmoothBuildingsMPC</code> model is close to the Buildings library: layered walls and floors, windows with
 the angular optics of their glazing, convection and long-wave exchanges in the room, infiltration,
 the hydronic circuits of the YAML (radiators, valves, mixing valves, pumps, boilers, air-to-water
 heat pumps and their buffer), ventilation units with heat recovery and PV arrays. The controls of

@@ -1119,7 +1119,7 @@ comparable):</p>
 <p><code>price_response(run)</code> gives the energy bought at each price level.</p>
 <h2 id="cooling-with-ideal-emitters">Cooling with ideal emitters</h2>
 <p>The ideal emitter of a zone (<code>radiator</code> of variant <code>ideal</code> in the YAML) is a heat flow input of the
-<code>FastModelMPC</code> model, which Trano bounds to heating (<code>min=0</code>). <code>FastModel.with_control_bounds</code> gives it
+<code>FastSmoothBuildingsMPC</code> model, which Trano bounds to heating (<code>min=0</code>). <code>FastModel.with_control_bounds</code> gives it
 a negative lower bound: the same equations cool the zone. The controller costs its heat at
 <code>MPCSettings.heat_cop</code> and its cooling at <code>MPCSettings.cooling_eer</code> (electricity per unit of heat or
 cooling); the closed loop meters it alike.</p>

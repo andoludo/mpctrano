@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from mpctrano import CalibrationSettings, FastModel, MonitoringData, Project, SyntheticData, scenario_catalogue
@@ -38,10 +39,17 @@ def test_project_workflow(
     np.testing.assert_allclose(again.calibrated.parameters, fresh.calibrated.parameters, equal_nan=True)
 
 
+def _resistance(model: FastModel, wall: str) -> float:
+    """Resistance of a wall through its layers [K/W]: the same whether the layers are lumped or split into sublayers
+    (the closed-loop FastModel of trano >= 0.59 discretises them as Buildings, the MPC model does not)."""
+    return sum(1 / model.parameter(name) for name in model.select_parameters([f"{wall}.G[[]*[]]"]))
+
+
 def test_true_closed_loop_has_the_groups_of_the_true_building(project: Project, true_building: FastModel) -> None:
     closed_loop = project.true_closed_loop(seed=0)
-    for name in ("externalwall_0.G[2]", "space_001.mSenFac", "space_001.ACH"):
+    for name in ("space_001.mSenFac", "space_001.ACH"):
         assert closed_loop.parameter(name) == true_building.parameter(name)
+    assert _resistance(closed_loop, "externalwall_0") == pytest.approx(_resistance(true_building, "externalwall_0"))
 
 
 def _copy_building(tmp_path: Path) -> Path:

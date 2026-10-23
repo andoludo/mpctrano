@@ -81,7 +81,7 @@ def test_the_price_agnostic_tariff_keeps_the_grid_constraints() -> None:
 
 @pytest.fixture(scope="module")
 def spun_up(heat_pump: FastModel) -> np.ndarray:
-    return spin_up(heat_pump, FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastModel"), START, days=2.0)
+    return spin_up(heat_pump, FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings"), START, days=2.0)
 
 
 @pytest.mark.slow

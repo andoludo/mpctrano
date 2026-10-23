@@ -37,7 +37,7 @@ def house() -> FastModel:
 
 @pytest.fixture(scope="module")
 def closed_loop_house() -> FastModel:
-    return FastModel.from_yaml(HOUSE, library="FastModel")
+    return FastModel.from_yaml(HOUSE, library="FastSmoothBuildings")
 
 
 def test_the_model_knows_its_weather_file_and_occupancy(house: FastModel) -> None:
@@ -125,7 +125,7 @@ def test_spin_up_and_the_running_peak_of_a_capacity_tariff(heat_pump: FastModel)
     from mpctrano import CapacityTariff, spin_up
     from mpctrano.estimation import PerfectEstimator
 
-    closed_loop = FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastModel")
+    closed_loop = FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings")
     x0 = spin_up(heat_pump, closed_loop, START, days=2.0)
     assert x0.shape == heat_pump.initial_state.shape
     assert not np.allclose(x0, heat_pump.initial_state)

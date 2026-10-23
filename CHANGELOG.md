@@ -6,6 +6,13 @@ release pipeline.
 
 ## [Unreleased]
 
+### Changed
+
+- Trano's FastModel library is now FastSmoothBuildings (its own repository and PyPI package): the models are
+  generated with `FastSmoothBuildingsMPC` and the closed loop with `FastSmoothBuildings`
+  (`library="FastSmoothBuildings"`). Trano still accepts `FastModel` and `FastModelMPC`, with a deprecation
+  warning. The Python class `FastModel` keeps its name.
+
 ### Added
 
 - Flexibility quantification on FastModel (the Days 2 to 6 tutorial work ported): activation

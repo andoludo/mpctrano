@@ -119,8 +119,8 @@ the insulation layer).
 from mpctrano import CalibrationSettings, CalibrationSpec, Calibrator, generate_closed_loop_data, spin_up
 
 spec = CalibrationSpec.from_yaml("house.yaml")
-model = spec.model("FastModel")                     # the closed loop: the controllers of the YAML, no control input
-groups = spec.groups(model, "FastModel")            # one regeneration per declared field
+model = spec.model("FastSmoothBuildings")                     # the closed loop: the controllers of the YAML, no control input
+groups = spec.groups(model, "FastSmoothBuildings")            # one regeneration per declared field
 calibrated, result = Calibrator(model, CalibrationSettings(groups=groups)).fit(data)
 result.factors                                      # {"material[ROCKWOOL:CAL].thermal_conductivity": 0.058, ...}
 ```
@@ -128,7 +128,7 @@ result.factors                                      # {"material[ROCKWOOL:CAL].t
 The data of a closed-loop model holds no control: the disturbances, the measured air temperatures and
 the meter readings are enough, as a monitoring system that logs the sensors and the meters but not the
 valves records. `generate_closed_loop_data` records such data on a *true* building, for instance the
-YAML with other values of its parameters (`spec.model("FastModel", {"...ach": 0.6})`), with sensor
+YAML with other values of its parameters (`spec.model("FastSmoothBuildings", {"...ach": 0.6})`), with sensor
 and meter noise, which is how the tests check that the calibration recovers them.
 
 Trano's own tools do not read the annotations (its validation rejects unknown keys); mpctrano writes

@@ -1,4 +1,4 @@
-"""Economic model predictive control of a Trano ``FastModelMPC`` building.
+"""Economic model predictive control of a Trano ``FastSmoothBuildingsMPC`` building.
 
 The controls are those of the systems of the building (valve positions, mixing valves, boiler part load ratio, heat
 pump speed, or the heat of ideal emitters) and the energy is read from the **meters** of the model, states in kWh, so
@@ -145,7 +145,7 @@ class MPCSolution:
 
 
 class ModelPredictiveController:
-    """Economic MPC of a ``FastModelMPC`` model, see the module documentation for the problem."""
+    """Economic MPC of a ``FastSmoothBuildingsMPC`` model, see the module documentation for the problem."""
 
     def __init__(self, model: FastModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
         self.model = model

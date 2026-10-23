@@ -313,8 +313,8 @@ def run_rule_based(
     x0: np.ndarray | None = None,
     name: str = "rule_based",
 ) -> ClosedLoopResult:
-    """The closed-loop ``FastModel`` (``FastModel.from_yaml(path, library="FastModel")``), run with the controllers
-    of its YAML over the same weather, and costed and assessed like an MPC run."""
+    """The closed-loop ``FastModel`` (``FastModel.from_yaml(path, library="FastSmoothBuildings")``), run with the
+    controllers of its YAML over the same weather, and costed and assessed like an MPC run."""
     if model.control_names:
         raise ValueError(f"{model.name} has controls {model.control_names}: give the closed-loop FastModel.")
     plant = ModelPlant(model, time_step, start, x0=x0, measurement_std=0.0)

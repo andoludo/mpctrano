@@ -7,7 +7,7 @@ Trano turns a YAML description of a building into Modelica models. Its `FastMode
 the Buildings library (layered walls, windows with their angular optics, the hydronic circuits with their radiators,
 valves, mixing valves, boilers and air-to-water heat pumps, ventilation with heat recovery, PV) that
 [rumoca](https://github.com/cognipilot/rumoca) translates into a [CasADi](https://web.casadi.org/) ODE. mpctrano
-takes the `FastModelMPC` version of it, whose controls are the inputs of the systems, and:
+takes the `FastSmoothBuildingsMPC` version of it, whose controls are the inputs of the systems, and:
 
 1. **calibrates** groups of its parameters on monitoring data of the real building (IPOPT least squares),
 2. **estimates** the unmeasured states (walls, water) by moving horizon estimation,
@@ -21,7 +21,7 @@ All optimisation problems collocate the model on Radau points (`trano_optimizati
 [IPOPT](https://coin-or.github.io/Ipopt/).
 
 ```
- house.yaml ──trano (FastModelMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
+ house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
                                                                     │
    monitoring.csv ──▶ MonitoringData ──▶ Calibrator (IPOPT) ──▶ calibrated parameter groups
                                                                     │
@@ -53,7 +53,7 @@ pip install "mpctrano[plot]"
 ```python
 from mpctrano import MonitoringData, Project, compare, scenario_catalogue
 
-project = Project.from_yaml("house.yaml")  # Trano generates the FastModelMPC model
+project = Project.from_yaml("house.yaml")  # Trano generates the FastSmoothBuildingsMPC model
 data = MonitoringData.from_csv("monitoring.csv", temperature_unit="C")
 result = project.calibrate(data, validation_fraction=0.25)
 print(result.factors, result.metrics())  # the parameter groups, RMSE before/after, training and validation
@@ -86,7 +86,7 @@ emitters), the **disturbances** (the weather channels `weather_inputs.*` and the
 each occupancy model), the **comfort temperatures** (`<zone>.TAir`) and the **meters** (states in kWh: `EEle` the
 electricity of a heat pump, `EFue` the fuel of a boiler, `EFan`, `EPro`). The model depends on the time of the year
 (the solar position is computed inside it) and is stiff (water nodes): it is simulated with CVODES and optimised on
-Radau collocation points. `FastModel.from_yaml("house.yaml", library="FastModel")` gives the closed loop of the
+Radau collocation points. `FastModel.from_yaml("house.yaml", library="FastSmoothBuildings")` gives the closed loop of the
 same building, with its controllers.
 
 ## Monitoring data

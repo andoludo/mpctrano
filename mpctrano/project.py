@@ -22,8 +22,8 @@ from mpctrano.synthetic import SyntheticData, generate_monitoring_data, perturb,
 class Project:
     """A building under study: its Trano models, its monitoring data and the calibrated model.
 
-    ``model`` is the ``FastModelMPC`` model the controller uses; the closed-loop ``FastModel`` of the same YAML
-    (:meth:`closed_loop`) runs the controllers of the YAML, the reference of the MPC.
+    ``model`` is the ``FastSmoothBuildingsMPC`` model the controller uses; the closed-loop ``FastModel`` of the same
+    YAML (:meth:`closed_loop`) runs the controllers of the YAML, the reference of the MPC.
     """
 
     model: FastModel
@@ -57,7 +57,7 @@ class Project:
         weather: WeatherFile | Path | str | None = None,
         occupancy: OccupancySchedule | dict[str, OccupancySchedule] | None = None,
     ) -> Project:
-        """Generate the ``FastModelMPC`` model with Trano from the building description."""
+        """Generate the ``FastSmoothBuildingsMPC`` model with Trano from the building description."""
         return cls.from_model(FastModel.from_yaml(path), weather=weather, occupancy=occupancy, source=path)
 
     @classmethod
@@ -67,7 +67,7 @@ class Project:
         weather: WeatherFile | Path | str | None = None,
         occupancy: OccupancySchedule | dict[str, OccupancySchedule] | None = None,
     ) -> Project:
-        """Use the package written by ``trano create-model house.yaml FastModelMPC`` (without the YAML, the
+        """Use the package written by ``trano create-model house.yaml FastSmoothBuildingsMPC`` (without the YAML, the
         occupancy schedules must be given and the rule-based reference is not available)."""
         return cls.from_model(FastModel.from_file(modelica), weather=weather, occupancy=occupancy)
 

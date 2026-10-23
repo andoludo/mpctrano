@@ -2,7 +2,8 @@
 
 The notebooks only wire these functions to ``ipywidgets`` controls:
 
-* :class:`TutorialBuilding` generates the ``FastModelMPC`` model of a YAML with Trano, the closed-loop ``FastModel``
+* :class:`TutorialBuilding` generates the ``FastSmoothBuildingsMPC`` model of a YAML with Trano, the closed-loop
+``FastModel``
   of the same YAML (the rule-based reference), a perturbed copy playing the real building and the states reached
   after a few days of the controllers of the YAML (:func:`~mpctrano.simulation.spin_up`);
 * :class:`ResultCache` stores closed-loop results as parquet frames keyed by the parameters of the run, so that a
@@ -88,7 +89,8 @@ class TutorialBuilding:
 
     @cached_property
     def model(self) -> FastModel:
-        """The ``FastModelMPC`` model of the YAML (with :attr:`control_bounds`): the model of the controller."""
+        """The ``FastSmoothBuildingsMPC`` model of the YAML (with :attr:`control_bounds`): the model of the
+        controller."""
         model = self.project.model
         return model if self.control_bounds is None else model.with_control_bounds(self.control_bounds)
 

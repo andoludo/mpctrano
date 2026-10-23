@@ -18,8 +18,8 @@ classifiers = [
     "Intended Audience :: Science/Research",
 ]
 dependencies = [
-    "trano>=0.57.0,<1",
-    "trano-optimization>=0.2.0,<1",
+    "trano>=0.61.0,<1",
+    "trano-optimization>=0.3.0,<1",
     # 0.10.2 is the last release on PyPI; the CasADi export of the FastModel models (connected components) needs the
     # 0.10.3 of [tool.uv.sources]
     "rumoca>=0.10.2,<0.11",

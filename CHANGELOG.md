@@ -15,8 +15,11 @@ release pipeline.
 ### Added
 
 - `BuildingModel.from_source` and `BuildingModel.from_file` take `roots`, the folders of the Modelica libraries a
-  package uses without embedding them (`trano create-model --no-embed-libraries`, trano >= 0.63);
-  `BuildingModel.from_network` passes the folders the network names (`Network.libraries`).
+  package uses without embedding them; `BuildingModel.from_network` passes the folders the network names
+  (`Network.libraries`).
+- A package that declares `uses(FastSmoothBuildings(...))` without holding the library (trano's default from 0.65,
+  as Buildings and IDEAS) is translated with the installed `fastsmoothbuildings` package (`used_libraries`): no
+  `roots` to pass. Requires trano >= 0.65.
 
 ### Changed
 

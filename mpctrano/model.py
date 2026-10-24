@@ -170,7 +170,8 @@ class BuildingModel:
         """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``.
 
         The package can be containerised (``trano create-model`` writes it so): the container prefixes are stripped.
-        A package written with ``--no-embed-libraries`` needs the folder of FastSmoothBuildings in ``roots``.
+        A package that uses FastSmoothBuildings without holding it (trano's default) reads it from the installed
+        package; ``roots`` are the folders of the other libraries it uses.
         """
         path = Path(modelica)
         return cls.from_source(

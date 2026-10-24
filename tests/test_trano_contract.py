@@ -23,7 +23,7 @@ from trano_optimization import CasadiModel, Roles
 
 from mpctrano import BuildingModel, ModelError, WeatherForecaster
 from mpctrano.calibration import DEFAULT_GROUPS
-from mpctrano.model import CLOSED_LOOP_LIBRARY, MPC_LIBRARY, without_containers
+from mpctrano.model import CLOSED_LOOP_LIBRARY, MPC_LIBRARY, used_libraries, without_containers
 from tests.conftest import BOILER_HOUSE, HEAT_PUMP_HOUSE, MODELS
 
 BESTEST_600FF = MODELS / "case_600FF.yaml"
@@ -50,7 +50,8 @@ def source(path: Path, library: str, include_container: bool) -> str:
 
 @cache
 def translated(path: Path, library: str, include_container: bool) -> CasadiModel:
-    return CasadiModel.from_modelica(source(path, library, include_container), f"{path.stem}.building_mpc")
+    text = source(path, library, include_container)
+    return CasadiModel.from_modelica(text, f"{path.stem}.building_mpc", roots=used_libraries(text))
 
 
 @pytest.mark.parametrize("library", LIBRARIES)
@@ -159,17 +160,17 @@ def test_a_flat_model_is_left_as_it_is() -> None:
 
 
 @pytest.mark.parametrize("library", LIBRARIES)
-def test_a_network_that_uses_the_library_beside_it_gives_the_same_model(library: str) -> None:
-    """``trano create-model --no-embed-libraries``: the package holds no copy of FastSmoothBuildings, rumoca reads it
-    from the folder the network names, and the model is the one of the package that embeds it."""
-    library_ = Library.from_configuration(library).model_copy(update={"embed_libraries": False})
+def test_a_network_that_embeds_the_library_gives_the_same_model(library: str) -> None:
+    """``trano create-model --embed-libraries``: the package holds a copy of FastSmoothBuildings, and the model is the
+    one of the package that uses the installed library (trano's default, as Buildings and IDEAS)."""
+    library_ = Library.from_configuration(library).model_copy(update={"embed_libraries": True})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         network = convert_network(HEAT_PUMP_HOUSE.stem, HEAT_PUMP_HOUSE, library=library_)
-    assert network.libraries
+    assert not network.libraries
 
-    beside = BuildingModel.from_network(network).model.description
-    embedded = without_containers(translated(HEAT_PUMP_HOUSE, library, include_container=False)).description
+    embedded = BuildingModel.from_network(network).model.description
+    beside = without_containers(translated(HEAT_PUMP_HOUSE, library, include_container=False)).description
 
     assert beside.state_names == embedded.state_names
     assert beside.input_names == embedded.input_names

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -1756,7 +1756,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <h1 id="04-an-office-in-summer-cooling-occupancy-and-the-price-of-comfort">04 - An office in summer: cooling, occupancy and the price of comfort<a class="anchor-link" href="#04-an-office-in-summer-cooling-occupancy-and-the-price-of-comfort">¶</a></h1><p><a href="https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/04_office_cooling.ipynb"><img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg"/></a></p>
 <p><strong>Learning objectives</strong></p>
 <ol>
-<li>Model cooling with Trano's FastModel: the ideal emitter of a zone is a heat flow the controller decides;
+<li>Model cooling with Trano's FastSmoothBuildings: the ideal emitter of a zone is a heat flow the controller decides;
 letting it go negative turns it into a chiller, costed at an EER.</li>
 <li>Read a cooling plan: the sun and the occupants drive the load, the mass of the building and the price signal
 decide when the chiller runs (pre-cooling at night under day-ahead prices).</li>
@@ -1887,8 +1887,8 @@ print(f"quick mode: {quick_mode()}; cached runs: {_office.DAYS:g} day from {_off
 <h2 id="1-the-office-and-its-emitters">1. The office and its emitters<a class="anchor-link" href="#1-the-office-and-its-emitters">¶</a></h2><p><code>tutorials/buildings/office/base.yaml</code>: an open-plan office of 200 m2 with 36 m2 of south glazing and a meeting
 area of 80 m2, externally insulated walls, a flat roof, occupied from 8h to 18h (12 W/m2 of occupants and
 equipment in the open plan). Each zone has an ideal emitter (<code>radiator</code> of variant <code>ideal</code> in the YAML): in the
-<code>FastModelMPC</code> model it is an input <code>Q_flow</code> [W], which Trano bounds to heating (<code>min=0</code>). The study lets it go
-negative (<code>FastModel.with_control_bounds</code>): the same equations cool the zone. The electricity follows from a
+<code>FastSmoothBuildingsMPC</code> model it is an input <code>Q_flow</code> [W], which Trano bounds to heating (<code>min=0</code>). The study lets it
+go negative (<code>BuildingModel.with_control_bounds</code>): the same equations cool the zone. The electricity follows from a
 COP of 3.5 for heating and an EER of 3 for cooling (<code>MPCSettings.heat_cop</code>, <code>cooling_eer</code>).</p>
 </div>
 </div>
@@ -2500,8 +2500,8 @@ capacity charge is the larger term. Whether the pre-cooling is worth it depends 
 <h2 id="further-reading">Further reading<a class="anchor-link" href="#further-reading">¶</a></h2><ul>
 <li><code>tutorials/references.md</code>: the characterisation of flexibility (Reynders et al.) applies to cooling as to
 heating; Blum et al. (2021) for the KPIs.</li>
-<li>The chiller is a constant EER here; a chiller and a cooling coil in the FastModel library of Trano would give
-the part-load behaviour (see <code>tutorials/PLAN.md</code>).</li>
+<li>The chiller is a constant EER here; a chiller and a cooling coil in the FastSmoothBuildings library of Trano
+would give the part-load behaviour (see <code>tutorials/PLAN.md</code>).</li>
 </ul>
 </div>
 </div>

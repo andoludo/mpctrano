@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -976,23 +976,23 @@
 
 <h1 id="workflow">Workflow</h1>
 <p>mpctrano sits downstream of Trano. The building description (<code>house.yaml</code>) stays the single source
-of truth: Trano renders it into Modelica models with its <code>FastModel</code> library, mpctrano calibrates
+of truth: Trano renders it into Modelica models with its <code>FastSmoothBuildings</code> library, mpctrano calibrates
 them on monitoring data, estimates their state and controls the systems of the building.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a> house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>            ──trano (FastModel)─────▶ the same building with the controllers of the YAML (rule-based reference)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>            ──trano (FastSmoothBuildings)─────▶ the same building with the controllers of the YAML (rule-based reference)
 </code></pre></div>
 <h2 id="1-model">1. Model</h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mpctrano</span><span class="w"> </span><span class="kn">import</span> <span class="n">FastModel</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">mpctrano</span><span class="w"> </span><span class="kn">import</span> <span class="n">BuildingModel</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">)</span>                       <span class="c1"># calls Trano (FastSmoothBuildingsMPC library)</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"house.mo"</span><span class="p">)</span>                         <span class="c1"># or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`</span>
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">closed_loop</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">,</span> <span class="n">library</span><span class="o">=</span><span class="s2">"FastSmoothBuildings"</span><span class="p">)</span>  <span class="c1"># the controllers of the YAML</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">model</span> <span class="o">=</span> <span class="n">BuildingModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">)</span>                       <span class="c1"># calls Trano (FastSmoothBuildingsMPC library)</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">model</span> <span class="o">=</span> <span class="n">BuildingModel</span><span class="o">.</span><span class="n">from_file</span><span class="p">(</span><span class="s2">"house.mo"</span><span class="p">)</span>                         <span class="c1"># or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">closed_loop</span> <span class="o">=</span> <span class="n">BuildingModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"house.yaml"</span><span class="p">,</span> <span class="n">library</span><span class="o">=</span><span class="s2">"FastSmoothBuildings"</span><span class="p">)</span>  <span class="c1"># the controllers of the YAML</span>
 </code></pre></div>
 <p>The <code>FastSmoothBuildingsMPC</code> model is close to the Buildings library: layered walls and floors, windows with
 the angular optics of their glazing, convection and long-wave exchanges in the room, infiltration,
 the hydronic circuits of the YAML (radiators, valves, mixing valves, pumps, boilers, air-to-water
 heat pumps and their buffer), ventilation units with heat recovery and PV arrays. The controls of
-the systems are inputs. <code>FastModel</code> reads everything from the Modelica model:</p>
+the systems are inputs. <code>BuildingModel</code> reads everything from the Modelica model:</p>
 <ul>
 <li><code>control_names</code> - the inputs with a <code>min</code> and a <code>max</code>: valve positions, mixing valves, boiler part
   load ratio or heat pump speed (between 0 and 1), the heat of ideal emitters [W];</li>
@@ -1008,11 +1008,11 @@ the systems are inputs. <code>FastModel</code> reads everything from the Modelic
 </ul>
 <p>The model is nonlinear and stiff (water nodes): the optimisation problems collocate it on Radau
 points (<code>trano_optimization</code>), which keeps them stable whatever the step. rumoca does not report the
-unit of array states (wall layers, radiator water): <code>FastModel</code> restores the kelvin on them so that
+unit of array states (wall layers, radiator water): <code>BuildingModel</code> restores the kelvin on them so that
 the collocation scales and bounds them as temperatures.</p>
 <p>The variables are named after the elements of the YAML (<code>space_001.TAir</code>, <code>boiler_001.EEle</code>,
-<code>externalwall_0.G[1]</code>): <code>FastModel.from_yaml</code> generates the model without the containers Trano groups
-the elements in since 0.57 (<code>network.model(include_container=False)</code>), and <code>FastModel.from_file</code>
+<code>externalwall_0.G[1]</code>): <code>BuildingModel.from_yaml</code> generates the model without the containers Trano groups
+the elements in since 0.57 (<code>network.model(include_container=False)</code>), and <code>BuildingModel.from_file</code>
 strips their prefixes (<code>envelope1.</code>, <code>production1.</code>, ...) from a containerised model, as written by
 <code>trano create-model</code>. Both give the same model; <code>tests/test_trano_contract.py</code> checks it, with the
 translation of Trano's models by rumoca, against the installed Trano.</p>
@@ -1031,13 +1031,13 @@ and the gains; <code>DataForecaster</code> replays recorded disturbances.</p>
 <a href="mpc/">MPC</a>.</p>
 <h2 id="4-closed-loop-scenarios-and-the-rule-based-reference">4. Closed loop, scenarios and the rule-based reference</h2>
 <p><code>run_closed_loop(controller, estimator, plant, forecaster, steps)</code> runs the cycle
-<em>measure → correct → forecast → solve → apply → predict</em> against a <code>ModelPlant</code> (a FastModel playing
+<em>measure → correct → forecast → solve → apply → predict</em> against a <code>ModelPlant</code> (a BuildingModel playing
 the real building, with sensor noise) and returns a <code>ClosedLoopResult</code> with the trajectories and the
 <code>ControlMetrics</code>, read from the meters of the plant: fuel and electricity bought and sold, cost at
 the price of each carrier, capacity charge, comfort violation in K·h, peak electric power, share of
 the energy bought below the median price.</p>
 <p><code>run_rule_based(closed_loop, forecaster, start, steps, dt, comfort, tariff)</code> simulates the closed-loop
-<code>FastModel</code> of the same YAML, with the controllers it describes (thermostats on the valves, the boiler
+<code>BuildingModel</code> of the same YAML, with the controllers it describes (thermostats on the valves, the boiler
 or heat pump holding its supply temperature, the mixing valve its set point), costed and assessed the
 same way: the reference the MPC is compared with.</p>
 <p><code>Scenario</code> bundles a tariff, a comfort specification, the MPC settings, the forecast noise and the

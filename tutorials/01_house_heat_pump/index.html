@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -1839,7 +1839,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <h1 id="01-a-house-with-a-heat-pump-the-reference-implementation">01 - A house with a heat pump: the reference implementation<a class="anchor-link" href="#01-a-house-with-a-heat-pump-the-reference-implementation">¶</a></h1><p><a href="https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/01_house_heat_pump.ipynb"><img alt="Open in Colab" src="https://colab.research.google.com/assets/colab-badge.svg"/></a></p>
 <p><strong>Learning objectives</strong></p>
 <ol>
-<li>Follow the pipeline from the Trano YAML to the CasADi model: what the FastModel of a house contains, which
+<li>Follow the pipeline from the Trano YAML to the CasADi model: what the BuildingModel of a house contains, which
 inputs the controller decides and which ones it has to forecast, where the energy is metered.</li>
 <li>Read an economic MPC plan: how the comfort band, the price signal and the horizon shape the heating of a heat
 pump house with a buffer tank and a radiator.</li>
@@ -1971,9 +1971,9 @@ print(f"quick mode: {quick_mode()}; cached runs: {_house.DAYS:g} days from {_hou
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="1-from-the-yaml-to-the-casadi-model">1. From the YAML to the CasADi model<a class="anchor-link" href="#1-from-the-yaml-to-the-casadi-model">¶</a></h2><p><code>tutorials/buildings/house/base.yaml</code> describes a 100 m2 house: cavity walls, triple glazing, a concrete slab,
 a 3.5 kW air-to-water heat pump with a 150 l buffer tank, a mixing valve and a low-temperature radiator behind
-a thermostatic valve. Trano renders it with its <code>FastModelMPC</code> library (physics close to the Buildings library:
-layered walls, window optics, water nodes) where <strong>the controls of the systems are inputs</strong>, and with its
-<code>FastModel</code> library where the controllers of the YAML close the loop (the rule-based reference). rumoca
+a thermostatic valve. Trano renders it with its <code>FastSmoothBuildingsMPC</code> library (physics close to the Buildings
+library: layered walls, window optics, water nodes) where <strong>the controls of the systems are inputs</strong>, and with its
+<code>FastSmoothBuildings</code> library where the controllers of the YAML close the loop (the rule-based reference). rumoca
 translates each into an explicit CasADi ODE <code>xdot = f(t, x, u, d, p)</code>.</p>
 </div>
 </div>
@@ -2052,7 +2052,7 @@ valve, all between 0 and 1), any other input a <strong>disturbance</strong> (sev
 of the occupancy), the air temperature <code>TAir</code> is the <strong>comfort</strong> variable and the state in kWh is the electricity
 <strong>meter</strong> of the heat pump. The controller never sees a COP: it optimises the valves and the compressor, and the
 electricity follows from the heat pump model and its meter.</p>
-<p>A FastModel starts with every temperature at its start value (walls at the set point, buffer at the supply
+<p>A BuildingModel starts with every temperature at its start value (walls at the set point, buffer at the supply
 temperature). Every run of the tutorials starts from the state the controllers of the YAML reach after three
 days (<code>spin_up</code>): the night setback has cooled the house at the start of the period.</p>
 </div>
@@ -2247,9 +2247,9 @@ display(plan_explorer(house, tariffs))</div>
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="0a0706ef-435c-4160-8a37-7a790a24f981" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="84120594-7065-41ae-8ed6-275ab2808ebb" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('0a0706ef-435c-4160-8a37-7a790a24f981');
+var element = document.getElementById('84120594-7065-41ae-8ed6-275ab2808ebb');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "9d4bf691049d4905a267590974e43b82", "version_major": 2, "version_minor": 0}
@@ -2438,9 +2438,9 @@ display(plot_closed_loop(spike, "base house, day-ahead prices with an evening sp
 <div class="jp-OutputArea jp-Cell-outputArea">
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
-<div class="jupyter-widgets jp-OutputArea-output" id="28c31dc0-8929-440c-bde9-e6639654d04a" tabindex="0">
+<div class="jupyter-widgets jp-OutputArea-output" id="a55fb1f0-f138-4225-8726-9bf84de70966" tabindex="0">
 <script type="text/javascript">
-var element = document.getElementById('28c31dc0-8929-440c-bde9-e6639654d04a');
+var element = document.getElementById('a55fb1f0-f138-4225-8726-9bf84de70966');
 </script>
 <script type="application/vnd.jupyter.widget-view+json">
 {"model_id": "a869be80727b406b89e1c1d66168b171", "version_major": 2, "version_minor": 0}
@@ -2489,7 +2489,7 @@ if (outputEl) {{
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h3 id="mpc-against-the-controllers-of-the-yaml">MPC against the controllers of the YAML<a class="anchor-link" href="#mpc-against-the-controllers-of-the-yaml">¶</a></h3><p>The same building, period, tariff and comfort band, controlled by the thermostat, heating curve and buffer
-controller written in the YAML (the closed-loop <code>FastModel</code>, simulated in a second): this is the reference an
+controller written in the YAML (the closed-loop <code>BuildingModel</code>, simulated in a second): this is the reference an
 MPC has to beat.</p>
 </div>
 </div>

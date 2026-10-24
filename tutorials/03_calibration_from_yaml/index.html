@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -2157,7 +2157,7 @@ calibrated: ['material[ROCKWOOL:CAL].thermal_conductivity', 'spaces[SPACE:001].p
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="2-the-true-building-and-its-monitoring-data">2. The true building and its monitoring data<a class="anchor-link" href="#2-the-true-building-and-its-monitoring-data">¶</a></h2><p>The <em>true</em> building is the same YAML with other values of the three parameters: a worse insulation, thinner than
-drawn, and a leakier house. It is run by its own controllers (the closed-loop <code>FastModel</code>: thermostat, heating
+drawn, and a leakier house. It is run by its own controllers (the closed-loop <code>BuildingModel</code>: thermostat, heating
 curve, buffer control) over five cold days of January, after two days of spin-up; the monitoring system records
 the weather, the air temperature with 0.1 K of noise and the electricity meter with 20 Wh of noise. It does
 <strong>not</strong> record the valves or the compressor: the model being calibrated has its controllers inside.</p>

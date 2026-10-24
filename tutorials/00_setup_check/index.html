@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -1671,7 +1671,7 @@ span.linenos.special { color: #000000; background-color: #ffffc0; padding-left: 
 <li>confirm that the toolchain of the tutorials is installed: <code>trano</code> (YAML to Modelica),
 <code>rumoca</code> (Modelica to CasADi, the commit <code>uv sync</code> builds), <code>trano-optimization</code> (collocation),
 <code>casadi</code> with IPOPT, <code>mpctrano</code>;</li>
-<li>generate a first CasADi model from a Trano YAML with the <code>FastModelMPC</code> library and plan its heating.</li>
+<li>generate a first CasADi model from a Trano YAML with the <code>FastSmoothBuildingsMPC</code> library and plan its heating.</li>
 </ul>
 <p>Run this notebook first; every other tutorial assumes it passes. In continuous integration
 the notebooks run with <code>MPCTRANO_QUICK=1</code> (shorter periods), see <code>tutorials/README.md</code>.</p>
@@ -1761,7 +1761,9 @@ if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctran
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"casadi </span><span class="si">{</span><span class="n">casadi</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"mpctrano </span><span class="si">{</span><span class="n">mpctrano</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"quick mode: </span><span class="si">{</span><span class="n">QUICK</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
-<span class="k">assert</span> <span class="n">mpctrano</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rumoca_exports_fast_models</span><span class="p">(),</span> <span class="s2">"rumoca cannot export the FastModel models: run `uv sync`"</span>
+<span class="k">assert</span> <span class="n">mpctrano</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rumoca_exports_building_models</span><span class="p">(),</span> <span class="p">(</span>
+    <span class="s2">"rumoca cannot export the FastSmoothBuildings models: run `uv sync`"</span>
+<span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2">from importlib.metadata import version
 
@@ -1778,7 +1780,9 @@ print(f"rumoca {rumoca.version()}")
 print(f"casadi {casadi.__version__}")
 print(f"mpctrano {mpctrano.__version__}")
 print(f"quick mode: {QUICK}")
-assert mpctrano.model.rumoca_exports_fast_models(), "rumoca cannot export the FastModel models: run `uv sync`"</div>
+assert mpctrano.model.rumoca_exports_building_models(), (
+    "rumoca cannot export the FastSmoothBuildings models: run `uv sync`"
+)</div>
 </div>
 </div>
 </div>
@@ -1809,7 +1813,7 @@ quick mode: False
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="from-a-trano-yaml-to-a-casadi-model">From a Trano YAML to a CasADi model<a class="anchor-link" href="#from-a-trano-yaml-to-a-casadi-model">¶</a></h2><p><code>FastModel.from_yaml</code> runs the whole chain: Trano renders the <code>FastModelMPC</code> Modelica model of the
+<h2 id="from-a-trano-yaml-to-a-casadi-model">From a Trano YAML to a CasADi model<a class="anchor-link" href="#from-a-trano-yaml-to-a-casadi-model">¶</a></h2><p><code>BuildingModel.from_yaml</code> runs the whole chain: Trano renders the <code>FastSmoothBuildingsMPC</code> Modelica model of the
 building (<code>building_mpc</code>: the walls, the windows, the heat pump, its buffer, the mixing valve and the
 radiator, the controls of the systems as inputs), rumoca translates it into the CasADi ODE
 <code>xdot = f(t, x, u, p)</code>, and the roles of the variables are read from the Modelica model.</p>
@@ -1835,7 +1839,7 @@ radiator, the controls of the systems as inputs), rumoca translates it into the 
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">mpctrano</span><span class="o">.</span><span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="n">MODEL</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">mpctrano</span><span class="o">.</span><span class="n">BuildingModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="n">MODEL</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"states      "</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">n_states</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"controls    "</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">control_names</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"disturbances"</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">disturbance_names</span><span class="p">)</span>
@@ -1843,7 +1847,7 @@ radiator, the controls of the systems as inputs), rumoca translates it into the 
 <span class="nb">print</span><span class="p">(</span><span class="s2">"meters      "</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">meters</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="s2">"parameters  "</span><span class="p">,</span> <span class="n">model</span><span class="o">.</span><span class="n">n_parameters</span><span class="p">)</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-3">model = mpctrano.FastModel.from_yaml(MODEL)
+<div class="clipboard-copy-txt" id="cell-3">model = mpctrano.BuildingModel.from_yaml(MODEL)
 print("states      ", model.n_states)
 print("controls    ", model.control_names)
 print("disturbances", model.disturbance_names)
@@ -1961,7 +1965,7 @@ print(solution.controls.round(2))</div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <p><strong>Key takeaways</strong>: the toolchain works end to end; the next notebooks build on the same
-<code>FastModel</code> object. <strong>Further reading</strong>: <code>tutorials/README.md</code> (installation and troubleshooting),
+<code>BuildingModel</code> object. <strong>Further reading</strong>: <code>tutorials/README.md</code> (installation and troubleshooting),
 <code>docs/index.md</code> (the workflow of the package).</p>
 </div>
 </div>

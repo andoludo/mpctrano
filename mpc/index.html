@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Calibration, state estimation and economic MPC of the FastModel building models of Trano">
+        <meta name="description" content="Calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano">
       
       
       
@@ -1029,7 +1029,7 @@ seconds, <code>ModelPredictiveController</code> solves with IPOPT:</p>
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600       comfort violations [K·h]
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    + w_lim · Σ_k s_lim,k · dt / 3.6e6                      electricity above a demand response power limit
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    + w_move · Σ_k |v_k − v_{k−1}|² + w_effort · Σ_k |v_k|²   moves and effort of the controls (scaled to [0, 1])
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>s.t.  the FastModel collocated on Radau IIA points in each step
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>s.t.  the BuildingModel collocated on Radau IIA points in each step
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      the bounds of each control (0-1 for the valves, the heat pump speed and the boiler load)
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>      T_lower,k − s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k        soft comfort band on every zone
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>      P_k ≤ limit_k + s_lim,k,     P_k ≤ P_peak                electric power bought from the grid
@@ -1119,11 +1119,11 @@ comparable):</p>
 <p><code>price_response(run)</code> gives the energy bought at each price level.</p>
 <h2 id="cooling-with-ideal-emitters">Cooling with ideal emitters</h2>
 <p>The ideal emitter of a zone (<code>radiator</code> of variant <code>ideal</code> in the YAML) is a heat flow input of the
-<code>FastSmoothBuildingsMPC</code> model, which Trano bounds to heating (<code>min=0</code>). <code>FastModel.with_control_bounds</code> gives it
+<code>FastSmoothBuildingsMPC</code> model, which Trano bounds to heating (<code>min=0</code>). <code>BuildingModel.with_control_bounds</code> gives it
 a negative lower bound: the same equations cool the zone. The controller costs its heat at
 <code>MPCSettings.heat_cop</code> and its cooling at <code>MPCSettings.cooling_eer</code> (electricity per unit of heat or
 cooling); the closed loop meters it alike.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">office</span> <span class="o">=</span> <span class="n">FastModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"office.yaml"</span><span class="p">)</span><span class="o">.</span><span class="n">with_control_bounds</span><span class="p">({</span><span class="s2">"emitter_001_Q.Q_flow"</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">12000.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)})</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">office</span> <span class="o">=</span> <span class="n">BuildingModel</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="s2">"office.yaml"</span><span class="p">)</span><span class="o">.</span><span class="n">with_control_bounds</span><span class="p">({</span><span class="s2">"emitter_001_Q.Q_flow"</span><span class="p">:</span> <span class="p">(</span><span class="o">-</span><span class="mf">12000.0</span><span class="p">,</span> <span class="kc">None</span><span class="p">)})</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">settings</span> <span class="o">=</span> <span class="n">MPCSettings</span><span class="p">(</span><span class="n">horizon</span><span class="o">=</span><span class="mi">24</span><span class="p">,</span> <span class="n">heat_cop</span><span class="o">=</span><span class="mf">3.5</span><span class="p">,</span> <span class="n">cooling_eer</span><span class="o">=</span><span class="mf">3.0</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="electrical-storages-at-the-meter">Electrical storages at the meter</h2>

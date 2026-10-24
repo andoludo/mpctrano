@@ -1,7 +1,7 @@
 """Shared fixtures: the heat pump house of the Trano test suite, a perturbed copy and its monitoring data.
 
-Two buildings of Trano's FastModel tests serve the suite: a single-zone house heated by an air-to-water heat pump
-(the electricity metered, the reference building of the tutorials) and the same house with a gas boiler (the fuel
+Two buildings of Trano's FastSmoothBuildings tests serve the suite: a single-zone house heated by an air-to-water heat
+pump (the electricity metered, the reference building of the tutorials) and the same house with a gas boiler (the fuel
 metered), in ``tests/models`` next to the weather file both use.
 """
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from mpctrano import FastModel, Project, SyntheticData, WeatherForecaster
+from mpctrano import BuildingModel, Project, SyntheticData, WeatherForecaster
 
 MODELS = Path(__file__).parent / "models"
 HEAT_PUMP_HOUSE = MODELS / "single_zone_air_water_heat_pump.yaml"
@@ -24,7 +24,7 @@ def project() -> Project:
 
 
 @pytest.fixture(scope="session")
-def heat_pump(project: Project) -> FastModel:
+def heat_pump(project: Project) -> BuildingModel:
     return project.model
 
 
@@ -34,10 +34,10 @@ def forecaster(project: Project) -> WeatherForecaster:
 
 
 @pytest.fixture(scope="session")
-def true_building(project: Project) -> FastModel:
+def true_building(project: Project) -> BuildingModel:
     return project.true_building(seed=0)
 
 
 @pytest.fixture(scope="session")
-def synthetic(project: Project, true_building: FastModel) -> SyntheticData:
+def synthetic(project: Project, true_building: BuildingModel) -> SyntheticData:
     return project.synthetic_data(days=3, start="2023-01-02", building=true_building)

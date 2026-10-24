@@ -1,4 +1,4 @@
-"""Economic MPC of the FastModel houses: the fuel of the boiler house, the electricity of the heat pump house."""
+"""Economic MPC of the BuildingModel houses: the fuel of the boiler house, the electricity of the heat pump house."""
 
 import numpy as np
 import pandas as pd
@@ -8,7 +8,7 @@ from mpctrano import (
     CapacityTariff,
     ComfortSpec,
     DemandResponseEvent,
-    FastModel,
+    BuildingModel,
     FlatTariff,
     ModelPredictiveController,
     MPCSettings,
@@ -22,15 +22,15 @@ FUEL_PRICE = 0.08
 
 
 @pytest.fixture(scope="module")
-def house() -> FastModel:
-    return FastModel.from_yaml(BOILER_HOUSE)
+def house() -> BuildingModel:
+    return BuildingModel.from_yaml(BOILER_HOUSE)
 
 
-def disturbances(model: FastModel, start: str, steps: int) -> pd.DataFrame:
+def disturbances(model: BuildingModel, start: str, steps: int) -> pd.DataFrame:
     return WeatherForecaster.from_model(model).realisation(pd.Timestamp(start), steps, 3600.0)
 
 
-def test_mpc_keeps_comfort_at_the_cost_of_the_metered_fuel(house: FastModel) -> None:
+def test_mpc_keeps_comfort_at_the_cost_of_the_metered_fuel(house: BuildingModel) -> None:
     settings = MPCSettings(horizon=24, fuel_price=FUEL_PRICE)
     controller = ModelPredictiveController(house, settings, ComfortSpec(), FlatTariff(price=0.3))
     forecast = disturbances(house, START, 25)
@@ -54,7 +54,7 @@ def test_mpc_keeps_comfort_at_the_cost_of_the_metered_fuel(house: FastModel) -> 
     assert following.index[0] == forecast.index[1]
 
 
-def test_mpc_moves_the_fuel_out_of_the_peak_hours(house: FastModel) -> None:
+def test_mpc_moves_the_fuel_out_of_the_peak_hours(house: BuildingModel) -> None:
     forecast = disturbances(house, START, 24)  # a Monday: 7h to 22h peak
     fuel = {}
     for name, tariff in {"flat": FlatTariff(price=0.25), "time_of_use": TimeOfUseTariff()}.items():
@@ -67,7 +67,7 @@ def test_mpc_moves_the_fuel_out_of_the_peak_hours(house: FastModel) -> None:
     assert fuel["time_of_use"][peak].sum() < fuel["flat"][peak].sum()
 
 
-def test_heat_pump_mpc_costs_the_metered_electricity(heat_pump: FastModel) -> None:
+def test_heat_pump_mpc_costs_the_metered_electricity(heat_pump: BuildingModel) -> None:
     controller = ModelPredictiveController(heat_pump, MPCSettings(horizon=24), ComfortSpec(), FlatTariff(price=0.3))
     plan = controller.solve(heat_pump.initial_state, disturbances(heat_pump, START, 24))
     assert plan.success, plan.status
@@ -79,7 +79,7 @@ def test_heat_pump_mpc_costs_the_metered_electricity(heat_pump: FastModel) -> No
     assert np.all(temperatures >= plan.lower[0] - 0.1)
 
 
-def test_heat_pump_mpc_follows_the_grid_signals(heat_pump: FastModel) -> None:
+def test_heat_pump_mpc_follows_the_grid_signals(heat_pump: BuildingModel) -> None:
     """A demand response power cap and a capacity charge lower the electric power the heat pump draws."""
     forecast = disturbances(heat_pump, START, 24)
     start = pd.Timestamp(START)
@@ -103,7 +103,7 @@ def test_heat_pump_mpc_follows_the_grid_signals(heat_pump: FastModel) -> None:
     assert power["capacity"].max() <= power["free"].max() + 1.0
 
 
-def test_power_floors_caps_and_the_running_peak(heat_pump: FastModel) -> None:
+def test_power_floors_caps_and_the_running_peak(heat_pump: BuildingModel) -> None:
     """Per-solve floors and caps on the electricity bought hold in the plan; a peak already billed is charged."""
     forecast = disturbances(heat_pump, START, 24)
     tariff = CapacityTariff(base=FlatTariff(price=0.25), capacity_price=120.0)

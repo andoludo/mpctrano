@@ -1,4 +1,4 @@
-"""Forecasts, closed loop and rule-based baseline of Trano's single-zone hydronic house as a FastModel."""
+"""Forecasts, closed loop and rule-based baseline of Trano's single-zone hydronic house as a BuildingModel."""
 
 import numpy as np
 import pandas as pd
@@ -7,7 +7,7 @@ import pytest
 from mpctrano import (
     ComfortSchedule,
     ComfortSpec,
-    FastModel,
+    BuildingModel,
     ModelPredictiveController,
     MPCSettings,
     WeatherForecaster,
@@ -31,16 +31,16 @@ COMFORT = ComfortSpec(
 
 
 @pytest.fixture(scope="module")
-def house() -> FastModel:
-    return FastModel.from_yaml(HOUSE)
+def house() -> BuildingModel:
+    return BuildingModel.from_yaml(HOUSE)
 
 
 @pytest.fixture(scope="module")
-def closed_loop_house() -> FastModel:
-    return FastModel.from_yaml(HOUSE, library="FastSmoothBuildings")
+def closed_loop_house() -> BuildingModel:
+    return BuildingModel.from_yaml(HOUSE, library="FastSmoothBuildings")
 
 
-def test_the_model_knows_its_weather_file_and_occupancy(house: FastModel) -> None:
+def test_the_model_knows_its_weather_file_and_occupancy(house: BuildingModel) -> None:
     assert house.weather_file is not None
     assert house.weather_file.endswith(WEATHER.name)
     assert house.weather_path == WEATHER.resolve()
@@ -49,7 +49,7 @@ def test_the_model_knows_its_weather_file_and_occupancy(house: FastModel) -> Non
     assert schedule.gain_per_area == pytest.approx((40 + 75) / 21)
 
 
-def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
+def test_forecaster_gives_every_disturbance(house: BuildingModel) -> None:
     forecaster = WeatherForecaster.from_model(house)
     frame = forecaster.realisation(pd.Timestamp(START), 24, STEP)
     assert frame.columns.tolist() == house.disturbance_names
@@ -66,7 +66,7 @@ def test_forecaster_gives_every_disturbance(house: FastModel) -> None:
     pd.testing.assert_series_equal(forecast["weather_inputs.winSpe"], frame["weather_inputs.winSpe"])
 
 
-def test_closed_loop_meters_the_energy_of_the_plant(house: FastModel) -> None:
+def test_closed_loop_meters_the_energy_of_the_plant(house: BuildingModel) -> None:
     steps = 6
     plant = ModelPlant(house, STEP, START)
     controller = ModelPredictiveController(
@@ -83,7 +83,9 @@ def test_closed_loop_meters_the_energy_of_the_plant(house: FastModel) -> None:
     assert result.metrics.comfort_violation_kh < 0.1
 
 
-def test_rule_based_baseline_runs_the_controllers_of_the_yaml(closed_loop_house: FastModel, house: FastModel) -> None:
+def test_rule_based_baseline_runs_the_controllers_of_the_yaml(
+    closed_loop_house: BuildingModel, house: BuildingModel
+) -> None:
     assert closed_loop_house.control_names == []
     result = run_rule_based(
         closed_loop_house,
@@ -104,7 +106,7 @@ def test_rule_based_baseline_runs_the_controllers_of_the_yaml(closed_loop_house:
 
 @pytest.mark.slow
 def test_mpc_beats_the_rule_based_controllers_under_a_time_of_use_tariff(
-    house: FastModel, closed_loop_house: FastModel
+    house: BuildingModel, closed_loop_house: BuildingModel
 ) -> None:
     """The MPC keeps the band of the rule-based controllers for less, buying more energy off-peak."""
     tariff, steps = TimeOfUseTariff(peak_price=0.12, off_peak_price=0.05), 24
@@ -120,12 +122,12 @@ def test_mpc_beats_the_rule_based_controllers_under_a_time_of_use_tariff(
     assert mpc.metrics.low_price_share > baseline.metrics.low_price_share
 
 
-def test_spin_up_and_the_running_peak_of_a_capacity_tariff(heat_pump: FastModel) -> None:
+def test_spin_up_and_the_running_peak_of_a_capacity_tariff(heat_pump: BuildingModel) -> None:
     """The spun-up state comes from the controllers of the YAML; the closed loop carries the peak of the month."""
     from mpctrano import CapacityTariff, spin_up
     from mpctrano.estimation import PerfectEstimator
 
-    closed_loop = FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings")
+    closed_loop = BuildingModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings")
     x0 = spin_up(heat_pump, closed_loop, START, days=2.0)
     assert x0.shape == heat_pump.initial_state.shape
     assert not np.allclose(x0, heat_pump.initial_state)

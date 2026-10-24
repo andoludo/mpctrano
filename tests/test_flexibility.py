@@ -8,7 +8,7 @@ from mpctrano import (
     ActivationRequest,
     ActivationResult,
     ComfortSpec,
-    FastModel,
+    BuildingModel,
     FlatTariff,
     FlexibilityEnvelope,
     ModelPlant,
@@ -80,12 +80,12 @@ def test_the_price_agnostic_tariff_keeps_the_grid_constraints() -> None:
 
 
 @pytest.fixture(scope="module")
-def spun_up(heat_pump: FastModel) -> np.ndarray:
-    return spin_up(heat_pump, FastModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings"), START, days=2.0)
+def spun_up(heat_pump: BuildingModel) -> np.ndarray:
+    return spin_up(heat_pump, BuildingModel.from_yaml(HEAT_PUMP_HOUSE, library="FastSmoothBuildings"), START, days=2.0)
 
 
 @pytest.mark.slow
-def test_respond_sheds_and_rebounds(heat_pump: FastModel, spun_up: np.ndarray) -> None:
+def test_respond_sheds_and_rebounds(heat_pump: BuildingModel, spun_up: np.ndarray) -> None:
     scenario = Scenario(
         name="tou",
         description="",
@@ -104,7 +104,7 @@ def test_respond_sheds_and_rebounds(heat_pump: FastModel, spun_up: np.ndarray) -
 
 
 @pytest.mark.slow
-def test_flexibility_function_responds_to_a_price_step(heat_pump: FastModel, spun_up: np.ndarray) -> None:
+def test_flexibility_function_responds_to_a_price_step(heat_pump: BuildingModel, spun_up: np.ndarray) -> None:
     scenario = Scenario(
         name="flat",
         description="",
@@ -126,7 +126,7 @@ def test_flexibility_function_responds_to_a_price_step(heat_pump: FastModel, spu
 
 
 @pytest.mark.slow
-def test_flexibility_envelope(heat_pump: FastModel, spun_up: np.ndarray) -> None:
+def test_flexibility_envelope(heat_pump: BuildingModel, spun_up: np.ndarray) -> None:
     controller = ModelPredictiveController(heat_pump, MPCSettings(horizon=12), ComfortSpec(), FlatTariff())
     forecast = WeatherForecaster.from_model(heat_pump).forecast(pd.Timestamp(START) + pd.Timedelta(hours=6), 12, STEP)
     envelope = FlexibilityEnvelope.compute(controller, spun_up, forecast, durations=(1.0, 2.0), iterations=3)

@@ -1,6 +1,6 @@
 # Single-zone house heated by an air-to-water heat pump with a buffer tank and a radiator on a mixing circuit:
 # the building of single_zone_hydronic.yaml with the boiler replaced by a heat pump and the radiator sized for a
-# 45/35 degC supply. Small enough for closed-loop model predictive control studies with the FastModelMPC library.
+# 45/35 degC supply. Small enough for closed-loop model predictive control studies with the FastSmoothBuildingsMPC library.
 default: !include_default
 spaces:
   - occupancy:

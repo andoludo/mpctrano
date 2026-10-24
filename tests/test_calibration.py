@@ -1,11 +1,11 @@
-"""Calibration of Trano's single-zone hydronic house as a FastModel, on data of a perturbed copy."""
+"""Calibration of Trano's single-zone hydronic house as a BuildingModel, on data of a perturbed copy."""
 
 import casadi as ca
 import numpy as np
 import pandas as pd
 import pytest
 
-from mpctrano import FastModel
+from mpctrano import BuildingModel
 from mpctrano.synthetic import generate_monitoring_data
 from mpctrano.calibration import (
     DEFAULT_GROUPS,
@@ -30,18 +30,18 @@ TRUTH = {
 
 
 @pytest.fixture(scope="module")
-def house() -> FastModel:
-    return FastModel.from_yaml(HOUSE)
+def house() -> BuildingModel:
+    return BuildingModel.from_yaml(HOUSE)
 
 
 @pytest.fixture(scope="module")
-def recorded(house: FastModel) -> tuple[pd.DataFrame, pd.DataFrame]:
+def recorded(house: BuildingModel) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Six days of a building whose groups differ from Trano's, operated by a thermostat."""
     synthetic = generate_monitoring_data(Calibrator(house).calibrated(TRUTH), "2023-01-02", 6, seed=0)
     return synthetic.data.frame, synthetic.states
 
 
-def test_groups_hold_the_parameters_the_equations_use(house: FastModel) -> None:
+def test_groups_hold_the_parameters_the_equations_use(house: BuildingModel) -> None:
     calibrator = Calibrator(house, CalibrationSettings(groups=DEFAULT_GROUPS + OPTIONAL_GROUPS))
     members = {name: [house.parameter_names[i] for i in indices] for name, indices in calibrator.members.items()}
     assert "externalwall_0.G[2]" in members["envelope_conductance"]
@@ -58,7 +58,7 @@ def test_groups_hold_the_parameters_the_equations_use(house: FastModel) -> None:
         Calibrator(house, CalibrationSettings(groups=(ParameterGroup(name="none", patterns=("^nothing$",)),)))
 
 
-def test_groups_scale_or_set_their_parameters(house: FastModel) -> None:
+def test_groups_scale_or_set_their_parameters(house: BuildingModel) -> None:
     calibrator = Calibrator(house)
     model = calibrator.calibrated({**dict.fromkeys(TRUTH, 1.0), "envelope_conductance": 2.0, "infiltration": 0.7})
     assert model.parameter("externalwall_0.G[2]") == pytest.approx(2 * house.parameter("externalwall_0.G[2]"))
@@ -66,7 +66,7 @@ def test_groups_scale_or_set_their_parameters(house: FastModel) -> None:
     assert model.parameter("space_001.mSenFac") == house.parameter("space_001.mSenFac")
 
 
-def test_the_factors_of_groups_sharing_a_parameter_compound(house: FastModel) -> None:
+def test_the_factors_of_groups_sharing_a_parameter_compound(house: BuildingModel) -> None:
     """A conductivity and a thickness both move a layer conductance: doubling both leaves it unchanged."""
     conductivity = YamlGroup(name="k", value=0.04, lower=0.01, upper=0.1, exponents={"externalwall_0.G[2]": 1.0})
     thickness = YamlGroup(
@@ -84,7 +84,7 @@ def test_the_factors_of_groups_sharing_a_parameter_compound(house: FastModel) ->
     assert (float(k), float(x)) == pytest.approx((0.08, 0.2))
 
 
-def test_synthetic_data_is_plausible(house: FastModel, recorded: tuple[pd.DataFrame, pd.DataFrame]) -> None:
+def test_synthetic_data_is_plausible(house: BuildingModel, recorded: tuple[pd.DataFrame, pd.DataFrame]) -> None:
     data, truth = recorded
     assert len(data) == 6 * 24 + 1
     assert {*house.control_names, *house.disturbance_names, *house.comfort_states, *house.meters} <= set(data)
@@ -93,7 +93,7 @@ def test_synthetic_data_is_plausible(house: FastModel, recorded: tuple[pd.DataFr
     assert np.all(np.diff(data["boiler_001.EFue"]) >= -1e-9)
 
 
-def test_calibration_recovers_the_building(house: FastModel, recorded: tuple[pd.DataFrame, pd.DataFrame]) -> None:
+def test_calibration_recovers_the_building(house: BuildingModel, recorded: tuple[pd.DataFrame, pd.DataFrame]) -> None:
     data, _ = recorded
     training, validation = data.iloc[: 4 * 24 + 1], data.iloc[4 * 24 :]
     calibrated, result = Calibrator(house).fit(training, validation)

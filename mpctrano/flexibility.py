@@ -38,14 +38,14 @@ from mpctrano.tariff import CapacityTariff, DemandResponseEvent, DemandResponseT
 
 if TYPE_CHECKING:
     from mpctrano.forecast import Forecaster
-    from mpctrano.model import FastModel
+    from mpctrano.model import BuildingModel
     from mpctrano.mpc import ModelPredictiveController, MPCSolution
     from mpctrano.scenarios import Scenario
 
 JOULE_PER_KWH = 3.6e6
 
 
-def _plant(plant: FastModel | Plant | Callable[[], Plant] | None) -> FastModel | Plant | None:
+def _plant(plant: BuildingModel | Plant | Callable[[], Plant] | None) -> BuildingModel | Plant | None:
     """A plant, a model to wrap into one, or a fresh plant from a factory (the compared runs start alike)."""
     return plant() if callable(plant) and not hasattr(plant, "state") else plant  # type: ignore[return-value]
 
@@ -71,9 +71,9 @@ def compare(results: Mapping[str, ClosedLoopResult], baseline: str | None = None
 
 
 def value_of_flexibility(
-    model: FastModel,
+    model: BuildingModel,
     scenario: Scenario,
-    plant: FastModel | Plant | Callable[[], Plant] | None = None,
+    plant: BuildingModel | Plant | Callable[[], Plant] | None = None,
     forecaster: Forecaster | None = None,
     estimator: Callable[[], StateEstimator] | None = None,
 ) -> pd.DataFrame:
@@ -248,7 +248,7 @@ class ActivationResult:
 
 
 def respond(
-    model: FastModel,
+    model: BuildingModel,
     scenario: Scenario,
     request: ActivationRequest,
     plant: Callable[[], Plant] | None = None,
@@ -291,7 +291,7 @@ def respond(
 
 
 def flexibility_function(
-    model: FastModel,
+    model: BuildingModel,
     scenario: Scenario,
     step_start: datetime,
     step_hours: float,
@@ -330,7 +330,7 @@ def flexibility_function(
 
 
 # --------------------------------------------------------------------------- flexibility envelope
-def plan_comfort_violation(solution: MPCSolution, model: FastModel) -> float:
+def plan_comfort_violation(solution: MPCSolution, model: BuildingModel) -> float:
     """Comfort violations of an open-loop plan [K.h] over the zones."""
     temperatures = solution.comfort_temperatures[model.comfort_states].to_numpy(dtype=float).T
     violation = np.maximum(solution.lower - temperatures, 0) + np.maximum(temperatures - solution.upper, 0)

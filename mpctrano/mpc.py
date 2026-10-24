@@ -37,7 +37,7 @@ from trano_optimization.collocation import SOLVED, Collocated
 
 from mpctrano.comfort import ComfortSpec
 from mpctrano.forecast import forecast_index, seconds_of_year
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.storage import Battery, ElectricVehicle, storage_schedule
 from mpctrano.tariff import Tariff
 
@@ -147,7 +147,7 @@ class MPCSolution:
 class ModelPredictiveController:
     """Economic MPC of a ``FastSmoothBuildingsMPC`` model, see the module documentation for the problem."""
 
-    def __init__(self, model: FastModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
+    def __init__(self, model: BuildingModel, settings: MPCSettings, comfort: ComfortSpec, tariff: Tariff) -> None:
         self.model = model
         self.settings = settings
         self.comfort = comfort

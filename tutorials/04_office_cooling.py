@@ -5,7 +5,7 @@
 #
 # **Learning objectives**
 #
-# 1. Model cooling with Trano's FastModel: the ideal emitter of a zone is a heat flow the controller decides;
+# 1. Model cooling with Trano's FastSmoothBuildings: the ideal emitter of a zone is a heat flow the controller decides;
 #    letting it go negative turns it into a chiller, costed at an EER.
 # 2. Read a cooling plan: the sun and the occupants drive the load, the mass of the building and the price signal
 #    decide when the chiller runs (pre-cooling at night under day-ahead prices).
@@ -50,8 +50,8 @@ print(f"quick mode: {quick_mode()}; cached runs: {_office.DAYS:g} day from {_off
 # `tutorials/buildings/office/base.yaml`: an open-plan office of 200 m2 with 36 m2 of south glazing and a meeting
 # area of 80 m2, externally insulated walls, a flat roof, occupied from 8h to 18h (12 W/m2 of occupants and
 # equipment in the open plan). Each zone has an ideal emitter (`radiator` of variant `ideal` in the YAML): in the
-# `FastModelMPC` model it is an input `Q_flow` [W], which Trano bounds to heating (`min=0`). The study lets it go
-# negative (`FastModel.with_control_bounds`): the same equations cool the zone. The electricity follows from a
+# `FastSmoothBuildingsMPC` model it is an input `Q_flow` [W], which Trano bounds to heating (`min=0`). The study lets it
+# go negative (`BuildingModel.with_control_bounds`): the same equations cool the zone. The electricity follows from a
 # COP of 3.5 for heating and an EER of 3 for cooling (`MPCSettings.heat_cop`, `cooling_eer`).
 
 # %%
@@ -157,5 +157,5 @@ display(
 #
 # * `tutorials/references.md`: the characterisation of flexibility (Reynders et al.) applies to cooling as to
 #   heating; Blum et al. (2021) for the KPIs.
-# * The chiller is a constant EER here; a chiller and a cooling coil in the FastModel library of Trano would give
-#   the part-load behaviour (see `tutorials/PLAN.md`).
+# * The chiller is a constant EER here; a chiller and a cooling coil in the FastSmoothBuildings library of Trano
+#   would give the part-load behaviour (see `tutorials/PLAN.md`).

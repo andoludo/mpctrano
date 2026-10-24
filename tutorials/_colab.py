@@ -1,8 +1,8 @@
 """Set a fresh Google Colab runtime up for the tutorials (a no-op anywhere else).
 
 The first cell of every notebook clones this repository on Colab and calls :func:`setup`, which installs the
-rumoca wheel the FastModel models need (from the GitHub release of this repository, or built from source when the
-release has no wheel for the runtime's Python: a Rust toolchain is installed first, which takes about ten minutes)
+rumoca wheel the FastSmoothBuildings models need (from the GitHub release of this repository, or built from source when
+the release has no wheel for the runtime's Python: a Rust toolchain is installed first, which takes about ten minutes)
 and mpctrano from the clone with its notebook extra, then moves into the clone for the tutorial files and the
 cached runs.
 """
@@ -49,11 +49,11 @@ def _rumoca_wheel_url() -> str | None:
     return None
 
 
-def _rumoca_exports_fast_models() -> bool:
+def _rumoca_exports_building_models() -> bool:
     try:
-        from mpctrano.model import rumoca_exports_fast_models
+        from mpctrano.model import rumoca_exports_building_models
 
-        return bool(rumoca_exports_fast_models())
+        return bool(rumoca_exports_building_models())
     except ImportError:
         return False
 
@@ -64,7 +64,7 @@ def setup() -> None:
         return
     if not CLONE.exists():
         subprocess.run(["git", "clone", "-q", "--depth", "1", REPOSITORY, str(CLONE)], check=True)
-    if not _rumoca_exports_fast_models():
+    if not _rumoca_exports_building_models():
         wheel = _rumoca_wheel_url()
         if wheel is None or _pip(wheel) != 0:
             print("No rumoca wheel for this runtime: installing Rust and building rumoca (about ten minutes)...")

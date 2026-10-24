@@ -4,7 +4,7 @@ The controller plans the valve, the heat pump speed and the mixing valve over 24
 stays inside the comfort band at the lowest cost of the electricity the heat pump draws (read from its meter, so the
 COP of the heat pump is part of the plan). It is first used open loop (one plan), then in closed loop against the
 "real" building with state estimation, and compared with the controllers the YAML describes (the closed-loop
-FastModel of the same building: a thermostat on the valve, the heat pump holding its supply temperature).
+BuildingModel of the same building: a thermostat on the valve, the heat pump holding its supply temperature).
 """
 
 import pandas as pd

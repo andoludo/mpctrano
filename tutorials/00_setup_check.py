@@ -8,7 +8,7 @@
 # - confirm that the toolchain of the tutorials is installed: `trano` (YAML to Modelica),
 #   `rumoca` (Modelica to CasADi, the commit `uv sync` builds), `trano-optimization` (collocation),
 #   `casadi` with IPOPT, `mpctrano`;
-# - generate a first CasADi model from a Trano YAML with the `FastModelMPC` library and plan its heating.
+# - generate a first CasADi model from a Trano YAML with the `FastSmoothBuildingsMPC` library and plan its heating.
 #
 # Run this notebook first; every other tutorial assumes it passes. In continuous integration
 # the notebooks run with `MPCTRANO_QUICK=1` (shorter periods), see `tutorials/README.md`.
@@ -43,18 +43,20 @@ print(f"rumoca {rumoca.version()}")
 print(f"casadi {casadi.__version__}")
 print(f"mpctrano {mpctrano.__version__}")
 print(f"quick mode: {QUICK}")
-assert mpctrano.model.rumoca_exports_fast_models(), "rumoca cannot export the FastModel models: run `uv sync`"
+assert mpctrano.model.rumoca_exports_building_models(), (
+    "rumoca cannot export the FastSmoothBuildings models: run `uv sync`"
+)
 
 # %% [markdown]
 # ## From a Trano YAML to a CasADi model
 #
-# `FastModel.from_yaml` runs the whole chain: Trano renders the `FastModelMPC` Modelica model of the
+# `BuildingModel.from_yaml` runs the whole chain: Trano renders the `FastSmoothBuildingsMPC` Modelica model of the
 # building (`building_mpc`: the walls, the windows, the heat pump, its buffer, the mixing valve and the
 # radiator, the controls of the systems as inputs), rumoca translates it into the CasADi ODE
 # `xdot = f(t, x, u, p)`, and the roles of the variables are read from the Modelica model.
 
 # %%
-model = mpctrano.FastModel.from_yaml(MODEL)
+model = mpctrano.BuildingModel.from_yaml(MODEL)
 print("states      ", model.n_states)
 print("controls    ", model.control_names)
 print("disturbances", model.disturbance_names)
@@ -80,5 +82,5 @@ print(solution.controls.round(2))
 
 # %% [markdown]
 # **Key takeaways**: the toolchain works end to end; the next notebooks build on the same
-# `FastModel` object. **Further reading**: `tutorials/README.md` (installation and troubleshooting),
+# `BuildingModel` object. **Further reading**: `tutorials/README.md` (installation and troubleshooting),
 # `docs/index.md` (the workflow of the package).

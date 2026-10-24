@@ -1,4 +1,4 @@
-"""mpctrano: calibration, state estimation and economic MPC of the FastModel building models of Trano.
+"""mpctrano: calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano.
 
 Workflow::
 
@@ -47,7 +47,7 @@ from mpctrano.forecast import (
     WeatherForecaster,
 )
 from mpctrano.metrics import ControlMetrics, FitMetrics, Prices
-from mpctrano.model import FastModel, ModelError
+from mpctrano.model import BuildingModel, ModelError
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
@@ -84,6 +84,7 @@ __all__ = [
     "ActivationRequest",
     "ActivationResult",
     "Battery",
+    "BuildingModel",
     "CalibrationResult",
     "CalibrationSettings",
     "CalibrationSpec",
@@ -100,7 +101,6 @@ __all__ = [
     "DynamicTariff",
     "ElectricVehicle",
     "EstimatorSettings",
-    "FastModel",
     "FitMetrics",
     "FlatTariff",
     "FlexibilityEnvelope",

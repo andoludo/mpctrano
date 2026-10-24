@@ -1,6 +1,6 @@
-"""State estimation of a FastModel: moving horizon estimation over a sliding window of the past.
+"""State estimation of a BuildingModel: moving horizon estimation over a sliding window of the past.
 
-The FastModel is nonlinear (water flows, boiler and heat pump maps) and only the zone air temperatures are measured:
+The BuildingModel is nonlinear (water flows, boiler and heat pump maps) and only the zone air temperatures are measured:
 the walls, the water of the circuits and the buffers are not. :class:`MovingHorizonEstimator` keeps the inputs
 applied and the measurements of the last ``window`` steps and, at each :meth:`~MovingHorizonEstimator.correct`,
 finds the trajectory of the model closest to them with :class:`trano_optimization.MovingHorizonEstimation`
@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from trano_optimization import EstimationSettings, MovingHorizonEstimation
 
 from mpctrano.forecast import seconds_of_year
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.units import STATE_BOUNDS
 
 
@@ -74,9 +74,9 @@ class EstimatorSettings(BaseModel):
 
 @dataclass
 class MovingHorizonEstimator:
-    """Moving horizon estimation of the full state of a FastModel from its zone air temperatures."""
+    """Moving horizon estimation of the full state of a BuildingModel from its zone air temperatures."""
 
-    model: FastModel
+    model: BuildingModel
     time_step: float
     start: pd.Timestamp | str
     x0: np.ndarray | None = None

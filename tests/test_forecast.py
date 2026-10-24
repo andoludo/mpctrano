@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mpctrano import DataForecaster, FastModel, ForecastNoise, OccupancySchedule, WeatherFile, WeatherForecaster
+from mpctrano import DataForecaster, BuildingModel, ForecastNoise, OccupancySchedule, WeatherFile, WeatherForecaster
 from mpctrano.units import KELVIN
 from tests.conftest import WEATHER
 
@@ -64,7 +64,7 @@ def test_forecast_noise_perturbs_the_named_channels_only():
         noise.perturb(frame, {"wind": "wind"})
 
 
-def test_weather_forecaster_gives_every_disturbance(heat_pump: FastModel, forecaster: WeatherForecaster) -> None:
+def test_weather_forecaster_gives_every_disturbance(heat_pump: BuildingModel, forecaster: WeatherForecaster) -> None:
     frame = forecaster.realisation(pd.Timestamp("2023-01-16"), 24, 3600.0)
     assert frame.columns.tolist() == heat_pump.disturbance_names
     assert frame.notna().all().all()
@@ -74,7 +74,7 @@ def test_weather_forecaster_gives_every_disturbance(heat_pump: FastModel, foreca
     assert np.all(frame["weather_inputs.TBlaSky"] < frame["weather_inputs.TDryBul"])
 
 
-def test_weather_forecaster_noise_and_custom_occupancy(heat_pump: FastModel) -> None:
+def test_weather_forecaster_noise_and_custom_occupancy(heat_pump: BuildingModel) -> None:
     start = pd.Timestamp("2023-01-16")
     perfect = WeatherForecaster.from_model(heat_pump).realisation(start, 24, 3600.0)
     noisy = WeatherForecaster.from_model(heat_pump, noise=ForecastNoise(temperature_std=2.0, seed=0))
@@ -86,7 +86,7 @@ def test_weather_forecaster_noise_and_custom_occupancy(heat_pump: FastModel) -> 
     assert empty.realisation(start, 24, 3600.0)["occupancy_1_gai.QCon"].sum() == 0.0
 
 
-def test_data_forecaster_replays_and_checks_coverage(heat_pump: FastModel) -> None:
+def test_data_forecaster_replays_and_checks_coverage(heat_pump: BuildingModel) -> None:
     index = pd.date_range("2023-01-16", periods=30, freq="h")
     frame = pd.DataFrame(280.0, index=index, columns=heat_pump.disturbance_names)
     forecaster = DataForecaster(frame, noise=ForecastNoise(temperature_std=1.0, seed=0))

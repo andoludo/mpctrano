@@ -5,7 +5,7 @@
 #
 # **Learning objectives**
 #
-# 1. Follow the pipeline from the Trano YAML to the CasADi model: what the FastModel of a house contains, which
+# 1. Follow the pipeline from the Trano YAML to the CasADi model: what the BuildingModel of a house contains, which
 #    inputs the controller decides and which ones it has to forecast, where the energy is metered.
 # 2. Read an economic MPC plan: how the comfort band, the price signal and the horizon shape the heating of a heat
 #    pump house with a buffer tank and a radiator.
@@ -51,9 +51,9 @@ print(f"quick mode: {quick_mode()}; cached runs: {_house.DAYS:g} days from {_hou
 #
 # `tutorials/buildings/house/base.yaml` describes a 100 m2 house: cavity walls, triple glazing, a concrete slab,
 # a 3.5 kW air-to-water heat pump with a 150 l buffer tank, a mixing valve and a low-temperature radiator behind
-# a thermostatic valve. Trano renders it with its `FastModelMPC` library (physics close to the Buildings library:
-# layered walls, window optics, water nodes) where **the controls of the systems are inputs**, and with its
-# `FastModel` library where the controllers of the YAML close the loop (the rule-based reference). rumoca
+# a thermostatic valve. Trano renders it with its `FastSmoothBuildingsMPC` library (physics close to the Buildings
+# library: layered walls, window optics, water nodes) where **the controls of the systems are inputs**, and with its
+# `FastSmoothBuildings` library where the controllers of the YAML close the loop (the rule-based reference). rumoca
 # translates each into an explicit CasADi ODE `xdot = f(t, x, u, d, p)`.
 
 # %%
@@ -75,7 +75,7 @@ print("states      ", model.state_names)
 # **meter** of the heat pump. The controller never sees a COP: it optimises the valves and the compressor, and the
 # electricity follows from the heat pump model and its meter.
 #
-# A FastModel starts with every temperature at its start value (walls at the set point, buffer at the supply
+# A BuildingModel starts with every temperature at its start value (walls at the set point, buffer at the supply
 # temperature). Every run of the tutorials starts from the state the controllers of the YAML reach after three
 # days (`spin_up`): the night setback has cooled the house at the start of the period.
 
@@ -149,7 +149,7 @@ display(plot_closed_loop(spike, "base house, day-ahead prices with an evening sp
 # ### MPC against the controllers of the YAML
 #
 # The same building, period, tariff and comfort band, controlled by the thermostat, heating curve and buffer
-# controller written in the YAML (the closed-loop `FastModel`, simulated in a second): this is the reference an
+# controller written in the YAML (the closed-loop `BuildingModel`, simulated in a second): this is the reference an
 # MPC has to beat.
 
 # %%

@@ -1,6 +1,6 @@
 # Calibration
 
-A FastModel has hundreds of parameters, most of them settled by the YAML (areas, orientations, the
+A BuildingModel has hundreds of parameters, most of them settled by the YAML (areas, orientations, the
 optical fits of the glazing) or not identifiable from a few air temperatures. `Calibrator` adjusts
 **groups** of parameters instead, each by one decision variable:
 
@@ -59,11 +59,11 @@ reads it back.
 
 ## Smoothing the controllers
 
-The thermostats, hysteresis and limiters of a Trano FastModel are steep smooth switches (trano >= 0.59
+The thermostats, hysteresis and limiters of a BuildingModel are steep smooth switches (trano >= 0.59
 exposes their widths `dU`, `dY`, `dMax`, `dT`, `dtSet` and the switching time `tau` as parameters).
 CVODES follows them, but each switch that moves by a sample under a parameter change makes the
 objective jumpy at the 0.1 % scale, which is what forces the wide finite differences of the shooting
-method. `FastModel.smooth_controllers(width_factor=5.0, switching_time=600.0)` returns a copy whose
+method. `BuildingModel.smooth_controllers(width_factor=5.0, switching_time=600.0)` returns a copy whose
 transitions are five times wider and whose hysteresis switches over ten minutes; calibrate that copy
 and apply the factors to the sharp model.
 

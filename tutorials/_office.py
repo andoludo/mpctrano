@@ -2,7 +2,7 @@
 
 The office of ``tutorials/buildings/office/base.yaml`` has an ideal emitter per zone: a heat flow the controller
 decides, which Trano writes as heating only (``min=0``); the study lets it go negative (cooling) and costs the
-cooling at the EER of a chiller and the heating at the COP of a heat pump. The closed-loop ``FastModel`` of the
+cooling at the EER of a chiller and the heating at the COP of a heat pump. The closed-loop ``BuildingModel`` of the
 YAML has the thermostats of the heating only: in summer it is the office without cooling, the reference of the
 comfort the MPC buys.
 """

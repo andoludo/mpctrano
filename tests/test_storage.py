@@ -7,7 +7,7 @@ from mpctrano import (
     Battery,
     ComfortSpec,
     ElectricVehicle,
-    FastModel,
+    BuildingModel,
     ModelPredictiveController,
     MPCSettings,
     TimeOfUseTariff,
@@ -35,7 +35,7 @@ def test_the_vehicle_schedule() -> None:
 
 
 @pytest.mark.slow
-def test_a_battery_buys_off_peak_and_a_vehicle_leaves_charged(heat_pump: FastModel) -> None:
+def test_a_battery_buys_off_peak_and_a_vehicle_leaves_charged(heat_pump: BuildingModel) -> None:
     battery = Battery(capacity_kwh=8, max_charge_w=3000, max_discharge_w=3000, initial_soc=0.5)
     vehicle = ElectricVehicle(
         capacity_kwh=50, max_charge_w=7400, arrival_hour=18, departure_hour=7, driven_kwh=12, departure_energy_kwh=30,

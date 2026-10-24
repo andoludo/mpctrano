@@ -6,11 +6,17 @@ release pipeline.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: the class `FastModel` is renamed `BuildingModel` (the library it models is FastSmoothBuildings);
+  `FAST_MODEL_LIBRARY` is `MPC_LIBRARY` and `rumoca_exports_fast_models` is `rumoca_exports_building_models`. The
+  former names are removed.
+
 ### Added
 
-- `FastModel.from_source` and `FastModel.from_file` take `roots`, the folders of the Modelica libraries a package uses
-  without embedding them (`trano create-model --no-embed-libraries`, trano >= 0.63); `FastModel.from_network` passes
-  the folders the network names (`Network.libraries`).
+- `BuildingModel.from_source` and `BuildingModel.from_file` take `roots`, the folders of the Modelica libraries a
+  package uses without embedding them (`trano create-model --no-embed-libraries`, trano >= 0.63);
+  `BuildingModel.from_network` passes the folders the network names (`Network.libraries`).
 
 ### Changed
 

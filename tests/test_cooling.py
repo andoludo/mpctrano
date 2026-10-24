@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from mpctrano import ComfortSchedule, ComfortSpec, FastModel, FlatTariff, ModelPredictiveController, MPCSettings
+from mpctrano import ComfortSchedule, ComfortSpec, BuildingModel, FlatTariff, ModelPredictiveController, MPCSettings
 from mpctrano.simulation import metered_energy
 
 OFFICE = Path(__file__).parent.parent / "tutorials" / "buildings" / "office" / "base.yaml"
@@ -24,11 +24,11 @@ def test_the_metered_energy_costs_heating_and_cooling_through_the_cop_and_eer() 
 
 
 @pytest.fixture(scope="module")
-def office() -> FastModel:
-    return FastModel.from_yaml(OFFICE)
+def office() -> BuildingModel:
+    return BuildingModel.from_yaml(OFFICE)
 
 
-def test_control_bounds_can_be_lowered_below_zero(office: FastModel) -> None:
+def test_control_bounds_can_be_lowered_below_zero(office: BuildingModel) -> None:
     lower, upper = office.control_bounds
     np.testing.assert_array_equal(lower, 0.0)
     cooling = office.with_control_bounds({"emitter_001_Q.Q_flow": (-12000.0, None)})
@@ -41,7 +41,7 @@ def test_control_bounds_can_be_lowered_below_zero(office: FastModel) -> None:
 
 
 @pytest.mark.slow
-def test_the_controller_cools_the_office_in_summer(office: FastModel) -> None:
+def test_the_controller_cools_the_office_in_summer(office: BuildingModel) -> None:
     from mpctrano import WeatherForecaster
 
     cooling = office.with_control_bounds(dict.fromkeys(office.control_names, (-10000.0, None)))

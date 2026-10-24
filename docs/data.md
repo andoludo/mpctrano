@@ -1,7 +1,7 @@
 # Monitoring data
 
 `MonitoringData` wraps a regularly sampled, time-indexed `DataFrame` whose columns are named after
-the variables of the `FastModel`:
+the variables of the `BuildingModel`:
 
 | Column                          | Unit | Role                                                            |
 |---------------------------------|------|-----------------------------------------------------------------|

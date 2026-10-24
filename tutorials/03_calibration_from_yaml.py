@@ -86,7 +86,7 @@ print("calibrated:", [group.name for group in groups])
 # ## 2. The true building and its monitoring data
 #
 # The *true* building is the same YAML with other values of the three parameters: a worse insulation, thinner than
-# drawn, and a leakier house. It is run by its own controllers (the closed-loop `FastModel`: thermostat, heating
+# drawn, and a leakier house. It is run by its own controllers (the closed-loop `BuildingModel`: thermostat, heating
 # curve, buffer control) over five cold days of January, after two days of spin-up; the monitoring system records
 # the weather, the air temperature with 0.1 K of noise and the electricity meter with 20 Wh of noise. It does
 # **not** record the valves or the compressor: the model being calibrated has its controllers inside.

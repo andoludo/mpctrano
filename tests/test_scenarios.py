@@ -9,7 +9,7 @@ from mpctrano import (
     ControlMetrics,
     FlatTariff,
     Prices,
-    FastModel,
+    BuildingModel,
     MovingHorizonEstimator,
     PerfectEstimator,
     Project,
@@ -43,14 +43,14 @@ def test_catalogue_contents() -> None:
     assert all(scenario.estimator == "mhe" for scenario in catalogue.values())
 
 
-def test_estimator_choice(heat_pump: FastModel) -> None:
+def test_estimator_choice(heat_pump: BuildingModel) -> None:
     plant = ModelPlant(heat_pump, 3600.0, "2023-01-16")
     assert isinstance(build_estimator(QUICK["flat"], heat_pump, plant), MovingHorizonEstimator)
     perfect = QUICK["flat"].model_copy(update={"estimator": "perfect"})
     assert isinstance(build_estimator(perfect, heat_pump, plant), PerfectEstimator)
 
 
-def test_a_scenario_runs_against_the_true_building(heat_pump: FastModel, true_building: FastModel) -> None:
+def test_a_scenario_runs_against_the_true_building(heat_pump: BuildingModel, true_building: BuildingModel) -> None:
     result = run_scenario(heat_pump, QUICK["time_of_use"], plant=true_building)
     assert isinstance(result, ClosedLoopResult)
     assert result.name == "time_of_use"
@@ -97,14 +97,14 @@ def test_compare_guards_a_reference_without_energy() -> None:
 
 @pytest.mark.slow
 @pytest.mark.parametrize("name", sorted(QUICK))
-def test_every_scenario_runs(heat_pump: FastModel, true_building: FastModel, name: str) -> None:
+def test_every_scenario_runs(heat_pump: BuildingModel, true_building: BuildingModel, name: str) -> None:
     result = run_scenario(heat_pump, QUICK[name], plant=true_building)
     assert result.failures == 0
     assert result.metrics.max_violation < 1.0
 
 
 @pytest.mark.slow
-def test_flexibility_under_a_time_of_use_tariff(project: Project, true_building: FastModel) -> None:
+def test_flexibility_under_a_time_of_use_tariff(project: Project, true_building: BuildingModel) -> None:
     scenario = scenario_catalogue(days=1, horizon=12)["time_of_use"]
     table = value_of_flexibility(project.model, scenario, plant=true_building)
     assert table.loc["price aware", "total_cost"] <= table.loc["price agnostic", "total_cost"] + 1e-6

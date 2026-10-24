@@ -1,7 +1,7 @@
 """Tutorial 2 - Monitoring data and calibration.
 
 A real building is not the Trano model: the constructions, the air change rate or the furniture differ. mpctrano
-calibrates groups of parameters of the FastModel (the conductances and capacities of the envelope, the heat capacity
+calibrates groups of parameters of the BuildingModel (the conductances and capacities of the envelope, the heat capacity
 of the air, the infiltration) on monitoring data: the zone air temperatures, the controls applied and, when read,
 the energy meters. Here the "real" building is a copy of the Trano model with the groups at random values, so that
 the calibrated values can be compared with the truth.

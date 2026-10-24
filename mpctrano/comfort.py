@@ -18,7 +18,7 @@ from mpctrano.units import KELVIN
 
 
 class ZonedModel(Protocol):
-    """A building model with named zones (:class:`mpctrano.FastModel`)."""
+    """A building model with named zones (:class:`mpctrano.BuildingModel`)."""
 
     @property
     def zone_names(self) -> list[str]: ...

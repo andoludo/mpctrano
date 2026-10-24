@@ -4,7 +4,7 @@ the calibration, cached in ``tutorials/cache/calibration/``.
 The building is the single-zone heat pump house with three parameters declared in its YAML
 (``tests/models/single_zone_calibration.yaml``): the conductivity of the cavity wall insulation, its thickness and
 the infiltration rate. The *true* building is the same YAML with other values of these parameters, operated by its
-own controllers (the closed-loop FastModel); its monitoring data (noisy air temperature, electricity meter) is what
+own controllers (the closed-loop BuildingModel); its monitoring data (noisy air temperature, electricity meter) is what
 the calibration sees.
 """
 
@@ -21,7 +21,7 @@ from mpctrano import (
     CalibrationSettings,
     CalibrationSpec,
     Calibrator,
-    FastModel,
+    BuildingModel,
     YamlGroup,
     generate_closed_loop_data,
     spin_up,
@@ -57,13 +57,13 @@ def spec() -> CalibrationSpec:
 
 
 @cache
-def model() -> FastModel:
+def model() -> BuildingModel:
     """The closed-loop model with the assumed values of the YAML: the model to calibrate."""
     return spec().model(CLOSED_LOOP_LIBRARY)
 
 
 @cache
-def truth() -> FastModel:
+def truth() -> BuildingModel:
     """The true building: the YAML at :data:`TRUTH`, run by its own controllers."""
     return spec().model(CLOSED_LOOP_LIBRARY, TRUTH)
 
@@ -113,7 +113,7 @@ def split(data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 @cache
-def known_infiltration_model() -> FastModel:
+def known_infiltration_model() -> BuildingModel:
     """The model with the infiltration rate measured (a blower-door test): only the envelope is left to calibrate."""
     return spec().model(CLOSED_LOOP_LIBRARY, {INFILTRATION: TRUTH[INFILTRATION]})
 
@@ -136,7 +136,7 @@ def known_infiltration_groups(force: bool = False) -> tuple[YamlGroup, ...]:
 
 def calibrate(
     force: bool = False, verbose: bool = False, known_infiltration: bool = False
-) -> tuple[FastModel, CalibrationResult]:
+) -> tuple[BuildingModel, CalibrationResult]:
     """The calibration of the model on the recorded data (the result cached as JSON; the calibrated model is
     rebuilt from it): the three declared parameters, or the conductivity alone on the model with the infiltration
     measured (``known_infiltration``)."""

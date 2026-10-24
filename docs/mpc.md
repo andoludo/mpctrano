@@ -11,7 +11,7 @@ min   Σ_k (π_k b_k − π^in_k (b_k − e_k) + π^fuel_k f_k)    energy cost [
     + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600       comfort violations [K·h]
     + w_lim · Σ_k s_lim,k · dt / 3.6e6                      electricity above a demand response power limit
     + w_move · Σ_k |v_k − v_{k−1}|² + w_effort · Σ_k |v_k|²   moves and effort of the controls (scaled to [0, 1])
-s.t.  the FastModel collocated on Radau IIA points in each step
+s.t.  the BuildingModel collocated on Radau IIA points in each step
       the bounds of each control (0-1 for the valves, the heat pump speed and the boiler load)
       T_lower,k − s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k        soft comfort band on every zone
       P_k ≤ limit_k + s_lim,k,     P_k ≤ P_peak                electric power bought from the grid
@@ -98,13 +98,13 @@ comparable):
 ## Cooling with ideal emitters
 
 The ideal emitter of a zone (`radiator` of variant `ideal` in the YAML) is a heat flow input of the
-`FastSmoothBuildingsMPC` model, which Trano bounds to heating (`min=0`). `FastModel.with_control_bounds` gives it
+`FastSmoothBuildingsMPC` model, which Trano bounds to heating (`min=0`). `BuildingModel.with_control_bounds` gives it
 a negative lower bound: the same equations cool the zone. The controller costs its heat at
 `MPCSettings.heat_cop` and its cooling at `MPCSettings.cooling_eer` (electricity per unit of heat or
 cooling); the closed loop meters it alike.
 
 ```python
-office = FastModel.from_yaml("office.yaml").with_control_bounds({"emitter_001_Q.Q_flow": (-12000.0, None)})
+office = BuildingModel.from_yaml("office.yaml").with_control_bounds({"emitter_001_Q.Q_flow": (-12000.0, None)})
 settings = MPCSettings(horizon=24, heat_cop=3.5, cooling_eer=3.0)
 ```
 

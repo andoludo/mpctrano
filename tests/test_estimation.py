@@ -1,4 +1,4 @@
-"""Moving horizon estimation of Trano's single-zone hydronic house as a FastModel."""
+"""Moving horizon estimation of Trano's single-zone hydronic house as a BuildingModel."""
 
 import numpy as np
 import pandas as pd
@@ -7,7 +7,7 @@ import pytest
 from mpctrano import (
     ComfortSchedule,
     ComfortSpec,
-    FastModel,
+    BuildingModel,
     ModelPredictiveController,
     MPCSettings,
     WeatherForecaster,
@@ -22,23 +22,23 @@ STEP = 3600.0
 
 
 @pytest.fixture(scope="module")
-def house() -> FastModel:
-    return FastModel.from_yaml(HOUSE)
+def house() -> BuildingModel:
+    return BuildingModel.from_yaml(HOUSE)
 
 
-def temperatures(model: FastModel) -> list[int]:
+def temperatures(model: BuildingModel) -> list[int]:
     return [i for i, state in enumerate(model.model.description.states) if state.unit == "K"]
 
 
-def colder_building(model: FastModel, offset: float = 2.0) -> np.ndarray:
+def colder_building(model: BuildingModel, offset: float = 2.0) -> np.ndarray:
     """A true initial state far from the default one: every temperature ``offset`` K lower."""
     state = model.initial_state.copy()
     state[temperatures(model)] -= offset
     return state
 
 
-def test_the_temperature_states_have_their_unit(house: FastModel) -> None:
-    """rumoca drops the unit of array states (wall layers, radiator water); FastModel restores it."""
+def test_the_temperature_states_have_their_unit(house: BuildingModel) -> None:
+    """rumoca drops the unit of array states (wall layers, radiator water); BuildingModel restores it."""
     names = [house.state_names[i] for i in temperatures(house)]
     assert "externalwall_0.T[3]" in names
     assert "radiator_003.T[1]" in names
@@ -46,7 +46,7 @@ def test_the_temperature_states_have_their_unit(house: FastModel) -> None:
     assert len(names) == house.n_states - len(house.meters)
 
 
-def test_estimation_recovers_the_unmeasured_states(house: FastModel) -> None:
+def test_estimation_recovers_the_unmeasured_states(house: BuildingModel) -> None:
     plant = ModelPlant(house, STEP, START, x0=colder_building(house), seed=1)
     estimator = MovingHorizonEstimator(house, STEP, START, settings=EstimatorSettings(window=6))
     open_loop = ModelPlant(house, STEP, START, measurement_std=0.0)  # the prior, never corrected
@@ -68,7 +68,7 @@ def test_estimation_recovers_the_unmeasured_states(house: FastModel) -> None:
     assert error.mean() < 0.2 * prediction_error.mean()
 
 
-def test_the_cycle_starts_with_a_correction(house: FastModel) -> None:
+def test_the_cycle_starts_with_a_correction(house: BuildingModel) -> None:
     estimator = MovingHorizonEstimator(house, STEP, START)
     with pytest.raises(RuntimeError, match="correct"):
         estimator.predict(np.zeros(3), np.zeros(house.n_disturbances))
@@ -78,7 +78,7 @@ def test_the_cycle_starts_with_a_correction(house: FastModel) -> None:
 
 
 @pytest.mark.slow
-def test_closed_loop_with_estimation_keeps_comfort(house: FastModel) -> None:
+def test_closed_loop_with_estimation_keeps_comfort(house: BuildingModel) -> None:
     comfort = ComfortSpec(
         default=ComfortSchedule(
             occupied_lower=22.0,

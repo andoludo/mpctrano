@@ -15,7 +15,7 @@ import pandas as pd
 from mpctrano.calibration import DEFAULT_GROUPS, Calibrator, CalibrationSettings, ParameterGroup
 from mpctrano.data import MonitoringData
 from mpctrano.forecast import Forecaster, WeatherForecaster, forecast_index, seconds_of_year
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.units import KELVIN
 
 
@@ -45,12 +45,12 @@ def random_factors(
 
 
 def perturb(
-    model: FastModel,
+    model: BuildingModel,
     relative_std: float = 0.3,
     seed: int | None = 0,
     groups: tuple[ParameterGroup, ...] = DEFAULT_GROUPS,
     factors: dict[str, float] | None = None,
-) -> FastModel:
+) -> BuildingModel:
     """A copy of the model with the parameter groups at random values (:func:`random_factors`) or at ``factors``."""
     calibrator = Calibrator(model, CalibrationSettings(groups=groups))
     values = factors or random_factors(relative_std, seed, groups)
@@ -58,7 +58,7 @@ def perturb(
 
 
 def generate_closed_loop_data(
-    building: FastModel,
+    building: BuildingModel,
     start: pd.Timestamp | str,
     days: float,
     time_step: float = 3600.0,
@@ -68,14 +68,14 @@ def generate_closed_loop_data(
     seed: int | None = 0,
     x0: np.ndarray | None = None,
 ) -> SyntheticData:
-    """Monitoring data recorded on ``building`` operated by its own controllers (a closed-loop ``FastModel``).
+    """Monitoring data recorded on ``building`` operated by its own controllers (a closed-loop ``BuildingModel``).
 
     The data has the disturbances, the measured air temperatures (``measurement_std`` [K]) and the readings of the
     meters (``meter_std`` [kWh] on each reading); no control, as a monitoring system that logs the sensors and the
     meters but not the valves records.
     """
     if building.control_names:
-        raise ValueError(f"{building.name} has controls {building.control_names}: give the closed-loop FastModel.")
+        raise ValueError(f"{building.name} has controls {building.control_names}: give the closed-loop BuildingModel.")
     generator = np.random.default_rng(seed)
     steps = round(days * 86400 / time_step)
     index = forecast_index(pd.Timestamp(start), steps + 1, time_step)
@@ -99,7 +99,7 @@ def generate_closed_loop_data(
 
 
 def generate_monitoring_data(
-    building: FastModel,
+    building: BuildingModel,
     start: pd.Timestamp | str,
     days: float,
     time_step: float = 3600.0,
@@ -111,7 +111,7 @@ def generate_monitoring_data(
     seed: int | None = 0,
     x0: np.ndarray | None = None,
 ) -> SyntheticData:
-    """Monitoring data recorded on ``building`` (a FastModel playing the real building) and its true states.
+    """Monitoring data recorded on ``building`` (a BuildingModel playing the real building) and its true states.
 
     A thermostat with a random set point [degC] held for random durations drives the building: every control gets
     the same command, proportional (``gain`` per K) to the gap between the set point and the mean air temperature,

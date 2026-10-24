@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11, <4.0"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -2520,7 +2520,6 @@ wheels = [
 name = "mpctrano"
 version = "0.8.0"
 source = { editable = "." }
-default-groups = "all"
 dependencies = [
     { name = "casadi" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -2575,7 +2574,7 @@ requires-dist = [
     { name = "pyarrow", marker = "extra == 'notebook'", specifier = ">=15" },
     { name = "pydantic", specifier = ">=2.7,<3" },
     { name = "rumoca", git = "https://github.com/CogniPilot/rumoca?subdirectory=crates%2Frumoca-bind-python&rev=c74cddff6d7669fc2c3603d43529ab62e0964072" },
-    { name = "trano", specifier = ">=0.63.0,<1" },
+    { name = "trano", specifier = ">=0.65.0,<1" },
     { name = "trano-optimization", specifier = ">=0.3.0,<1" },
     { name = "typer", specifier = ">=0.12,<1" },
 ]
@@ -4739,7 +4738,7 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.63.0"
+version = "0.65.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4759,9 +4758,9 @@ dependencies = [
     { name = "typer" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f4/27/1523581f625cb7780a28c43b0d33d2930a5489ff305af12083b35ba4a109/trano-0.63.0.tar.gz", hash = "sha256:0acc25519fedef79b7323d3f04104d8360c99f574bbea62ea9a4805e9e4289d1", size = 256719, upload-time = "2026-10-23T21:26:36.742Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/94/e5147ff698d2e243dfa4d592693eb0db85d48e85a9a924b1de6d7fb262bb/trano-0.65.0.tar.gz", hash = "sha256:793c302318a9a06e91899ba09ea0f1a57379baa5bf1f055c94229685d35f7c01", size = 256484, upload-time = "2026-10-24T05:45:04.687Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/c6/2a195d85445188083ec0c87aa9922e45bc1b88c93a0a0619ed622cfe2a85/trano-0.63.0-py3-none-any.whl", hash = "sha256:641a7d4f3b6ea2b0b6e1bffb39cfc7c3bdecda03fb70efc8da4edfeeaaa9e194", size = 313193, upload-time = "2026-10-23T21:26:35.47Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/7c/5ef9848b9ddeda71af625132bfc9eae79606eecf8be20873a4276e474dc8/trano-0.65.0-py3-none-any.whl", hash = "sha256:b2cf29d01ec06275d72a677efa95725934049b41af9bdb0dfb1424cb9e99da0d", size = 312956, upload-time = "2026-10-24T05:45:03.195Z" },
 ]
 
 [[package]]
@@ -4782,7 +4781,7 @@ wheels = [
 
 [[package]]
 name = "trano-simulate"
-version = "0.2.0"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4795,9 +4794,9 @@ dependencies = [
     { name = "python-docx" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/c5/56ce930c7d7f98036aec119349f4127dd311edd209c1851a5a1465ab68fb/trano_simulate-0.2.0.tar.gz", hash = "sha256:b9f006acdecba3f457051841a6a4a1eca965260d128c6f5703cf47ff0e9a9af9", size = 24356, upload-time = "2026-10-19T04:56:05.68Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/18/afc90cf0806de1a8e88ab0d6e3321a346f28a30c084301df03ffbe1cd1da/trano_simulate-0.3.0.tar.gz", hash = "sha256:296f153458aa96db12306f9c3b266f75a30bf3564e99c3a62355ba9ad54c055b", size = 24969, upload-time = "2026-10-24T05:05:35.319Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b2/97/b32247a5af3f7e0d468421ac1a0f0a8f0ecf7c14ff16c35f51a8307f7243/trano_simulate-0.2.0-py3-none-any.whl", hash = "sha256:3b4d6b1088937897da6d207345e2b71d26bf58a6b7e3b146c98275568ed011cd", size = 27850, upload-time = "2026-10-19T04:56:04.524Z" },
+    { url = "https://files.pythonhosted.org/packages/26/83/0ee96ac2b71d0eee5147214e7123d9a0a6c3a2b7c5f45ab7c9f0ff227db0/trano_simulate-0.3.0-py3-none-any.whl", hash = "sha256:9c52048dd5555a5ca5274fa3f2f55a781589e2e0ad0428c4e1f4b6bd55943e83", size = 28492, upload-time = "2026-10-24T05:05:34.261Z" },
 ]
 
 [[package]]

@@ -1,7 +1,7 @@
 """Electrical storage next to the building: a stationary battery and an electric vehicle at the meter.
 
-Trano's FastModel describes the building and its thermal systems; the electrical storages are optimised here, in
-the balance of the meter: a :class:`Battery` charges from the grid or the PV and discharges into the house, an
+Trano's FastSmoothBuildings describes the building and its thermal systems; the electrical storages are optimised here,
+in the balance of the meter: a :class:`Battery` charges from the grid or the PV and discharges into the house, an
 :class:`ElectricVehicle` charges while it is plugged in and must hold its departure energy when it leaves. Both
 are linear state-of-charge models (a charging and a discharging efficiency, power bounds), exact in the closed
 loop: the controller carries their state (:attr:`~mpctrano.mpc.ModelPredictiveController.storage_state`).

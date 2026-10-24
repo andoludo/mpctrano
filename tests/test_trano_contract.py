@@ -1,8 +1,8 @@
 """What mpctrano needs from the models Trano generates, checked against the installed Trano.
 
-Trano does not install rumoca, so its own tests of the CasADi export of FastModel are skipped: these tests take
+Trano does not install rumoca, so its own tests of the CasADi export of BuildingModel are skipped: these tests take
 their place. They fail when a change of Trano breaks the translation by rumoca, the names mpctrano relies on, or
-the flat model (``include_container=False``) that :meth:`FastModel.from_network` generates.
+the flat model (``include_container=False``) that :meth:`BuildingModel.from_network` generates.
 
 The buildings are those of ``tests/models``: the two single-zone houses of mpctrano and two test buildings copied
 from Trano (BESTEST 600FF, free floating, and a six-zone house with an air-to-water heat pump).
@@ -21,14 +21,14 @@ from trano.data_models.conversion import convert_network
 from trano.elements.library.library import Library
 from trano_optimization import CasadiModel, Roles
 
-from mpctrano import FastModel, ModelError, WeatherForecaster
+from mpctrano import BuildingModel, ModelError, WeatherForecaster
 from mpctrano.calibration import DEFAULT_GROUPS
-from mpctrano.model import CLOSED_LOOP_LIBRARY, FAST_MODEL_LIBRARY, without_containers
+from mpctrano.model import CLOSED_LOOP_LIBRARY, MPC_LIBRARY, used_libraries, without_containers
 from tests.conftest import BOILER_HOUSE, HEAT_PUMP_HOUSE, MODELS
 
 BESTEST_600FF = MODELS / "case_600FF.yaml"
 SIX_ZONE_HOUSE = MODELS / "house_infiltration_air_water_heat_pump.yaml"
-LIBRARIES = [FAST_MODEL_LIBRARY, CLOSED_LOOP_LIBRARY]
+LIBRARIES = [MPC_LIBRARY, CLOSED_LOOP_LIBRARY]
 WEATHER = {
     f"weather_inputs.{name}" for name in ("TDryBul", "TBlaSky", "winSpe", "winDir", "HDirNor", "HDifHor", "HGloHor")
 }
@@ -50,7 +50,8 @@ def source(path: Path, library: str, include_container: bool) -> str:
 
 @cache
 def translated(path: Path, library: str, include_container: bool) -> CasadiModel:
-    return CasadiModel.from_modelica(source(path, library, include_container), f"{path.stem}.building_mpc")
+    text = source(path, library, include_container)
+    return CasadiModel.from_modelica(text, f"{path.stem}.building_mpc", roots=used_libraries(text))
 
 
 @pytest.mark.parametrize("library", LIBRARIES)
@@ -106,7 +107,7 @@ def test_the_containers_leave_the_model_unchanged(path: Path, library: str) -> N
         np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-12)
 
 
-def test_the_heat_pump_house_has_the_names_mpctrano_relies_on(heat_pump: FastModel) -> None:
+def test_the_heat_pump_house_has_the_names_mpctrano_relies_on(heat_pump: BuildingModel) -> None:
     """The names of the monitoring data, the comfort specifications, the calibration and the tutorials."""
     assert heat_pump.zone_names == ["space_001"]
     assert heat_pump.comfort_states == ["space_001.TAir"]
@@ -120,7 +121,7 @@ def test_the_heat_pump_house_has_the_names_mpctrano_relies_on(heat_pump: FastMod
             assert [name for name in heat_pump.parameter_names if group.matches(name)], group.name
 
 
-def test_the_forecaster_gives_the_gains_of_the_occupancy(heat_pump: FastModel) -> None:
+def test_the_forecaster_gives_the_gains_of_the_occupancy(heat_pump: BuildingModel) -> None:
     forecaster = WeatherForecaster.from_model(heat_pump)
     frame = forecaster.realisation(pd.Timestamp("2023-01-16"), 24, 3600.0)
     assert frame.columns.tolist() == heat_pump.disturbance_names
@@ -128,12 +129,12 @@ def test_the_forecaster_gives_the_gains_of_the_occupancy(heat_pump: FastModel) -
 
 
 def test_a_containerised_model_read_from_a_file_has_the_names_of_the_flat_model(
-    heat_pump: FastModel, tmp_path: Path
+    heat_pump: BuildingModel, tmp_path: Path
 ) -> None:
     """``trano create-model`` writes the containerised model: read from its file, it is the model of the YAML."""
     path = tmp_path / f"{HEAT_PUMP_HOUSE.stem}.mo"
-    path.write_text(source(HEAT_PUMP_HOUSE, FAST_MODEL_LIBRARY, include_container=True))
-    from_file = FastModel.from_file(path)
+    path.write_text(source(HEAT_PUMP_HOUSE, MPC_LIBRARY, include_container=True))
+    from_file = BuildingModel.from_file(path)
     assert sorted(from_file.state_names) == sorted(heat_pump.state_names)
     assert from_file.roles.comfort == heat_pump.roles.comfort
     assert from_file.meters == heat_pump.meters
@@ -141,7 +142,7 @@ def test_a_containerised_model_read_from_a_file_has_the_names_of_the_flat_model(
 
 
 def test_names_that_collide_without_their_containers_are_an_error() -> None:
-    model = translated(BESTEST_600FF, FAST_MODEL_LIBRARY, include_container=False)
+    model = translated(BESTEST_600FF, MPC_LIBRARY, include_container=False)
     state = model.description.states[0]
     states = (
         state.model_copy(update={"name": f"envelope1.{state.name}"}),
@@ -154,22 +155,22 @@ def test_names_that_collide_without_their_containers_are_an_error() -> None:
 
 
 def test_a_flat_model_is_left_as_it_is() -> None:
-    model = translated(BOILER_HOUSE, FAST_MODEL_LIBRARY, include_container=False)
+    model = translated(BOILER_HOUSE, MPC_LIBRARY, include_container=False)
     assert without_containers(model) is model
 
 
 @pytest.mark.parametrize("library", LIBRARIES)
-def test_a_network_that_uses_the_library_beside_it_gives_the_same_model(library: str) -> None:
-    """``trano create-model --no-embed-libraries``: the package holds no copy of FastSmoothBuildings, rumoca reads it
-    from the folder the network names, and the model is the one of the package that embeds it."""
-    library_ = Library.from_configuration(library).model_copy(update={"embed_libraries": False})
+def test_a_network_that_embeds_the_library_gives_the_same_model(library: str) -> None:
+    """``trano create-model --embed-libraries``: the package holds a copy of FastSmoothBuildings, and the model is the
+    one of the package that uses the installed library (trano's default, as Buildings and IDEAS)."""
+    library_ = Library.from_configuration(library).model_copy(update={"embed_libraries": True})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         network = convert_network(HEAT_PUMP_HOUSE.stem, HEAT_PUMP_HOUSE, library=library_)
-    assert network.libraries
+    assert not network.libraries
 
-    beside = FastModel.from_network(network).model.description
-    embedded = without_containers(translated(HEAT_PUMP_HOUSE, library, include_container=False)).description
+    embedded = BuildingModel.from_network(network).model.description
+    beside = without_containers(translated(HEAT_PUMP_HOUSE, library, include_container=False)).description
 
     assert beside.state_names == embedded.state_names
     assert beside.input_names == embedded.input_names

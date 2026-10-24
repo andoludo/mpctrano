@@ -15,7 +15,7 @@ from mpctrano.units import KELVIN
 
 if TYPE_CHECKING:
     from mpctrano.flexibility import ActivationResult, FlexibilityEnvelope
-    from mpctrano.model import FastModel
+    from mpctrano.model import BuildingModel
     from mpctrano.mpc import MPCSolution
     from mpctrano.simulation import ClosedLoopResult
 
@@ -115,7 +115,7 @@ def plot_fit(fit: pd.DataFrame, title: str = "Calibration fit") -> Any:  # noqa:
     return _style(figure, title, 450 if not meters else 700)
 
 
-def plot_plan(solution: MPCSolution, model: FastModel, title: str | None = None) -> Any:  # noqa: ANN401
+def plot_plan(solution: MPCSolution, model: BuildingModel, title: str | None = None) -> Any:  # noqa: ANN401
     """An open-loop MPC plan: zone temperatures in the comfort band, controls, electricity bought, prices."""
     go, make_subplots = _plotly()
     figure = _four_rows(make_subplots)

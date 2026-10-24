@@ -1,6 +1,6 @@
 """Tutorial 3 - State estimation.
 
-The MPC needs the full state of the FastModel (the air, the layers of the walls, the radiator and buffer water) but
+The MPC needs the full state of the BuildingModel (the air, the layers of the walls, the radiator and buffer water) but
 only the zone air temperatures are measured. The moving horizon estimator finds the trajectory of the model closest
 to the measurements over a sliding window of the past; here it starts 3 K off on every temperature and converges on
 the states of the synthetic building, where an uncorrected simulation keeps the initial error for days.

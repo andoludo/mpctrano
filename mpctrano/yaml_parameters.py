@@ -34,7 +34,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mpctrano.calibration import YamlGroup
-from mpctrano.model import FAST_MODEL_LIBRARY, FastModel
+from mpctrano.model import MPC_LIBRARY, BuildingModel
 
 INCLUDE_DEFAULT = "!include_default"
 PERTURBATION = 0.2
@@ -189,16 +189,16 @@ class CalibrationSpec:
         return path
 
     def model(
-        self, library: str = FAST_MODEL_LIBRARY, values: Mapping[str, float] | None = None, name: str | None = None
-    ) -> FastModel:
+        self, library: str = MPC_LIBRARY, values: Mapping[str, float] | None = None, name: str | None = None
+    ) -> BuildingModel:
         """The model of the building with the parameters at ``values`` (nominal otherwise)."""
         base_dir = self.base_dir if self.base_dir is not None else self.source.parent
-        return FastModel.from_yaml(self.write(values), name=name, library=library, base_dir=base_dir)
+        return BuildingModel.from_yaml(self.write(values), name=name, library=library, base_dir=base_dir)
 
     def sensitivities(
         self,
-        library: str = FAST_MODEL_LIBRARY,
-        model: FastModel | None = None,
+        library: str = MPC_LIBRARY,
+        model: BuildingModel | None = None,
         values: Mapping[str, float] | None = None,
     ) -> dict[str, dict[str, float]]:
         """For each parameter, the exponent of every parameter of the model it moves (``p = p0 * (field /
@@ -235,8 +235,8 @@ class CalibrationSpec:
 
     def groups(
         self,
-        model: FastModel | None = None,
-        library: str = FAST_MODEL_LIBRARY,
+        model: BuildingModel | None = None,
+        library: str = MPC_LIBRARY,
         prior_std: float = 0.5,
         values: Mapping[str, float] | None = None,
         only: Sequence[str] | None = None,

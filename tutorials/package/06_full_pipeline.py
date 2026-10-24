@@ -13,7 +13,7 @@ The command line offers the same steps:
 from mpctrano import MonitoringData, Project, compare, scenario_catalogue
 from tutorials._common import MODEL, OUTPUT, data_days, days, horizon
 
-project = Project.from_yaml(MODEL)  # 1. Trano generates the FastModelMPC model
+project = Project.from_yaml(MODEL)  # 1. Trano generates the FastSmoothBuildingsMPC model
 building = project.true_building(seed=2)  # the "real" building (a perturbed copy)
 
 monitoring = project.synthetic_data(days=data_days(7), building=building).data  # 2. monitoring data

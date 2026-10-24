@@ -16,7 +16,7 @@ translates into an explicit ODE ``xdot = f(t, x, u, p)``:
   generated without the containers of Trano (``envelope1``, ``production1``, ...), whose prefixes are stripped from
   the names of a containerised model read from a file (:func:`without_containers`).
 
-The ``FastModel`` library of Trano gives the closed loop of the same building, with the controllers of its YAML:
+The ``BuildingModel`` library of Trano gives the closed loop of the same building, with the controllers of its YAML:
 the rule-based reference of the MPC (:func:`mpctrano.simulation.run_rule_based`).
 
 The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to ``c74cddf``), which ``uv sync`` builds.
@@ -44,13 +44,14 @@ if TYPE_CHECKING:
     import pandas as pd
     from trano.topology import Network
 
-FAST_MODEL_LIBRARY = "FastSmoothBuildingsMPC"
+MPC_LIBRARY = "FastSmoothBuildingsMPC"
 CLOSED_LOOP_LIBRARY = "FastSmoothBuildings"
 COMFORT_SUFFIX = ".TAir"
 _TEMPERATURE_STATE = re.compile(r"\.T(\[\d+\])?$")
 _WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
 RUMOCA_COMMIT = "c74cddf"
-"""Last rumoca commit known to export the connected FastModel models (later ones stop at residual equations)."""
+"""Last rumoca commit known to export the connected FastSmoothBuildings models (later ones stop at residual
+equations)."""
 
 _PROBE = """package Probe
   connector Port Real T; flow Real Q_flow; end Port;
@@ -71,8 +72,22 @@ def _package_name(stem: str) -> str:
     return sanitized if sanitized[:1].isalpha() else f"m_{sanitized}"
 
 
+def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
+    """The folders of the libraries the Modelica ``source`` uses without holding them and ``roots`` lacks: the
+    FastSmoothBuildings package installed with trano, as trano generates its models (``uses(FastSmoothBuildings(...))``
+    without a copy of the library)."""
+    import fastsmoothbuildings
+
+    named = {Path(root).resolve() for root in roots}
+    held = re.search(r"^\s*package FastSmoothBuildings\b", source, re.MULTILINE)
+    if held or not re.search(r"\buses\s*\((?:[^;]*?\b)?FastSmoothBuildings\s*\(", source):
+        return []
+    library = Path(fastsmoothbuildings.LIBRARY)
+    return [] if library.resolve() in named else [library]
+
+
 @cache
-def rumoca_exports_fast_models() -> bool:
+def rumoca_exports_building_models() -> bool:
     """Whether the installed rumoca exports models made of connected components to CasADi."""
     import rumoca
 
@@ -84,7 +99,7 @@ def rumoca_exports_fast_models() -> bool:
 
 
 @dataclass
-class FastModel:
+class BuildingModel:
     """A Trano ``FastSmoothBuildingsMPC`` building model as CasADi functions.
 
     Build it from the YAML description (:meth:`from_yaml`, which calls Trano), from a Trano network
@@ -113,20 +128,20 @@ class FastModel:
         base_dir: Path | None = None,
         occupancy: Mapping[str, OccupancySchedule] | None = None,
         roots: Sequence[Path | str] = (),
-    ) -> FastModel:
+    ) -> BuildingModel:
         """Translate ``model`` (``<package>.building_mpc``) of the Modelica ``source`` with rumoca.
 
         The weather file is read from the weather reader of the runnable model; the ``occupancy`` schedules (by
         occupancy model name) cannot be read from the source and default to no gains. ``roots`` are the folders of
-        the libraries the source uses without embedding them (``trano create-model --no-embed-libraries``:
-        ``fastsmoothbuildings.LIBRARY``).
+        the libraries the source uses without holding them; the installed FastSmoothBuildings is added when the
+        source declares it, as trano writes its packages (:func:`used_libraries`).
         """
         try:
-            casadi_model = CasadiModel.from_modelica(source, model, roots=roots)
+            casadi_model = CasadiModel.from_modelica(source, model, roots=[*roots, *used_libraries(source, roots)])
         except Exception as error:
-            if not rumoca_exports_fast_models():
+            if not rumoca_exports_building_models():
                 raise ModelError(
-                    f"The installed rumoca cannot export FastModel models to CasADi; install rumoca main at "
+                    f"The installed rumoca cannot export FastSmoothBuildings models to CasADi; install rumoca main at "
                     f"{RUMOCA_COMMIT} (uv sync installs it)."
                 ) from error
             raise
@@ -151,11 +166,12 @@ class FastModel:
         roles: Roles | None = None,
         occupancy: Mapping[str, OccupancySchedule] | None = None,
         roots: Sequence[Path | str] = (),
-    ) -> FastModel:
+    ) -> BuildingModel:
         """Load ``house.mo``; ``model`` defaults to ``<stem>.building_mpc``.
 
         The package can be containerised (``trano create-model`` writes it so): the container prefixes are stripped.
-        A package written with ``--no-embed-libraries`` needs the folder of FastSmoothBuildings in ``roots``.
+        A package that uses FastSmoothBuildings without holding it (trano's default) reads it from the installed
+        package; ``roots`` are the folders of the other libraries it uses.
         """
         path = Path(modelica)
         return cls.from_source(
@@ -168,7 +184,7 @@ class FastModel:
         )
 
     @classmethod
-    def from_network(cls, network: Network, roles: Roles | None = None, base_dir: Path | None = None) -> FastModel:
+    def from_network(cls, network: Network, roles: Roles | None = None, base_dir: Path | None = None) -> BuildingModel:
         """The model of a network generated with the ``FastSmoothBuildingsMPC`` library, with its occupancy schedules.
 
         The model is generated without containers, so its variables have the names of the elements of the network.
@@ -188,9 +204,9 @@ class FastModel:
         path: Path | str,
         name: str | None = None,
         roles: Roles | None = None,
-        library: str = FAST_MODEL_LIBRARY,
+        library: str = MPC_LIBRARY,
         base_dir: Path | None = None,
-    ) -> FastModel:
+    ) -> BuildingModel:
         """Generate the model with Trano from a building description.
 
         ``library`` is ``FastSmoothBuildingsMPC`` (the controls of the systems are inputs, for MPC) or
@@ -201,8 +217,8 @@ class FastModel:
         from trano.data_models.conversion import convert_network
         from trano.elements.library.library import Library
 
-        if library not in (FAST_MODEL_LIBRARY, CLOSED_LOOP_LIBRARY):
-            raise ValueError(f"library must be {FAST_MODEL_LIBRARY!r} or {CLOSED_LOOP_LIBRARY!r}, not {library!r}.")
+        if library not in (MPC_LIBRARY, CLOSED_LOOP_LIBRARY):
+            raise ValueError(f"library must be {MPC_LIBRARY!r} or {CLOSED_LOOP_LIBRARY!r}, not {library!r}.")
         path = Path(path).resolve()
         library_ = Library.from_configuration(library)
         network = convert_network(name or _package_name(path.stem), path, library=library_)
@@ -324,7 +340,7 @@ class FastModel:
         patterns = list(patterns)
         return [name for name in self.parameter_names if any(fnmatch.fnmatch(name, pattern) for pattern in patterns)]
 
-    def with_control_bounds(self, bounds: Mapping[str, tuple[float | None, float | None]]) -> FastModel:
+    def with_control_bounds(self, bounds: Mapping[str, tuple[float | None, float | None]]) -> BuildingModel:
         """Copy of the model with other bounds on some controls (``name: (lower, upper)``, ``None`` keeps a bound).
 
         The bounds of the model come from the Modelica ``min`` and ``max`` of its inputs; an ideal emitter
@@ -348,11 +364,11 @@ class FastModel:
         )
         return replace(self, model=model)
 
-    def smooth_controllers(self, width_factor: float = 5.0, switching_time: float = 600.0) -> FastModel:
+    def smooth_controllers(self, width_factor: float = 5.0, switching_time: float = 600.0) -> BuildingModel:
         """Copy of a closed-loop model with gentler controllers: every smooth transition of its controllers widened
         by ``width_factor`` and every hysteresis switching over ``switching_time`` [s].
 
-        The controllers of Trano's FastModel reproduce switching controllers (thermostats, demand and buffer
+        The controllers of Trano's FastSmoothBuildings reproduce switching controllers (thermostats, demand and buffer
         hysteresis, limiters) as steep smooth transitions and fast bistable states (trano >= 0.59: the parameters
         ``dU``, ``dY``, ``dMax``, ``dT``, ``dtSet`` and ``tau`` of ``FastSmoothBuildings.Controls``). CVODES follows
         them, but every switch that moves by a sample makes the calibration objective jumpy: the gentler copy is the
@@ -370,7 +386,7 @@ class FastModel:
                 values[name] = switching_time
         return self.with_parameters(values) if values else self
 
-    def with_parameters(self, values: Mapping[str, float] | Sequence[float] | np.ndarray) -> FastModel:
+    def with_parameters(self, values: Mapping[str, float] | Sequence[float] | np.ndarray) -> BuildingModel:
         """Copy of the model with other parameter values (a mapping of names or a full vector)."""
         if isinstance(values, Mapping):
             unknown = set(values) - set(self.parameter_names)

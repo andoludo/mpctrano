@@ -3,7 +3,7 @@
 The notebooks only wire these functions to ``ipywidgets`` controls:
 
 * :class:`TutorialBuilding` generates the ``FastSmoothBuildingsMPC`` model of a YAML with Trano, the closed-loop
-``FastModel``
+``BuildingModel``
   of the same YAML (the rule-based reference), a perturbed copy playing the real building and the states reached
   after a few days of the controllers of the YAML (:func:`~mpctrano.simulation.spin_up`);
 * :class:`ResultCache` stores closed-loop results as parquet frames keyed by the parameters of the run, so that a
@@ -32,7 +32,7 @@ import pandas as pd
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.forecast import WeatherForecaster
 from mpctrano.metrics import ControlMetrics
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
@@ -79,7 +79,7 @@ class TutorialBuilding:
     seed: int = 0
     measurement_std: float = 0.1
     control_bounds: dict[str, tuple[float | None, float | None]] | None = None
-    """Other bounds on some controls (:meth:`~mpctrano.model.FastModel.with_control_bounds`): a negative lower
+    """Other bounds on some controls (:meth:`~mpctrano.model.BuildingModel.with_control_bounds`): a negative lower
     bound on an ideal emitter lets the controller cool with it."""
     _states: dict[tuple[bool, bool, pd.Timestamp], np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
@@ -88,7 +88,7 @@ class TutorialBuilding:
         return Project.from_yaml(self.yaml)
 
     @cached_property
-    def model(self) -> FastModel:
+    def model(self) -> BuildingModel:
         """The ``FastSmoothBuildingsMPC`` model of the YAML (with :attr:`control_bounds`): the model of the
         controller."""
         model = self.project.model
@@ -99,17 +99,18 @@ class TutorialBuilding:
         return self.project.forecaster
 
     @cached_property
-    def closed_loop(self) -> FastModel:
-        """The closed-loop ``FastModel`` of the YAML: the building with its controllers (the rule-based reference)."""
+    def closed_loop(self) -> BuildingModel:
+        """The closed-loop ``BuildingModel`` of the YAML: the building with its controllers (the rule-based
+        reference)."""
         return self.project.closed_loop()
 
     @cached_property
-    def truth(self) -> FastModel:
+    def truth(self) -> BuildingModel:
         """The true building: the model with perturbed parameter groups."""
         return perturb(self.model, relative_std=self.relative_std, seed=self.seed)
 
     @cached_property
-    def true_closed_loop(self) -> FastModel:
+    def true_closed_loop(self) -> BuildingModel:
         """The closed-loop model of the true building."""
         return self.project.true_closed_loop(relative_std=self.relative_std, seed=self.seed)
 
@@ -352,7 +353,7 @@ def plan_explorer(
     building: TutorialBuilding,
     prices: Mapping[str, Tariff],
     start: pd.Timestamp | str | None = None,
-    on_solution: Callable[[MPCSolution, FastModel], Any] | None = None,
+    on_solution: Callable[[MPCSolution, BuildingModel], Any] | None = None,
 ) -> Any:  # noqa: ANN401
     """Widgets re-solving one open-loop MPC plan live: prices, comfort band, horizon, comfort weight.
 

@@ -1,29 +1,29 @@
 # Workflow
 
 mpctrano sits downstream of Trano. The building description (`house.yaml`) stays the single source
-of truth: Trano renders it into Modelica models with its `FastModel` library, mpctrano calibrates
+of truth: Trano renders it into Modelica models with its `FastSmoothBuildings` library, mpctrano calibrates
 them on monitoring data, estimates their state and controls the systems of the building.
 
 ```
  house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
-            ──trano (FastModel)─────▶ the same building with the controllers of the YAML (rule-based reference)
+            ──trano (FastSmoothBuildings)─────▶ the same building with the controllers of the YAML (rule-based reference)
 ```
 
 ## 1. Model
 
 ```python
-from mpctrano import FastModel
+from mpctrano import BuildingModel
 
-model = FastModel.from_yaml("house.yaml")                       # calls Trano (FastSmoothBuildingsMPC library)
-model = FastModel.from_file("house.mo")                         # or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`
-closed_loop = FastModel.from_yaml("house.yaml", library="FastSmoothBuildings")  # the controllers of the YAML
+model = BuildingModel.from_yaml("house.yaml")                       # calls Trano (FastSmoothBuildingsMPC library)
+model = BuildingModel.from_file("house.mo")                         # or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`
+closed_loop = BuildingModel.from_yaml("house.yaml", library="FastSmoothBuildings")  # the controllers of the YAML
 ```
 
 The `FastSmoothBuildingsMPC` model is close to the Buildings library: layered walls and floors, windows with
 the angular optics of their glazing, convection and long-wave exchanges in the room, infiltration,
 the hydronic circuits of the YAML (radiators, valves, mixing valves, pumps, boilers, air-to-water
 heat pumps and their buffer), ventilation units with heat recovery and PV arrays. The controls of
-the systems are inputs. `FastModel` reads everything from the Modelica model:
+the systems are inputs. `BuildingModel` reads everything from the Modelica model:
 
 * `control_names` - the inputs with a `min` and a `max`: valve positions, mixing valves, boiler part
   load ratio or heat pump speed (between 0 and 1), the heat of ideal emitters [W];
@@ -39,12 +39,12 @@ the systems are inputs. `FastModel` reads everything from the Modelica model:
 
 The model is nonlinear and stiff (water nodes): the optimisation problems collocate it on Radau
 points (`trano_optimization`), which keeps them stable whatever the step. rumoca does not report the
-unit of array states (wall layers, radiator water): `FastModel` restores the kelvin on them so that
+unit of array states (wall layers, radiator water): `BuildingModel` restores the kelvin on them so that
 the collocation scales and bounds them as temperatures.
 
 The variables are named after the elements of the YAML (`space_001.TAir`, `boiler_001.EEle`,
-`externalwall_0.G[1]`): `FastModel.from_yaml` generates the model without the containers Trano groups
-the elements in since 0.57 (`network.model(include_container=False)`), and `FastModel.from_file`
+`externalwall_0.G[1]`): `BuildingModel.from_yaml` generates the model without the containers Trano groups
+the elements in since 0.57 (`network.model(include_container=False)`), and `BuildingModel.from_file`
 strips their prefixes (`envelope1.`, `production1.`, ...) from a containerised model, as written by
 `trano create-model`. Both give the same model; `tests/test_trano_contract.py` checks it, with the
 translation of Trano's models by rumoca, against the installed Trano.
@@ -70,14 +70,14 @@ See [monitoring data](data.md), [calibration](calibration.md), [estimation](esti
 ## 4. Closed loop, scenarios and the rule-based reference
 
 `run_closed_loop(controller, estimator, plant, forecaster, steps)` runs the cycle
-*measure → correct → forecast → solve → apply → predict* against a `ModelPlant` (a FastModel playing
+*measure → correct → forecast → solve → apply → predict* against a `ModelPlant` (a BuildingModel playing
 the real building, with sensor noise) and returns a `ClosedLoopResult` with the trajectories and the
 `ControlMetrics`, read from the meters of the plant: fuel and electricity bought and sold, cost at
 the price of each carrier, capacity charge, comfort violation in K·h, peak electric power, share of
 the energy bought below the median price.
 
 `run_rule_based(closed_loop, forecaster, start, steps, dt, comfort, tariff)` simulates the closed-loop
-`FastModel` of the same YAML, with the controllers it describes (thermostats on the valves, the boiler
+`BuildingModel` of the same YAML, with the controllers it describes (thermostats on the valves, the boiler
 or heat pump holding its supply temperature, the mixing valve its set point), costed and assessed the
 same way: the reference the MPC is compared with.
 

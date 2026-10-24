@@ -1,11 +1,12 @@
-"""FastModel: the ``FastSmoothBuildingsMPC`` models of Trano's single-zone houses, with a gas boiler or a heat pump."""
+"""BuildingModel: the ``FastSmoothBuildingsMPC`` models of Trano's single-zone houses, with a gas boiler or a heat
+pump."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from mpctrano import (
-    FastModel,
+    BuildingModel,
     WeatherForecaster,
 )
 from mpctrano.model import ModelError
@@ -17,15 +18,15 @@ FUEL_PRICE = 0.08
 
 
 @pytest.fixture(scope="module")
-def house() -> FastModel:
-    return FastModel.from_yaml(HOUSE)
+def house() -> BuildingModel:
+    return BuildingModel.from_yaml(HOUSE)
 
 
-def disturbances(model: FastModel, start: str, steps: int) -> pd.DataFrame:
+def disturbances(model: BuildingModel, start: str, steps: int) -> pd.DataFrame:
     return WeatherForecaster.from_model(model).realisation(pd.Timestamp(start), steps, 3600.0)
 
 
-def test_roles_are_read_from_the_modelica_model(house: FastModel) -> None:
+def test_roles_are_read_from_the_modelica_model(house: BuildingModel) -> None:
     assert sorted(house.control_names) == sorted(CONTROLS)
     assert len(house.disturbance_names) == 9
     assert house.zone_names == ["space_001"]
@@ -37,7 +38,7 @@ def test_roles_are_read_from_the_modelica_model(house: FastModel) -> None:
     assert house.heat_controls == []
 
 
-def test_parameters_can_be_replaced(house: FastModel) -> None:
+def test_parameters_can_be_replaced(house: BuildingModel) -> None:
     name = house.parameter_names[0]
     changed = house.with_parameters({name: 2 * house.parameter(name) + 1})
     assert changed.parameter(name) == 2 * house.parameter(name) + 1
@@ -48,7 +49,7 @@ def test_parameters_can_be_replaced(house: FastModel) -> None:
         house.with_parameters([1.0])
 
 
-def test_simulation_heats_the_zone_and_meters_the_fuel(house: FastModel) -> None:
+def test_simulation_heats_the_zone_and_meters_the_fuel(house: BuildingModel) -> None:
     steps = 12
     forecast = disturbances(house, START, steps).to_numpy().T
     zone, meter = house.comfort_indices[0], house.state_names.index("boiler_001.EFue")
@@ -60,15 +61,15 @@ def test_simulation_heats_the_zone_and_meters_the_fuel(house: FastModel) -> None
     assert abs(cold[meter, -1] - cold[meter, 0]) < 1e-3
 
 
-def test_heat_pump_house_meters_its_electricity(heat_pump: FastModel) -> None:
+def test_heat_pump_house_meters_its_electricity(heat_pump: BuildingModel) -> None:
     assert sorted(heat_pump.control_names) == ["boiler_001_y.y", "three_way_valve_001_y.y", "valve_001_y.y"]
     assert heat_pump.meters == {"boiler_001.EEle": "electricity"}
     assert heat_pump.weather_path == WEATHER.resolve()
     assert heat_pump.occupancy["occupancy_1"].start_hour == 7.0
 
 
-def test_the_temperature_states_have_their_unit(heat_pump: FastModel) -> None:
-    """rumoca drops the unit of array states (wall layers, radiator water); FastModel restores it."""
+def test_the_temperature_states_have_their_unit(heat_pump: BuildingModel) -> None:
+    """rumoca drops the unit of array states (wall layers, radiator water); BuildingModel restores it."""
     units = {state.name: state.unit for state in heat_pump.model.description.states}
     assert units["externalwall_0.T[3]"] == "K"
     assert units["radiator_001.T[1]"] == "K"
@@ -106,5 +107,18 @@ def test_smooth_controllers_widens_the_transitions_and_slows_the_switches() -> N
     assert np.all(np.isfinite(state))
 
 
-def test_smooth_controllers_leaves_a_model_without_controllers_alone(house: FastModel) -> None:
+def test_smooth_controllers_leaves_a_model_without_controllers_alone(house: BuildingModel) -> None:
     assert house.smooth_controllers() is house
+
+
+def test_a_source_that_uses_fast_smooth_buildings_without_holding_it_reads_it_from_its_package() -> None:
+    import fastsmoothbuildings
+
+    from mpctrano.model import used_libraries
+
+    library = fastsmoothbuildings.LIBRARY
+    uses = 'package house\n  annotation (uses(FastSmoothBuildings(version="1")));\nend house;'
+    assert used_libraries(uses) == [library]
+    assert used_libraries(uses, roots=[library]) == []
+    assert used_libraries("package house\n  package FastSmoothBuildings\n  end FastSmoothBuildings;\nend house;") == []
+    assert used_libraries('package house\n  annotation (uses(Buildings(version="12.0.0")));\nend house;') == []

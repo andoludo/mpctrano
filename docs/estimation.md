@@ -1,6 +1,6 @@
 # State estimation
 
-The MPC needs the full state of the FastModel (the air, the layers of the walls, the panes, the
+The MPC needs the full state of the BuildingModel (the air, the layers of the walls, the panes, the
 radiator and buffer water) at the start of each horizon, but only the zone air temperatures are
 measured. Every estimator follows the cycle *correct with the measurement of the step → use the
 state → predict with the inputs applied during the step* (`StateEstimator`).

@@ -49,6 +49,6 @@ jobs:
           name: ${{ env.RUMOCA_TAG }}
           body: |
             rumoca main at `${{ env.RUMOCA_REV }}` (0.10.3), built as a manylinux wheel for the mpctrano tutorials.
-            The CasADi export of Trano's FastModel models needs this commit; the releases of rumoca on PyPI
+            The CasADi export of Trano's FastSmoothBuildings models needs this commit; the releases of rumoca on PyPI
             (up to 0.10.2) stop at the connection equations of such models.
           files: dist/*.whl

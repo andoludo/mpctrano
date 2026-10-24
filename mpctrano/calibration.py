@@ -1,6 +1,6 @@
-"""Calibration of a FastModel on monitoring data.
+"""Calibration of a BuildingModel on monitoring data.
 
-A FastModel has hundreds of parameters, most of them settled by the YAML (areas, orientations, optical fits) or
+A BuildingModel has hundreds of parameters, most of them settled by the YAML (areas, orientations, optical fits) or
 not identifiable from a few zone temperatures. :class:`Calibrator` adjusts **groups** of parameters instead,
 each by one decision variable:
 
@@ -30,7 +30,7 @@ settled when rumoca translates the model and cannot be calibrated.
 A third kind of group comes from the YAML of the building (:mod:`mpctrano.yaml_parameters`): a :class:`YamlGroup`
 is one field of the YAML declared as a calibration parameter (a conductivity, a thickness, an infiltration rate),
 adjusted within its bounds; it moves the parameters of the model that depend on it, each with the exponent measured
-by regenerating the model (``p = p0 * (field / field0) ** e``). The model of a closed-loop ``FastModel`` (the
+by regenerating the model (``p = p0 * (field / field0) ** e``). The model of a closed-loop ``BuildingModel`` (the
 controllers of the YAML inside, no control input) calibrates alike: the data then holds the disturbances, the
 measured air temperatures and the meters only.
 """
@@ -54,7 +54,7 @@ from trano_optimization.collocation import SOLVED, collocation_matrices, default
 from mpctrano.data import MonitoringData, time_step_of
 from mpctrano.forecast import Forecaster, WeatherForecaster, seconds_of_year
 from mpctrano.metrics import FitMetrics
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.units import KELVIN, STATE_BOUNDS
 
 Symbol = TypeVar("Symbol", ca.SX, ca.MX)
@@ -117,7 +117,7 @@ DEFAULT_GROUPS = (
         name="boiler_efficiency", patterns=(r"(^|\.)boiler_\d+\.eta_nominal$",), lower=0.7, upper=1.1, prior_std=0.2
     ),
 )
-"""Groups of the envelope, the air and the boilers of a FastModel: identifiable from the air temperatures and the
+"""Groups of the envelope, the air and the boilers of a BuildingModel: identifiable from the air temperatures and the
 fuel meter (the efficiency of the boilers needs the meter; without it, its prior keeps it at the Trano value)."""
 
 OPTIONAL_GROUPS = (
@@ -154,7 +154,7 @@ class CalibrationSettings(BaseModel):
     )
     verbose: bool = False
 
-    def method_for(self, model: FastModel) -> Literal["collocation", "shooting"]:
+    def method_for(self, model: BuildingModel) -> Literal["collocation", "shooting"]:
         if self.method == "auto":
             return "shooting" if not model.control_names else "collocation"
         return self.method
@@ -209,7 +209,7 @@ class _Data:
         return float(seconds_of_year(self.index[:1])[0])
 
 
-def prepare(model: FastModel, data: MonitoringData | pd.DataFrame, forecaster: Forecaster | None = None) -> _Data:
+def prepare(model: BuildingModel, data: MonitoringData | pd.DataFrame, forecaster: Forecaster | None = None) -> _Data:
     """Read monitoring data named after the model: the controls applied (held from each row to the next), the
     measured air temperatures ``<zone>.TAir`` [K] and, optionally, the readings of the meters [kWh] and the
     disturbances (from the weather file of the model when missing)."""
@@ -238,7 +238,7 @@ def prepare(model: FastModel, data: MonitoringData | pd.DataFrame, forecaster: F
     )
 
 
-def _initial_state(model: FastModel, data: _Data, spin_up_days: float = 2.0) -> np.ndarray:
+def _initial_state(model: BuildingModel, data: _Data, spin_up_days: float = 2.0) -> np.ndarray:
     """The initial state of the model with the measured air temperatures.
 
     The other states of a model with controls are its temperatures at the mean of the measurements (the water and
@@ -359,7 +359,7 @@ class _Gradient(ca.Callback):
 
 
 def evaluate(
-    model: FastModel, data: MonitoringData | pd.DataFrame | _Data, x0: np.ndarray | None = None
+    model: BuildingModel, data: MonitoringData | pd.DataFrame | _Data, x0: np.ndarray | None = None
 ) -> tuple[FitMetrics, np.ndarray]:
     """Fit of an open-loop simulation (CVODES) to the measured air temperatures, from ``x0`` (by default the air
     temperatures measured at the start and every other temperature at their mean); returns the states too."""
@@ -373,9 +373,9 @@ def evaluate(
 
 
 class Calibrator:
-    """Least-squares calibration of the parameter groups of a FastModel (see the module documentation)."""
+    """Least-squares calibration of the parameter groups of a BuildingModel (see the module documentation)."""
 
-    def __init__(self, model: FastModel, settings: CalibrationSettings | None = None) -> None:
+    def __init__(self, model: BuildingModel, settings: CalibrationSettings | None = None) -> None:
         self.model = model
         self.settings = settings or CalibrationSettings()
         used = self._used_parameters()
@@ -422,7 +422,7 @@ class Calibrator:
                 vector[members] = values[group.name]
         return vector
 
-    def calibrated(self, values: dict[str, float]) -> FastModel:
+    def calibrated(self, values: dict[str, float]) -> BuildingModel:
         return self.model.with_parameters(self.parameter_vector(values))
 
     def _prior_value(self, group: AnyGroup) -> float:
@@ -506,7 +506,7 @@ class Calibrator:
 
     def fit(
         self, data: MonitoringData | pd.DataFrame, validation: MonitoringData | pd.DataFrame | None = None
-    ) -> tuple[FastModel, CalibrationResult]:
+    ) -> tuple[BuildingModel, CalibrationResult]:
         """Calibrate on ``data`` (see :func:`prepare`) by the method of the settings; ``validation`` follows it in
         time and is only simulated."""
         arrays = prepare(self.model, data)
@@ -516,7 +516,7 @@ class Calibrator:
 
     def _fit_shooting(
         self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None
-    ) -> tuple[FastModel, CalibrationResult]:
+    ) -> tuple[BuildingModel, CalibrationResult]:
         """The groups as the only decision variables, the model simulated with CVODES inside the objective.
 
         A closed-loop model starts ``spin_up_days`` before the data from the start values of the Modelica model and
@@ -604,7 +604,7 @@ class Calibrator:
 
     def _fit_collocation(
         self, arrays: _Data, validation: MonitoringData | pd.DataFrame | None
-    ) -> tuple[FastModel, CalibrationResult]:
+    ) -> tuple[BuildingModel, CalibrationResult]:
         """The states on the collocation points as decision variables, the dynamics as constraints."""
         model, settings = self.model, self.settings
         n_x, steps, degree, dt = model.n_states, arrays.controls.shape[1], settings.degree, arrays.time_step
@@ -667,7 +667,7 @@ class Calibrator:
         status: str,
         stats: dict[str, object],
         solve_time: float,
-    ) -> tuple[FastModel, CalibrationResult]:
+    ) -> tuple[BuildingModel, CalibrationResult]:
         """The calibrated model and its fit, before and after, on the training and the validation data (simulated
         from where the training ends). ``trajectory`` is the collocated solution: the fit after is that of a
         simulation from its first state, or of the trajectory itself when the integrator cannot follow that state."""
@@ -708,7 +708,9 @@ class Calibrator:
         )
 
 
-def simulate_fit(model: FastModel, data: MonitoringData | pd.DataFrame, x0: np.ndarray | None = None) -> pd.DataFrame:
+def simulate_fit(
+    model: BuildingModel, data: MonitoringData | pd.DataFrame, x0: np.ndarray | None = None
+) -> pd.DataFrame:
     """Measured and simulated zone air temperatures (``<zone>.TAir_measured`` and ``<zone>.TAir_simulated`` [K]) and
     meters (``<meter>_measured``, ``<meter>_simulated`` [kWh] since the start) of an open-loop simulation from ``x0``
     (see :func:`evaluate`), on the index of the data."""

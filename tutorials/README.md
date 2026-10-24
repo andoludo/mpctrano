@@ -7,7 +7,7 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 
 | Notebook | Topic | Status |
 |---|---|---|
-| `00_setup_check` | toolchain check, first FastModel from a YAML, one MPC plan | ready |
+| `00_setup_check` | toolchain check, first BuildingModel from a YAML, one MPC plan | ready |
 | `01_house_heat_pump` | a house with a heat pump: pipeline, plan widget, closed loop vs the controllers of the YAML, estimation | ready |
 | `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready |
 | `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, how IPOPT solves it, before and after | ready |
@@ -16,7 +16,7 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 | `06_your_building` | edit the YAML in a cell, regenerate the models, plan, MPC vs the controllers of the YAML | ready |
 | `07_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
 | `08_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
-| `09_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastModel (see `PLAN.md`) |
+| `09_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastSmoothBuildings (see `PLAN.md`) |
 
 The executed notebooks are published on the documentation site
 ([andoludo.github.io/mpctrano](https://andoludo.github.io/mpctrano/), section *Tutorials*): the figures are
@@ -30,10 +30,10 @@ The script tutorials of the package itself (calibration, state estimation, tarif
 ## Prerequisites
 
 * Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/).
-* Everything else is a Python package: `trano` (YAML to Modelica, its `FastModel` library),
+* Everything else is a Python package: `trano` (YAML to Modelica, its `FastSmoothBuildings` library),
   `rumoca` (Modelica to CasADi), `casadi` (bundles IPOPT), the notebook stack. No Modelica
   compiler, no FMU and no Docker is needed for the notebooks.
-* A Rust toolchain ([rustup](https://rustup.rs)): the FastModel models need rumoca 0.10.3 (rumoca
+* A Rust toolchain ([rustup](https://rustup.rs)): the FastSmoothBuildings models need rumoca 0.10.3 (rumoca
   main up to commit `c74cddf`), not on PyPI yet, which `uv sync` builds from source (about
   10 minutes the first time, cached afterwards).
 
@@ -100,7 +100,7 @@ ENTSOE_TOKEN=... uv run python tutorials/scripts/fetch_prices.py entsoe 2025-10-
 * **Linux and macOS**: `uv sync` is enough once Rust is installed. If the rumoca build fails,
   check `cargo --version`; rumoca pins its toolchain in `rust-toolchain.toml` and rustup installs
   it on the first build. The setup-check notebook stops with a message when the installed rumoca
-  cannot export the FastModel models.
+  cannot export the FastSmoothBuildings models.
 * **Windows**: use PowerShell or the Windows Terminal with the MSVC build tools for Rust; `make` is
   not available by default, run the commands of the `makefile` directly (`uv run pytest --nbmake
   ...`). Long paths: enable `git config core.longpaths true` before cloning.

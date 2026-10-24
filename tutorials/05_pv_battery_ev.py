@@ -13,7 +13,7 @@
 #    charges it when the night is cheap, not when it arrives.
 #
 # The storages are linear state-of-charge models in the controller (`Battery`, `ElectricVehicle`,
-# `MPCSettings.batteries` and `.vehicles`): Trano's FastModel describes the building and its thermal systems,
+# `MPCSettings.batteries` and `.vehicles`): Trano's FastSmoothBuildings describes the building and its thermal systems,
 # mpctrano the electrical assets at the meter. The closed loops come from `tutorials/cache/pv/`
 # (`uv run python tutorials/scripts/build_cache.py pv`); the plans are solved live.
 #
@@ -137,9 +137,9 @@ display(
 # %% [markdown]
 # ## Key takeaways
 #
-# * **The storages sit in one balance**: the heat pump, the buffer and the walls (through the FastModel), the battery
-#   and the vehicle (exact linear models in the controller) share the meter; the controller dispatches them together
-#   against the same price. In January the 20 m2 of PV give 5 kWh a day, and the MPC consumes all of it on site
+# * **The storages sit in one balance**: the heat pump, the buffer and the walls (through the BuildingModel), the
+#   battery and the vehicle (exact linear models in the controller) share the meter; the controller dispatches them
+#   together against the same price. In January the 20 m2 of PV give 5 kWh a day, and the MPC consumes all of it on site
 #   (self-consumption 1.00) where the controllers of the YAML export more than half (2.7 kWh sold, 0.46).
 # * **The battery earns little under day-ahead prices and more under negative ones**: 0.70 to 0.66 EUR a day with
 #   the winter spread of the day-ahead signal; 0.70 to 0.50 EUR when the midday prices go negative, because the
@@ -152,5 +152,5 @@ display(
 # ## Further reading
 #
 # * `tutorials/references.md`: Annex 67 for the storage order and the self-consumption indicators.
-# * The storages are exact linear models here; a battery and a charger as FastModel components in Trano would
+# * The storages are exact linear models here; a battery and a charger as FastSmoothBuildings components in Trano would
 #   put them in the Modelica model with their losses (see `tutorials/PLAN.md`).

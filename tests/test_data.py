@@ -1,17 +1,17 @@
-"""Monitoring data named after the variables of the FastModel."""
+"""Monitoring data named after the variables of the BuildingModel."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from mpctrano import FastModel, MonitoringData, SyntheticData, WeatherForecaster
+from mpctrano import BuildingModel, MonitoringData, SyntheticData, WeatherForecaster
 from mpctrano.data import DataError
 from mpctrano.units import KELVIN
 
 AIR = "space_001.TAir"
 
 
-def test_synthetic_data_has_the_columns_of_the_model(heat_pump: FastModel, synthetic: SyntheticData) -> None:
+def test_synthetic_data_has_the_columns_of_the_model(heat_pump: BuildingModel, synthetic: SyntheticData) -> None:
     columns = set(synthetic.data.columns)
     assert {AIR, *heat_pump.control_names, *heat_pump.meters, *heat_pump.disturbance_names} <= columns
     assert len(synthetic.data) == 3 * 24 + 1
@@ -39,7 +39,7 @@ def test_irregular_sampling_is_rejected() -> None:
         MonitoringData(pd.DataFrame({AIR: [290.0, 291.0]}))
 
 
-def test_validation_report(heat_pump: FastModel, synthetic: SyntheticData) -> None:
+def test_validation_report(heat_pump: BuildingModel, synthetic: SyntheticData) -> None:
     report = synthetic.data.validate(heat_pump)
     assert report.complete and report.usable
     assert report.measured_zones == [AIR]
@@ -52,7 +52,7 @@ def test_validation_report(heat_pump: FastModel, synthetic: SyntheticData) -> No
 
 
 def test_fill_disturbances_from_the_forecaster(
-    heat_pump: FastModel, synthetic: SyntheticData, forecaster: WeatherForecaster
+    heat_pump: BuildingModel, synthetic: SyntheticData, forecaster: WeatherForecaster
 ) -> None:
     partial = MonitoringData(synthetic.data.frame[[AIR, *heat_pump.control_names]])
     complete = partial.fill_disturbances(heat_pump, forecaster)

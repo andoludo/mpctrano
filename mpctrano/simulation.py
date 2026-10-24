@@ -1,9 +1,9 @@
-"""Closed loop of a FastModel: estimator -> MPC -> plant, and the rule-based reference.
+"""Closed loop of a BuildingModel: estimator -> MPC -> plant, and the rule-based reference.
 
-The plant is a FastModel simulated with CVODES, keeping its own clock (the model depends on the time of the year).
+The plant is a BuildingModel simulated with CVODES, keeping its own clock (the model depends on the time of the year).
 The controls are those of the systems (valves, compressor speed, boiler load), not the heat delivered: the energy and
 its cost are read from the meters of the plant (fuel, electricity, production) at the price of each carrier. The
-same accounting applies to :func:`run_rule_based`, which simulates the closed-loop ``FastModel`` of the same YAML,
+same accounting applies to :func:`run_rule_based`, which simulates the closed-loop ``BuildingModel`` of the same YAML,
 with the controllers it describes, as the reference the MPC is compared with.
 """
 
@@ -20,7 +20,7 @@ from mpctrano.comfort import ComfortSpec
 from mpctrano.estimation import StateEstimator
 from mpctrano.forecast import Forecaster, seconds_of_year
 from mpctrano.metrics import ControlMetrics, Prices
-from mpctrano.model import FastModel
+from mpctrano.model import BuildingModel
 from mpctrano.mpc import WATT_HOUR_TO_JOULE, ModelPredictiveController
 from mpctrano.tariff import CapacityTariff, Tariff
 
@@ -43,9 +43,9 @@ class Plant(Protocol):
 
 @dataclass
 class ModelPlant:
-    """A FastModel playing the real building, with sensor noise on the zone air temperatures."""
+    """A BuildingModel playing the real building, with sensor noise on the zone air temperatures."""
 
-    model: FastModel
+    model: BuildingModel
     time_step: float
     start: pd.Timestamp | str
     x0: np.ndarray | None = None
@@ -86,7 +86,7 @@ class ModelPlant:
 
 
 def metered_energy(
-    model: FastModel,
+    model: BuildingModel,
     before: np.ndarray,
     after: np.ndarray,
     control: np.ndarray,
@@ -166,7 +166,7 @@ class ClosedLoopResult:
 
 
 def _record(
-    model: FastModel,
+    model: BuildingModel,
     now: pd.Timestamp,
     control: np.ndarray,
     disturbance: np.ndarray,
@@ -188,7 +188,7 @@ def _record(
 
 def _result(
     name: str,
-    model: FastModel,
+    model: BuildingModel,
     rows: list[dict[str, object]],
     comfort: ComfortSpec,
     tariff: Tariff,
@@ -301,7 +301,7 @@ def run_closed_loop(
 
 
 def run_rule_based(
-    model: FastModel,
+    model: BuildingModel,
     forecaster: Forecaster,
     start: pd.Timestamp | str,
     steps: int,
@@ -313,10 +313,10 @@ def run_rule_based(
     x0: np.ndarray | None = None,
     name: str = "rule_based",
 ) -> ClosedLoopResult:
-    """The closed-loop ``FastModel`` (``FastModel.from_yaml(path, library="FastSmoothBuildings")``), run with the
-    controllers of its YAML over the same weather, and costed and assessed like an MPC run."""
+    """The closed-loop ``BuildingModel`` (``BuildingModel.from_yaml(path, library="FastSmoothBuildings")``), run with
+    the controllers of its YAML over the same weather, and costed and assessed like an MPC run."""
     if model.control_names:
-        raise ValueError(f"{model.name} has controls {model.control_names}: give the closed-loop FastModel.")
+        raise ValueError(f"{model.name} has controls {model.control_names}: give the closed-loop BuildingModel.")
     plant = ModelPlant(model, time_step, start, x0=x0, measurement_std=0.0)
     rows = []
     started = time.perf_counter()
@@ -333,8 +333,8 @@ def run_rule_based(
 
 
 def spin_up(
-    model: FastModel,
-    closed_loop: FastModel,
+    model: BuildingModel,
+    closed_loop: BuildingModel,
     start: pd.Timestamp | str,
     days: float = 3.0,
     forecaster: Forecaster | None = None,
@@ -342,9 +342,9 @@ def spin_up(
 ) -> np.ndarray:
     """A state of ``model`` at ``start`` after ``days`` of operation by the controllers of the YAML.
 
-    A FastModel starts with every temperature at its start value (the walls at the set point, the buffer at its
+    A BuildingModel starts with every temperature at its start value (the walls at the set point, the buffer at its
     supply temperature): a closed loop from there spends its first day emptying heat the building would not hold.
-    The closed-loop ``FastModel`` of the same YAML runs ``days`` before ``start``; the states the two models share
+    The closed-loop ``BuildingModel`` of the same YAML runs ``days`` before ``start``; the states the two models share
     (by name) are copied into the initial state of ``model``.
     """
     from mpctrano.forecast import WeatherForecaster

@@ -1,6 +1,6 @@
-"""Disturbance forecasts of a :class:`~mpctrano.model.FastModel`.
+"""Disturbance forecasts of a :class:`~mpctrano.model.BuildingModel`.
 
-A FastModel computes the solar position and the irradiance on its surfaces itself, so its disturbances are the raw
+A BuildingModel computes the solar position and the irradiance on its surfaces itself, so its disturbances are the raw
 channels of the weather file, as the Buildings weather reader gives them to the runnable model, and the internal
 gains per floor area of each occupancy model:
 
@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 from mpctrano.units import KELVIN
 
 if TYPE_CHECKING:
-    from mpctrano.model import FastModel
+    from mpctrano.model import BuildingModel
 
 DEFAULT_YEAR = 2023
 """Year used to give the typical meteorological year a calendar (2023 starts on a Sunday, like TMY3 files)."""
@@ -203,7 +203,7 @@ class OccupancySchedule(BaseModel):
         return np.where(self.occupied(index), self.gain_per_area, self.unoccupied_gain_per_area)
 
     def radiant_and_convective(self, index: pd.DatetimeIndex) -> tuple[np.ndarray, np.ndarray]:
-        """Radiant and convective internal gains per floor area [W/m2] (the ``QRad`` and ``QCon`` of FastModel)."""
+        """Radiant and convective internal gains per floor area [W/m2] (the ``QRad`` and ``QCon`` of BuildingModel)."""
         gains = self.gains_per_area(index)
         return gains * self.radiant_fraction, gains * (1 - self.radiant_fraction)
 
@@ -281,9 +281,9 @@ def noise_kinds(names: list[str]) -> dict[str, str]:
 
 @dataclass
 class WeatherForecaster:
-    """Disturbances of a FastModel from a weather file and the occupancy schedules of the model."""
+    """Disturbances of a BuildingModel from a weather file and the occupancy schedules of the model."""
 
-    model: FastModel
+    model: BuildingModel
     weather: WeatherFile
     occupancy: dict[str, OccupancySchedule] = field(default_factory=dict)
     noise: ForecastNoise | None = None
@@ -298,7 +298,7 @@ class WeatherForecaster:
     @classmethod
     def from_model(
         cls,
-        model: FastModel,
+        model: BuildingModel,
         weather: WeatherFile | Path | str | None = None,
         occupancy: OccupancySchedule | dict[str, OccupancySchedule] | None = None,
         noise: ForecastNoise | None = None,

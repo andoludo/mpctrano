@@ -1,7 +1,7 @@
 """Monitoring data of a building: the measurements used for calibration and state estimation.
 
 The data is a regularly sampled, time-indexed :class:`pandas.DataFrame` whose columns are named after the variables of
-the :class:`~mpctrano.model.FastModel` of the building:
+the :class:`~mpctrano.model.BuildingModel` of the building:
 
 * the measured zone air temperatures ``<zone>.TAir`` [K] (at least one zone);
 * the controls applied, held from each sample to the next (``valve_001_y.y``, ``boiler_001_y.y``, ...);
@@ -26,7 +26,7 @@ from mpctrano.units import KELVIN
 
 if TYPE_CHECKING:
     from mpctrano.forecast import Forecaster
-    from mpctrano.model import FastModel
+    from mpctrano.model import BuildingModel
 
 TEMPERATURE_SUFFIXES = (".TAir", ".TDryBul", ".TBlaSky")
 
@@ -182,7 +182,9 @@ class MonitoringData:
             frame[name] = np.asarray(values, dtype=float)
         return MonitoringData(frame)
 
-    def fill_disturbances(self, model: FastModel, forecaster: Forecaster, overwrite: bool = False) -> MonitoringData:
+    def fill_disturbances(
+        self, model: BuildingModel, forecaster: Forecaster, overwrite: bool = False
+    ) -> MonitoringData:
         """Add the disturbance columns the data lacks with the realisation of a forecaster."""
         missing = [name for name in model.disturbance_names if overwrite or name not in self.frame.columns]
         if not missing:
@@ -191,7 +193,7 @@ class MonitoringData:
         return self.with_columns(realisation[missing])
 
     # ----------------------------------------------------------------- model binding
-    def validate(self, model: FastModel) -> DataReport:
+    def validate(self, model: BuildingModel) -> DataReport:
         columns = set(self.columns)
         return DataReport(
             samples=len(self.frame),

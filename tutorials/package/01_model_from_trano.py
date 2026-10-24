@@ -1,19 +1,19 @@
 """Tutorial 1 - From a Trano building description to a CasADi model.
 
-Trano turns a YAML description of a building into Modelica models. With its ``FastModelMPC`` library it generates
-a model close to the Buildings library (layered walls, windows, the hydronic circuit with its heat pump, buffer,
-mixing valve and radiator) whose controls are the inputs of the systems. rumoca translates it into a CasADi ODE
+Trano turns a YAML description of a building into Modelica models. With its ``FastSmoothBuildingsMPC`` library it
+generates a model close to the Buildings library (layered walls, windows, the hydronic circuit with its heat pump,
+buffer, mixing valve and radiator) whose controls are the inputs of the systems. rumoca translates it into a CasADi ODE
 ``xdot = f(t, x, u, p)``; mpctrano reads the roles of the variables from the Modelica model itself.
 """
 
 import numpy as np
 import pandas as pd
 
-from mpctrano import FastModel, WeatherForecaster
+from mpctrano import BuildingModel, WeatherForecaster
 from tutorials._common import MODEL, OUTPUT
 
-# --- 1. Generate the model with Trano (equivalent to `trano create-model house.yaml FastModelMPC`).
-model = FastModel.from_yaml(MODEL)
+# --- 1. Generate the model with Trano (equivalent to `trano create-model house.yaml FastSmoothBuildingsMPC`).
+model = BuildingModel.from_yaml(MODEL)
 print(f"Model {model.name}: {model.n_zones} zone(s), {model.n_states} states, {model.n_parameters} parameters")
 print("controls    :", model.control_names)  # valve, heat pump speed, mixing valve: between 0 and 1
 print("disturbances:", model.disturbance_names)  # the weather channels and the internal gains per floor area

@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from mpctrano import FastModel, MovingHorizonEstimator, run_closed_loop, run_scenario
+from mpctrano import BuildingModel, MovingHorizonEstimator, run_closed_loop, run_scenario
 from mpctrano.mpc import ModelPredictiveController
 from mpctrano.notebook import ResultCache, TutorialBuilding, comfort_spec, days, price_options, scenario
 from mpctrano.scenarios import Scenario
@@ -60,7 +60,7 @@ def study_scenario(variant: str, price: str, band: str, estimator: str, days_: f
 class HeldEstimator:
     """No estimation: the measured air temperatures, the other states held at the spun-up state of the model."""
 
-    def __init__(self, model: FastModel, x0: np.ndarray) -> None:
+    def __init__(self, model: BuildingModel, x0: np.ndarray) -> None:
         self.model = model
         self._x = np.asarray(x0, dtype=float).copy()
 

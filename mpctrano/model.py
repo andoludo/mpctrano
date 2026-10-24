@@ -72,6 +72,20 @@ def _package_name(stem: str) -> str:
     return sanitized if sanitized[:1].isalpha() else f"m_{sanitized}"
 
 
+def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
+    """The folders of the libraries the Modelica ``source`` uses without holding them and ``roots`` lacks: the
+    FastSmoothBuildings package installed with trano, as trano generates its models (``uses(FastSmoothBuildings(...))``
+    without a copy of the library)."""
+    import fastsmoothbuildings
+
+    named = {Path(root).resolve() for root in roots}
+    held = re.search(r"^\s*package FastSmoothBuildings\b", source, re.MULTILINE)
+    if held or not re.search(r"\buses\s*\((?:[^;]*?\b)?FastSmoothBuildings\s*\(", source):
+        return []
+    library = Path(fastsmoothbuildings.LIBRARY)
+    return [] if library.resolve() in named else [library]
+
+
 @cache
 def rumoca_exports_building_models() -> bool:
     """Whether the installed rumoca exports models made of connected components to CasADi."""
@@ -119,11 +133,11 @@ class BuildingModel:
 
         The weather file is read from the weather reader of the runnable model; the ``occupancy`` schedules (by
         occupancy model name) cannot be read from the source and default to no gains. ``roots`` are the folders of
-        the libraries the source uses without embedding them (``trano create-model --no-embed-libraries``:
-        ``fastsmoothbuildings.LIBRARY``).
+        the libraries the source uses without holding them; the installed FastSmoothBuildings is added when the
+        source declares it, as trano writes its packages (:func:`used_libraries`).
         """
         try:
-            casadi_model = CasadiModel.from_modelica(source, model, roots=roots)
+            casadi_model = CasadiModel.from_modelica(source, model, roots=[*roots, *used_libraries(source, roots)])
         except Exception as error:
             if not rumoca_exports_building_models():
                 raise ModelError(

@@ -109,3 +109,16 @@ def test_smooth_controllers_widens_the_transitions_and_slows_the_switches() -> N
 
 def test_smooth_controllers_leaves_a_model_without_controllers_alone(house: BuildingModel) -> None:
     assert house.smooth_controllers() is house
+
+
+def test_a_source_that_uses_fast_smooth_buildings_without_holding_it_reads_it_from_its_package() -> None:
+    import fastsmoothbuildings
+
+    from mpctrano.model import used_libraries
+
+    library = fastsmoothbuildings.LIBRARY
+    uses = 'package house\n  annotation (uses(FastSmoothBuildings(version="1")));\nend house;'
+    assert used_libraries(uses) == [library]
+    assert used_libraries(uses, roots=[library]) == []
+    assert used_libraries("package house\n  package FastSmoothBuildings\n  end FastSmoothBuildings;\nend house;") == []
+    assert used_libraries('package house\n  annotation (uses(Buildings(version="12.0.0")));\nend house;') == []

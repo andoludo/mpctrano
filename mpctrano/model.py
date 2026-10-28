@@ -50,17 +50,44 @@ COMFORT_SUFFIX = ".TAir"
 _TEMPERATURE_STATE = re.compile(r"\.T(\[\d+\])?$")
 _WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
 RUMOCA_COMMIT = "c74cddf"
-"""Last rumoca commit known to export the connected FastSmoothBuildings models (later ones stop at residual
-equations)."""
+"""Last rumoca commit known to export the connected FastSmoothBuildings models. Later ones, the 0.10.3 release on PyPI
+among them, keep "residual projection stages" for some function bodies of the library and their ``casadi-ode`` target
+refuses them."""
+RUMOCA_REQUIREMENT = (
+    "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072"
+    "#subdirectory=crates/rumoca-bind-python"
+)
+"""The pip requirement of that commit (``uv sync`` installs it from ``[tool.uv.sources]``)."""
 
+# Connected components, and the two function shapes of FastSmoothBuildings that the rumoca releases after RUMOCA_COMMIT
+# cannot export: a variable set by an if-expression and used by the next statement (Utilities.smoothLimit), and a
+# scalar reassigned in a loop and passed to an inlined smooth function (Envelope.Functions.overhangSunlitFraction).
 _PROBE = """package Probe
   connector Port Real T; flow Real Q_flow; end Port;
   model Node parameter Real C = 1; Real T(start = 290, fixed = true); Port port;
   equation port.T = T; C*der(T) = port.Q_flow; end Node;
   model Link Port a; Port b; equation a.Q_flow = a.T - b.T; a.Q_flow + b.Q_flow = 0; end Link;
-  model M Node n1; Node n2; Link l; equation connect(n1.port, l.a); connect(l.b, n2.port); end M;
+  function step input Real x; input Real y1; input Real y2; input Real d; output Real y;
+  algorithm y := if x > d then y1 else if x < -d then y2 else (x/d)*((x/d)^2 - 3)*(y2 - y1)/4 + (y1 + y2)/2; end step;
+  function limit input Real x; input Real l; input Real u; input Real d; output Real y; protected Real z;
+  algorithm z := if x > l + d then x else l; y := if z < u - d then z else u; end limit;
+  function shade input Real x; output Real y; protected Real cut; Real area[2];
+  algorithm for i in 1:2 loop cut := step(i*0.2 - x, x, i*0.2, 0.01) - 0.3; area[i] := step(cut, cut, 0, 0.01)*cut;
+    end for; y := area[1] + area[2]; end shade;
+  model M Node n1; Node n2; Link l;
+    Real x = 2*time - 1; Real limited = limit(x, -0.5, 0.5, 0.1); Real shaded = shade(x);
+  equation connect(n1.port, l.a); connect(l.b, n2.port); end M;
 end Probe;
 """
+
+
+def _rumoca_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("rumoca")
+    except PackageNotFoundError:
+        return "version unknown"
 
 
 class ModelError(ValueError):
@@ -88,7 +115,12 @@ def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
 
 @cache
 def rumoca_exports_building_models() -> bool:
-    """Whether the installed rumoca exports models made of connected components to CasADi."""
+    """Whether the installed rumoca exports the FastSmoothBuildings models to CasADi.
+
+    It translates a small probe with connected components and the function shapes of the library that the rumoca
+    releases after :data:`RUMOCA_COMMIT` refuse; the version number cannot tell, as the 0.10.3 on PyPI and the build of
+    that commit both report 0.10.3.
+    """
     import rumoca
 
     try:
@@ -141,8 +173,9 @@ class BuildingModel:
         except Exception as error:
             if not rumoca_exports_building_models():
                 raise ModelError(
-                    f"The installed rumoca cannot export FastSmoothBuildings models to CasADi; install rumoca main at "
-                    f"{RUMOCA_COMMIT} (uv sync installs it)."
+                    f"The installed rumoca ({_rumoca_version()}) cannot export FastSmoothBuildings models to CasADi: "
+                    f"mpctrano needs the build of commit {RUMOCA_COMMIT}, which `uv sync` installs. With pip:\n"
+                    f'    pip install --force-reinstall --no-deps "{RUMOCA_REQUIREMENT}"'
                 ) from error
             raise
         casadi_model = with_temperature_units(without_containers(casadi_model))

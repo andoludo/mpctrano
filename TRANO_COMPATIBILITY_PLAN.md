@@ -1,8 +1,9 @@
 # Plan: make mpctrano work with the current trano
 
-Status: **proposed on 2026-10-20**, against trano 0.57.0 (master `afe8447`), trano-optimization 0.2.0 (PyPI) and
-rumoca main at `c74cddf`. The base of the work is the FastModel branch (`ccr-7b65a72f-3ybdrr`, the migration of
-mpctrano to trano's FastModel library); `main` still holds the RC-model version, which trano no longer generates.
+Status: **done.** Proposed on 2026-10-20 against trano 0.57.0; carried out in the pull requests #4 to #11 (mpctrano
+0.9.0 requires trano 0.65 and trano-optimization 0.3.0). Checked on 2026-10-28 with trano 0.66.0,
+FastSmoothBuildings 0.5.0 and CasADi 3.8.2: every test, notebook and package tutorial passes with rumoca `c74cddf`;
+the rumoca 0.10.3 published on PyPI on 2026-10-27 does not export the models (section 6).
 
 Execution: one phase per working session, each ending with a pushed commit, so a session can stop after any phase
 and the next one resumes from this file. Every step names the files it touches and a "done when" check.
@@ -173,3 +174,36 @@ Done when: mpctrano 0.2.0 is on PyPI and installs.
   envelope, capacity tariff, apartment block) is built on the RC models; it is ported to FastModel by phases A and
   B of `tutorials/PLAN.md` once this plan is done. The DHW tank, battery, EV charger and cooling no longer exist in
   trano: their notebooks wait for FastModel components (phase C of `tutorials/PLAN.md`).
+
+## 6. rumoca 0.10.3 on PyPI (checked on 2026-10-28)
+
+The 0.10.3 published on PyPI on 2026-10-27 is built from rumoca commits after `c74cddf`. It translates the
+FastSmoothBuildings models (same structure: 933 equations, balanced, no algebraic loop) but its `casadi-ode` target
+refuses them: "checked algebraic refresh retains residual projection stages". Both builds report the version 0.10.3.
+
+| Model | rumoca `c74cddf` | rumoca 0.10.3 (PyPI) |
+|---|---|---|
+| Every tutorial and test YAML of mpctrano (MPC and closed-loop libraries) | exports | refuses |
+| `FastSmoothBuildings.Examples`: every example but `Photovoltaics` | exports | refuses |
+| `Utilities.Validation.SmoothFunctions`, `Controls.Validation.PIControl`, `Envelope.Validation.ShadingFractions` | export | refuse |
+
+Two shapes of function body are enough to trigger it; each passes on `c74cddf`:
+
+```modelica
+// 1. a variable set by an if-expression and used by the next statement (Utilities.smoothLimit)
+algorithm z := if x > l + d then x else l; y := if z < u - d then z else u;
+// 2. a scalar reassigned in a loop and passed to an inlined smooth function (Envelope.Functions.overhangSunlitFraction,
+//    sideFinsSunlitFraction)
+algorithm for i in 1:4 loop cut := smoothMin(x1, tmpH[i], del) - tmpW[i]; area[i] := smoothMax(cut, 0, del)*cut; end for;
+```
+
+Wrapping the if-expression in `noEvent` does not help in the loop. In a copy of the library, splitting `smoothLimit`
+into two single-assignment functions (limit from below, then from above) makes `SmoothFunctions` and `PIControl`
+export, and an array element per loop iteration (`cut[i]`, `x2[i]`, `minX[i]`, `minY[i]`) makes `ShadingFractions`
+export. A zone with one adiabatic wall still fails after both changes: at least one more shape sits in the zone or
+wall models, not located yet. Ways out, in order of preference:
+a rumoca release that exports these bodies again (report the two snippets upstream), or FastSmoothBuildings
+functions written without the two shapes (one assignment per helper function; an array element per loop iteration).
+Until then mpctrano keeps the git pin, `rumoca_exports_building_models` probes both shapes, and the error message,
+the README and the Colab setup install the `c74cddf` build.
+

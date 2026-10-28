@@ -66,11 +66,12 @@ def setup() -> None:
         subprocess.run(["git", "clone", "-q", "--depth", "1", REPOSITORY, str(CLONE)], check=True)
     if not _rumoca_exports_building_models():
         wheel = _rumoca_wheel_url()
-        if wheel is None or _pip(wheel) != 0:
+        # The wheel and the rumoca of PyPI share the version 0.10.3: without --force-reinstall pip keeps the latter.
+        if wheel is None or _pip("--force-reinstall", "--no-deps", wheel) != 0:
             print("No rumoca wheel for this runtime: installing Rust and building rumoca (about ten minutes)...")
             subprocess.run("curl -sSf https://sh.rustup.rs | sh -s -- -y", shell=True, check=True)
             os.environ["PATH"] = f"{Path.home() / '.cargo' / 'bin'}:{os.environ['PATH']}"
-            _pip(RUMOCA_SOURCE)
+            _pip("--force-reinstall", "--no-deps", RUMOCA_SOURCE)
         _pip(f"{CLONE}[notebook]")
     os.chdir(CLONE)
     if str(CLONE) not in sys.path:

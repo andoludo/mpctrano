@@ -38,15 +38,22 @@ git clone https://github.com/andoludo/mpctrano && cd mpctrano
 uv sync                        # trano, trano-optimization, casadi (IPOPT bundled) and rumoca built from source
 ```
 
-The CasADi export of the FastSmoothBuildings models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`), which is not on
-PyPI yet: `uv sync` builds it from the commit pinned in `pyproject.toml` (a Rust toolchain is needed, about
-10 minutes the first time, cached afterwards). With pip, rumoca 0.10.2 from PyPI would install but cannot translate
-the FastSmoothBuildings models, so install rumoca first:
+The CasADi export of the FastSmoothBuildings models needs rumoca built from commit `c74cddf` of its main branch:
+`uv sync` builds it from the commit pinned in `pyproject.toml` (a Rust toolchain is needed, about 10 minutes the first
+time, cached afterwards). The rumoca releases on PyPI cannot translate these models: 0.10.2 lacks the connected
+components, and 0.10.3 (October 2026), built from later commits, refuses some functions of the library ("Target
+'casadi-ode' does not support feature 'residual_equations'"). Both builds report the version 0.10.3. With pip, install
+the pinned build first, or replace the one pip chose:
 
 ```bash
-pip install "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072#subdirectory=crates/rumoca-bind-python"
 pip install "mpctrano[plot]"
+pip install --force-reinstall --no-deps "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072#subdirectory=crates/rumoca-bind-python"
+python -c "import mpctrano.model as m; print(m.rumoca_exports_building_models())"   # True
 ```
+
+On Linux x86-64, the wheel of that build attached to the release
+[`rumoca-0.10.3-c74cddf`](https://github.com/andoludo/mpctrano/releases/tag/rumoca-0.10.3-c74cddf) installs without
+Rust, in place of the git requirement.
 
 ## Quick start
 

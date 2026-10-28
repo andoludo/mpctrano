@@ -16,8 +16,9 @@ Every step lists what it touches and a "done when" check, so a session can stop 
 the next one resumes from this file. Building models that the tutorials need and Trano lacks are
 added to Trano (test models and FastSmoothBuildings components) on its feature branch.
 
-Trano version: the migration to trano >= 0.57 (trano-optimization, containers) is planned and tracked
-in `TRANO_COMPATIBILITY_PLAN.md` at the root of the repository.
+Trano version: mpctrano requires trano >= 0.65 (packages that reference FastSmoothBuildings instead of embedding
+it); every test, notebook and package tutorial passed with trano 0.66.0 on 2026-10-28. The migration of
+`TRANO_COMPATIBILITY_PLAN.md` is done.
 
 ---
 
@@ -167,8 +168,9 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
 
 ## 5. Risks and mitigations
 
-* rumoca: the BuildingModel export needs rumoca main up to `c74cddf` (later commits stop at residual
-  equations); the commit is pinned in `pyproject.toml` until a release exports these models.
+* rumoca: the BuildingModel export needs rumoca main at `c74cddf`; later commits, and the 0.10.3 release on PyPI
+  built from them, stop at residual equations (section 6 of `TRANO_COMPATIBILITY_PLAN.md`). The commit stays
+  pinned in `pyproject.toml` until a release exports these models or FastSmoothBuildings avoids the two shapes.
 * Solve times grow with the number of zones and circuits (over a minute per plan for six zones):
   cache the closed loops, keep the live parts open loop, use the single-zone house for widgets.
 * Parameters settled at translation (the radiator output law, the heat pump maps) cannot be

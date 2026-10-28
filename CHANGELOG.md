@@ -6,6 +6,22 @@ release pipeline.
 
 ## [Unreleased]
 
+### Fixed
+
+- rumoca 0.10.3 on PyPI (27 October 2026) cannot export the FastSmoothBuildings models to CasADi ("Target
+  'casadi-ode' does not support feature 'residual_equations'"), yet reports the same version as the build of commit
+  `c74cddf` that can. A plain `pip install mpctrano` picks it, and every model failed with that message.
+  `rumoca_exports_building_models` reported `True` for it: its probe now also holds the two function shapes of the
+  library that this rumoca refuses, so the translation error names the build to install
+  (`RUMOCA_REQUIREMENT`), the setup-check notebook stops early, and the Colab setup replaces it with the wheel of
+  the `rumoca-0.10.3-c74cddf` release (`--force-reinstall`: pip otherwise keeps the build of the same version).
+  The README gives the pip commands.
+
+### Changed
+
+- Locked and tested with trano 0.66.0, FastSmoothBuildings 0.5.0 and CasADi 3.8.2; `fastsmoothbuildings` is a
+  declared dependency (mpctrano imports it to find the Modelica library).
+
 ### Changed
 
 - **Breaking**: the class `FastModel` is renamed `BuildingModel` (the library it models is FastSmoothBuildings);

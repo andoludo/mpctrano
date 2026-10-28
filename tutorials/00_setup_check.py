@@ -44,7 +44,8 @@ print(f"casadi {casadi.__version__}")
 print(f"mpctrano {mpctrano.__version__}")
 print(f"quick mode: {QUICK}")
 assert mpctrano.model.rumoca_exports_building_models(), (
-    "rumoca cannot export the FastSmoothBuildings models: run `uv sync`"
+    "this rumoca cannot export the FastSmoothBuildings models: run `uv sync`, or with pip\n"
+    f'    pip install --force-reinstall --no-deps "{mpctrano.model.RUMOCA_REQUIREMENT}"'
 )
 
 # %% [markdown]

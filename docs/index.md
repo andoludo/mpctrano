@@ -49,8 +49,10 @@ strips their prefixes (`envelope1.`, `production1.`, ...) from a containerised m
 `trano create-model`. Both give the same model; `tests/test_trano_contract.py` checks it, with the
 translation of Trano's models by rumoca, against the installed Trano.
 
-The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`); `uv sync`
-builds it from source, see the installation section of the README. The collocation, the moving
+The CasADi export of these models needs rumoca built from commit `c74cddf` of its main branch; `uv sync`
+builds it from source, see the installation section of the README. The rumoca 0.10.3 on PyPI, built from later
+commits, reports the same version but refuses these models ("residual_equations");
+`mpctrano.model.rumoca_exports_building_models()` tells the two apart. The collocation, the moving
 horizon estimation and the CasADi model come from `trano-optimization` (formerly `trano.optimization`).
 
 ## 2. Disturbances

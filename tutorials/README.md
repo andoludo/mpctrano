@@ -33,9 +33,10 @@ The script tutorials of the package itself (calibration, state estimation, tarif
 * Everything else is a Python package: `trano` (YAML to Modelica, its `FastSmoothBuildings` library),
   `rumoca` (Modelica to CasADi), `casadi` (bundles IPOPT), the notebook stack. No Modelica
   compiler, no FMU and no Docker is needed for the notebooks.
-* A Rust toolchain ([rustup](https://rustup.rs)): the FastSmoothBuildings models need rumoca 0.10.3 (rumoca
-  main up to commit `c74cddf`), not on PyPI yet, which `uv sync` builds from source (about
-  10 minutes the first time, cached afterwards).
+* A Rust toolchain ([rustup](https://rustup.rs)): the FastSmoothBuildings models need rumoca built from commit
+  `c74cddf` of its main branch, which `uv sync` builds from source (about 10 minutes the first time, cached
+  afterwards). The rumoca 0.10.3 on PyPI cannot translate them; with pip, see the installation section of the
+  main README.
 
 ```bash
 git clone https://github.com/andoludo/mpctrano && cd mpctrano

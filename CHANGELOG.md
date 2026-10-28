@@ -6,86 +6,65 @@ release pipeline.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking**: the class `FastModel` is renamed `BuildingModel` (the library it models is FastSmoothBuildings);
+  `FAST_MODEL_LIBRARY` is `MPC_LIBRARY` and `rumoca_exports_fast_models` is `rumoca_exports_building_models`. The
+  former names are removed.
+
 ### Added
 
-- Tutorial `03_apartment_block` with its study (`tutorials/_apartments.py`, cache in
-  `tutorials/cache/apartments/`): six apartments on one heat pump with radiators and a 1 m3
-  domestic hot water tank; the dispatch of the shared compressor, emitter temperature and heat
-  pump size (`floor_heating`, `high_temperature`, `small_heat_pump`, `big_tank` variants), the
-  tank free or locked during an evening shed and in the envelope.
-- Apartment block typology: `tutorials/buildings/apartments.yaml` and its variants, generated as
-  R3C2 and R4C3 models in `tutorials/models/apartments/`.
-- `compressor_load`: use of the shared compressors of a run (mean load, share of the steps at the
-  limit, share of the electricity per input); `plot_dispatch` (stacked electrical inputs against
-  the compressor limit, storage temperatures with their band, zone temperatures, price).
-- `RCModel.with_storage_band` (a copy of the model with another band for a tank, to lock it or
-  widen it) and `RCModel.consumption_capacity` (largest draw the bounds and the compressor
-  limits allow).
+- `BuildingModel.from_source` and `BuildingModel.from_file` take `roots`, the folders of the Modelica libraries a
+  package uses without embedding them; `BuildingModel.from_network` passes the folders the network names
+  (`Network.libraries`).
+- A package that declares `uses(FastSmoothBuildings(...))` without holding the library (trano's default from 0.65,
+  as Buildings and IDEAS) is translated with the installed `fastsmoothbuildings` package (`used_libraries`): no
+  `roots` to pass. Requires trano >= 0.65.
 
 ### Changed
 
-- `ActivationRequest.notice_hours` is now honoured: the controller plans with the cap or floor of
-  the request from the notification on (one hour before the window by default, `None` for the
-  whole horizon) instead of from the moment the window entered its horizon. The activation runs
-  of tutorial 02 were recomputed; `DemandResponseEvent.notice_hours` carries it.
+- Trano's FastModel library is now FastSmoothBuildings (its own repository and PyPI package): the models are
+  generated with `FastSmoothBuildingsMPC` and the closed loop with `FastSmoothBuildings`
+  (`library="FastSmoothBuildings"`). Trano still accepts `FastModel` and `FastModelMPC`, with a deprecation
+  warning. The Python class `FastModel` keeps its name.
 
-### Fixed
+### Added
 
-- The export of the meter is bounded by the on-site sources (PV generation and battery
-  discharge), and the import / export split is skipped on a building without any source: a power
-  floor (upward activation, envelope) could previously be met by importing and exporting at the
-  same time. The upward bound of `FlexibilityEnvelope` respects the shared compressor limits.
+- Flexibility quantification on FastModel (the Days 2 to 6 tutorial work ported): activation
+  requests with the delivered energy and the rebound (`respond`, `ActivationResult`), the
+  flexibility function (`flexibility_function`), the flexibility envelope (`FlexibilityEnvelope`),
+  the peak reduction in `compare`.
+- Tariffs: export price series, power floors and notice time of the demand response events,
+  `CapacityTariff` (monthly peaks); the controller takes per-solve caps and floors and the peak
+  already billed (`peak_so_far`), and reports the planned meter powers (`MPCSolution.meter`).
+- `spin_up`: a state after a few days of the controllers of the YAML; the running monthly peak
+  and the billed power in the closed-loop frame; PV generation and self-consumption in the metrics.
+- Cooling with ideal emitters: `FastModel.with_control_bounds` (a negative lower bound),
+  `MPCSettings.heat_cop` and `cooling_eer`.
+- `mpctrano.notebook` (`TutorialBuilding`, `ResultCache`, price options, widgets) and the plots of
+  plans, closed loops, states, activations and envelopes with a shared palette.
+- Tutorials: `tutorials/buildings/` (the house and its variants, the office), the studies
+  `tutorials/_house.py`, `_flexibility.py`, `_office.py` with their cached runs
+  (`make cache`), the notebooks `01_house_heat_pump`, `02_flexibility_use_cases` and
+  `04_office_cooling`; the docs site renders the executed notebooks (mkdocs-jupyter, `make docs`).
+- `scripts/calibrate_multizone.py` and `scripts/multizone_heat_pump.yaml`: a ready-to-run calibration of
+  a six-zone heat pump house on two weeks of monitoring data generated with Trano (`CalibrationSpec`
+  takes a `base_dir` for the weather file).
+- `FastModel.smooth_controllers(width_factor, switching_time)`: a copy of a closed-loop model whose
+  thermostats, hysteresis and limiters switch over wider transitions and a set switching time (the
+  `dU`, `dY`, `dMax`, `dT`, `dtSet` and `tau` parameters of trano >= 0.59). The gentler copy keeps the
+  data within 0.15 K of the sharp model and calibrates by shooting in a tenth of the time.
+- Calibration of closed-loop models by single shooting (`CalibrationSettings.method`, automatic for a
+  model without control inputs): CVODES simulates the candidate model, spun up with its own
+  controllers, inside the objective; IPOPT takes wide central differences and full steps.
+  `CalibrationSpec.groups(values=..., only=...)` measures the sensitivities around given values and
+  selects fields; `CalibrationResult.method`.
+- `tutorials/06_your_building`: the building is a YAML cell; the notebook regenerates the models,
+  plans with the widget and compares the MPC with the controllers of the YAML for two versions.
+- Every notebook opens in Google Colab (badge and a first cell that clones the repository and runs
+  `tutorials/_colab.setup()`); the `rumoca wheel` workflow builds the manylinux wheel of the pinned
+  rumoca commit and attaches it to the release `rumoca-0.10.3-c74cddf` that the Colab setup installs.
 
-- Explicit flexibility: `ActivationRequest` (shed or absorb a power during a window, expressed
-  as a soft cap or floor on the billed power against the baseline), `respond` (baseline and
-  response from the same plant state) and `ActivationResult.metrics` (delivered energy and
-  power, delivery ratio, rebound energy, peak, duration and ratio, cost and comfort changes);
-  `flexibility_function` (response to a price step, Junker et al.).
-- `FlexibilityEnvelope`: the power the building can shed or absorb for a duration without
-  leaving the comfort band, and the cost of that plan, by bisection on constrained MPC solves;
-  `plan_comfort_violation`.
-- `CapacityTariff`: a capacity charge on the monthly peak as the Flemish *capaciteitstarief*
-  (price per kW and year on the average of the monthly peaks floored at 2.5 kW); the controller
-  carries the peak of the month so far (`ModelPredictiveController.solve(peak_so_far=...)`, the
-  closed loop tracks `running_peak_kw`). `DemandResponseEvent.power_floor` for upward
-  activations; `solve()` accepts per-call `power_limits` and `power_floors`.
-- `compare` reports `peak_reduction_pct`; `plot_activation`, `plot_envelope`.
-- Tutorial `02_flexibility_use_cases` with its study (`tutorials/_flexibility.py`, cache in
-  `tutorials/cache/flexibility/`): implicit flexibility at hourly and 15-minute resolution, peak
-  shaving under the capacity tariff, activations with rebound, envelope and flexibility function,
-  negative prices with PV, battery and EV.
-- `mpctrano.notebook`: helpers of the interactive tutorials: `TutorialBuilding` (pre-generated
-  control and plant models), `ResultCache` (closed-loop results as parquet, keyed by the run
-  parameters), `price_options`, `comfort_spec`, `scenario`, `kpi_table`, the `plan_explorer`
-  (live open-loop MPC) and `closed_loop_explorer` (cached runs, recompute button) widgets,
-  `quick_mode`, `days` and `timed`.
-- `mpctrano.plot`: one palette for every figure, `plot_plan`, `plot_states`, `plot_cop`;
-  `plot_closed_loop` shows the billed power and the export.
-- Tutorial `01_house_heat_pump`: pipeline walk-through, live MPC plan, closed loop with plant
-  mismatch from the cache (`tutorials/cache/house/`, built by `tutorials/scripts/build_cache.py`),
-  state estimation on/off, R3C2 vs R4C3 controller.
-- Interface version 2 of trano 0.36 (energy systems): `RCModel` exposes the systems, the energy
-  carrier of each control input, the compressor limits shared by the inputs of a heat pump
-  (`control_groups`), the tank temperature bands, the electric vehicles and the bounds of every
-  control and state (`control_bounds`, `state_bounds`).
-- `mpctrano.meter.Meter`: electrical balance at the meter (consumption, battery discharge, PV
-  generation, import and export), gas of the boilers and ideal heating, symbolic and on frames.
-- The MPC bills the imported electricity at the tariff and the export at `export_price`, costs the
-  gas with `MPCSettings.gas_price`, enforces the compressor limits, the state of charge bounds,
-  the tank bands (soft), the plug-in windows and the departure targets of the vehicles (soft,
-  `vehicle_penalty`). `MPCSolution.meter` holds the planned import, export and gas.
-- `Mismatch`: how the plant differs from the control model (RC structure, perturbed envelope
-  parameters, sensor noise, forecast noise); `Project.plant()` builds an R4C3 plant from the same
-  YAML against the R3C2 controller; `build_plant`, `Scenario.mismatch`.
-- `ControlMetrics`: export, gas, PV generation and self-consumption; `ClosedLoopResult.frame`
-  carries the meter columns (`P_import`, `P_export`, `P_meter`, `P_gas`, ...) and the solver status.
-- Tariffs carry an export price (`Tariff.export_price`, `DynamicTariff.export_series`,
-  `PriceSignal.tariff()`).
-- The forecaster builds the PV generation, the hot water draw-off and the driving discharge of
-  the vehicles from the sources of the interface.
-- Tutorial house: `tutorials/buildings/house.yaml` and six variants (`old`, `radiators`,
-  `big_heat_pump`, `pv`, `pv_battery_ev`), generated as R3C2 and R4C3 models in
-  `tutorials/models/house/` by `tutorials/scripts/generate_models.py`.
 - Notebook tooling: `notebook` extra (`plotly`, `ipywidgets`), jupytext pairing of the tutorial
   notebooks with percent scripts (`tutorials/NN_*.py` <-> `.ipynb`), `nbmake` execution of the
   notebooks in CI (`make notebooks`), a `pre-commit` configuration and this changelog.
@@ -98,20 +77,76 @@ release pipeline.
   stack, 15-minute and hourly resampling, price spikes, negative hours, relocation in time,
   cached samples) and the parsers of the Energy-Charts and ENTSO-E responses;
   `tutorials/scripts/fetch_prices.py` downloads the cached samples.
+- `FastModel`: the building models of Trano's `FastModelMPC` library (zones close to Buildings,
+  hydronic circuits, boilers, heat pumps, ventilation, PV) as CasADi functions; the roles of the
+  variables (controls, disturbances, comfort temperatures, energy meters) are read from the Modelica
+  model, the simulation runs with CVODES, and the unit of the temperature states rumoca drops (wall
+  layers, radiator water) is restored. `FastModel.from_yaml(..., library="FastModel")` builds the
+  closed-loop model with the controllers of the YAML.
+- `WeatherForecaster` on the weather channels of the model: `WeatherFile` reads the dew point, wind
+  and opaque sky cover and computes the sky temperature as the Buildings weather reader;
+  `OccupancySchedule` splits the radiant and convective gains (`from_parameters`,
+  `radiant_and_convective`); `ForecastNoise.perturb` applies the forecast errors to named channels.
+- `MovingHorizonEstimator` and `EstimatorSettings`: the full state of a `FastModel` from its zone air
+  temperatures by moving horizon estimation (`trano.optimization`) over a sliding window;
+  `PerfectEstimator` gives the true state of the plant.
+- `Calibrator`, `CalibrationSettings`, `ParameterGroup` and `CalibrationResult`: least-squares
+  calibration of groups of parameters (envelope conductances and capacities, air capacity,
+  infiltration, boiler efficiency; solar transmittance and emitter capacity in `OPTIONAL_GROUPS`) on
+  the air temperatures and the meters, on the Radau collocation of the data with IPOPT; `evaluate`
+  and `simulate_fit` give the open-loop fit; calibrations are saved to `<stem>.calibration.json`.
+- `run_rule_based`, `run_scenario_rule_based` and `Project.run_rule_based`: the controllers of the
+  YAML (the closed-loop `FastModel`) on the same building, costed and assessed like an MPC run;
+  `Project.true_closed_loop` gives the closed loop of the perturbed building.
+- `random_factors` and `perturb`: a "true" building with its parameter groups at random values;
+  `generate_monitoring_data` operates it with a thermostat with a random set point.
+- `units` module (`KELVIN`, `STATE_BOUNDS`).
+
+### Fixed
+
+- Calibration groups that move the same parameter of the model (a conductivity and a thickness both
+  move a layer conductance) compound their factors instead of overwriting each other.
+- `CalibrationSpec.sensitivities` perturbed the nominal YAML even when the base model was generated
+  at other values, so the exponents picked up every other difference.
 
 ### Changed
 
-- Requires trano >= 0.36 (interface version 2; version 1 files are still read).
-- `KalmanFilter` is an extended Kalman filter linearised at the current estimate (the heat pump
-  terms are bilinear); `RCModel.linearization()` gives the discrete map and its Jacobian.
-- `ControlMetrics.energy_kwh` and `peak_power_kw` are the energy and power billed at the tariff
-  (ideal heating plus grid import), no longer the thermal heating; `total_cost` subtracts the
-  export revenue and adds the gas cost.
-- `ModelPlant` matches the signals of the control model by name (`Plant.align`), so a plant of
-  another RC structure can be controlled; `measure()` returns the measured states (zone
-  temperatures and storages), `ClosedLoopResult.zones` and the plots follow the heating input of
-  each zone (`<zone>_QHea` or `<zone>_PHea`).
-- `perturb` leaves the parameters of the energy systems untouched unless selected.
+- **mpctrano is built on Trano's `FastModel` library.** `ModelPredictiveController` decides the
+  controls of the systems (valves, mixing valves, heat pump speed, boiler load) on the Radau
+  collocation of the model (`trano.optimization`), and prices the energy read from the meters (the
+  electricity bought and sold, the fuel, each at its price: `MPCSettings.fuel_price` and
+  `feed_in_price`); the capacity charge and the demand response power caps apply to the electric
+  power bought from the grid. It is warm started from a CVODES simulation of the shifted plan.
+- `MonitoringData`, `ControlMetrics`, `ClosedLoopResult`, the flexibility indicators, the scenarios,
+  `Project`, the CLI and the plots work on the variables of the FastModel: `<zone>.TAir`, the
+  controls of the systems, the meter readings and the energy bought (`fuel`, `bought`, `sold`).
+- The scenarios estimate the state by moving horizon estimation (`estimator="mhe"`, or
+  `"perfect"`); the demand response event of the catalogue caps the electric power at 800 W.
+- The tests, the tutorials and the setup-check notebook use the single-zone air-to-water heat pump
+  house of the Trano test suite (`tests/models/single_zone_air_water_heat_pump.yaml`) and its boiler
+  variant.
+- trano >= 0.57 and trano-optimization >= 0.2 (`trano.optimization` moved to its own package); the
+  published requirement on rumoca is >= 0.10.2 (its last release on PyPI) and `[tool.uv.sources]`
+  builds 0.10.3 from the commit `c74cddf` of its main branch, which the CasADi export of the FastModel
+  models needs.
+- `FastModel.from_network` generates the model without Trano's containers
+  (`include_container=False`), so the variables keep the names of the elements of the YAML;
+  `FastModel.from_source` and `from_file` strip the container prefixes (`envelope1.`,
+  `production1.`, ...) of a containerised model (`without_containers`).
+- The internal gains of an occupancy model are the inputs `<occupancy>_gai.QCon` and `.QRad`
+  (Trano 0.57); the forecaster still reads `<occupancy>.gai.*`. The parameter groups of the
+  calibration match their elements with or without a container prefix.
+- `tests/test_trano_contract.py`: the translation by rumoca of the FastModel and FastModelMPC models
+  of the installed Trano (the two houses of mpctrano, BESTEST 600FF and a six-zone heat pump house
+  copied from Trano), the equality of the flat and containerised models, and the names mpctrano
+  relies on. Trano no longer runs these checks: it does not install rumoca.
+- `ComfortSpec.bounds` takes any model with `zone_names`.
 - The script tutorials of the package moved from `tutorials/` to `tutorials/package/`; the
   top-level `tutorials/` directory is reserved for the numbered interactive notebooks.
 - Ruff no longer lints the generated `.ipynb` files (the paired `.py` scripts are linted).
+
+### Removed
+
+- The RC models of Trano's `mpc` library: `RCModel`, its `.mpc.json` interface and RC model types,
+  the RK4 discretisation, `KalmanFilter`, the per-orientation irradiance and the solar geometry of
+  the forecaster, the RC calibration of individual parameters and the three-zone RC test building.

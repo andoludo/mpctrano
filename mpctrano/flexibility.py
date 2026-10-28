@@ -15,6 +15,9 @@ Three complementary views, with the definitions of the literature the tutorials 
 * **the flexibility envelope**: how much power can be shed or absorbed for how long from the
   current state without leaving the comfort band, and at what cost (:class:`FlexibilityEnvelope`,
   a sweep of constrained MPC solves).
+
+The power is the electricity bought from the grid (``P_meter``, what the tariff bills), read from
+the meters of the plant in a closed loop and from the meters of the model in a plan.
 """
 
 from __future__ import annotations
@@ -29,16 +32,28 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
 
+from mpctrano.estimation import StateEstimator
 from mpctrano.simulation import ClosedLoopResult, Plant
-from mpctrano.tariff import DemandResponseEvent, DemandResponseTariff, FlatTariff, Tariff
+from mpctrano.tariff import CapacityTariff, DemandResponseEvent, DemandResponseTariff, FlatTariff, Tariff
 
 if TYPE_CHECKING:
     from mpctrano.forecast import Forecaster
-    from mpctrano.model import RCModel
+    from mpctrano.model import BuildingModel
     from mpctrano.mpc import ModelPredictiveController, MPCSolution
     from mpctrano.scenarios import Scenario
 
 JOULE_PER_KWH = 3.6e6
+
+
+def _plant(plant: BuildingModel | Plant | Callable[[], Plant] | None) -> BuildingModel | Plant | None:
+    """A plant, a model to wrap into one, or a fresh plant from a factory (the compared runs start alike)."""
+    return plant() if callable(plant) and not hasattr(plant, "state") else plant  # type: ignore[return-value]
+
+
+def _estimator(estimator: Callable[[], StateEstimator] | None) -> StateEstimator | None:
+    """A fresh estimator from a factory (an estimator is stateful: each run needs its own), or the default of the
+    scenario."""
+    return None if estimator is None else estimator()
 
 
 # --------------------------------------------------------------------------- implicit flexibility
@@ -46,25 +61,25 @@ def compare(results: Mapping[str, ClosedLoopResult], baseline: str | None = None
     """One row per run: energy, cost, comfort, peak and the changes relative to the baseline run."""
     frame = pd.DataFrame({name: result.summary() for name, result in results.items()}).T
     baseline = baseline or next(iter(results))
-    reference = frame.loc[baseline]
-    frame["cost_saving_pct"] = 100 * (reference["total_cost"] - frame["total_cost"]) / reference["total_cost"]
-    frame["energy_change_pct"] = 100 * (frame["energy_kwh"] - reference["energy_kwh"]) / reference["energy_kwh"]
-    frame["peak_reduction_pct"] = (
-        100 * (reference["peak_power_kw"] - frame["peak_power_kw"]) / reference["peak_power_kw"]
-    )
+    reference = results[baseline].metrics
+    cost, energy, peak = reference.total_cost, reference.energy_kwh, reference.peak_power_kw
+    frame["cost_saving_pct"] = 100 * (cost - frame["total_cost"]) / cost if cost else np.nan
+    frame["energy_change_pct"] = 100 * (frame["energy_kwh"] - energy) / energy if energy else np.nan
+    frame["peak_reduction_pct"] = 100 * (peak - frame["peak_power_kw"]) / peak if peak else np.nan
     frame["shifted_energy_kwh"] = [shifted_energy(results[name], results[baseline]) for name in frame.index]
     return frame
 
 
 def value_of_flexibility(
-    model: RCModel,
+    model: BuildingModel,
     scenario: Scenario,
-    plant: RCModel | Plant | Callable[[], Plant] | None = None,
+    plant: BuildingModel | Plant | Callable[[], Plant] | None = None,
     forecaster: Forecaster | None = None,
+    estimator: Callable[[], StateEstimator] | None = None,
 ) -> pd.DataFrame:
     """Savings of a price-aware MPC against a price-agnostic one under the same tariff.
 
-    The price-agnostic controller minimises the energy (flat price, no capacity charge) with the
+    The price-agnostic controller minimises the cost at a flat price (no capacity charge) with the
     same comfort band, model and demand response power limits; its run is then costed with the
     tariff of the scenario. The difference is what the flexibility of the building is worth under
     that tariff. Evaluate over several days: the heat stored at the end of the period is not paid
@@ -73,12 +88,14 @@ def value_of_flexibility(
     """
     from mpctrano.scenarios import run_scenario
 
-    aware = run_scenario(model, scenario, plant=_plant(plant), forecaster=forecaster)
+    aware = run_scenario(model, scenario, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator))
     index = pd.DatetimeIndex(aware.frame.index)
     agnostic_scenario = scenario.model_copy(
         update={"name": f"{scenario.name} (price agnostic)", "tariff": price_agnostic_tariff(scenario.tariff, index)}
     )
-    agnostic = run_scenario(model, agnostic_scenario, plant=_plant(plant), forecaster=forecaster)
+    agnostic = run_scenario(
+        model, agnostic_scenario, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator)
+    )
     agnostic_metrics = agnostic.metrics_under(scenario.tariff)
     rows = {
         "price aware": {**aware.metrics.model_dump(), "total_cost": aware.metrics.total_cost},
@@ -94,14 +111,11 @@ def value_of_flexibility(
     return pd.DataFrame.from_dict(rows, orient="index")
 
 
-def _plant(plant: RCModel | Plant | Callable[[], Plant] | None) -> RCModel | Plant | None:
-    return plant() if callable(plant) and not hasattr(plant, "state") else plant  # type: ignore[return-value]
-
-
 def price_agnostic_tariff(tariff: Tariff, index: pd.DatetimeIndex) -> Tariff:
-    """Flat tariff at the mean price of ``tariff`` over ``index``, keeping its power limits (grid constraints)."""
+    """Flat tariff at the mean price of ``tariff`` over ``index``, keeping its power limits and floors (grid
+    constraints)."""
     flat = FlatTariff(price=float(np.mean(tariff.energy_price(index))))
-    base = getattr(tariff, "base", tariff)
+    base = tariff.base if isinstance(tariff, CapacityTariff) else tariff
     if isinstance(base, DemandResponseTariff):
         events = [
             event.model_copy(update={"price_multiplier": 1.0})
@@ -114,21 +128,15 @@ def price_agnostic_tariff(tariff: Tariff, index: pd.DatetimeIndex) -> Tariff:
 
 def shifted_energy(result: ClosedLoopResult, reference: ClosedLoopResult) -> float:
     """Energy [kWh] moved in time with respect to the reference run (half of the L1 distance)."""
-    profile = _energy_profile(result)
-    other = _energy_profile(reference)
+    profile = result.energy
+    other = reference.energy
     index = profile.index.intersection(other.index)
     return float(0.5 * np.abs(profile.loc[index] - other.loc[index]).sum())
 
 
-def _energy_profile(result: ClosedLoopResult) -> pd.Series:
-    """Energy billed at the tariff per step [kWh] (ideal heating plus grid import)."""
-    return result.frame["P_meter"] * result.time_step / JOULE_PER_KWH
-
-
 def price_response(result: ClosedLoopResult) -> pd.DataFrame:
-    """Energy consumed per price level: shows whether the heating follows the tariff."""
-    energy = _energy_profile(result)
-    frame = pd.DataFrame({"price": result.frame["price"], "energy_kwh": energy})
+    """Energy bought per price level: shows whether the heating follows the tariff."""
+    frame = pd.DataFrame({"price": result.frame["price"], "energy_kwh": result.energy})
     grouped = frame.groupby("price")["energy_kwh"].agg(["sum", "count"])
     grouped["share"] = grouped["sum"] / grouped["sum"].sum()
     return grouped
@@ -159,6 +167,12 @@ class ActivationRequest(BaseModel):
         ge=0,
         description="Time between the notification and the start [h]: the controller plans with the cap or "
         "floor from then on (None: from the moment the window enters its horizon)",
+    )
+    non_delivery_price: float = Field(
+        1.0,
+        ge=0,
+        description="What the energy not delivered costs the building [EUR/kWh] (the activation price it forgoes or "
+        "pays back): the controller weighs it against the comfort penalty",
     )
 
     @property
@@ -234,23 +248,27 @@ class ActivationResult:
 
 
 def respond(
-    model: RCModel,
+    model: BuildingModel,
     scenario: Scenario,
     request: ActivationRequest,
     plant: Callable[[], Plant] | None = None,
     forecaster: Forecaster | None = None,
     baseline: ClosedLoopResult | None = None,
     rebound_window_hours: float = 12.0,
+    estimator: Callable[[], StateEstimator] | None = None,
 ) -> ActivationResult:
     """Run the baseline (without the request) and the response, both from the same plant state.
 
-    ``plant`` is a factory returning a fresh plant for each run; the baseline power of the window
-    is the mean billed power of the baseline run over it.
+    ``plant`` and ``estimator`` are factories returning a fresh plant and estimator for each run; the baseline power
+    of the window is the mean billed power of the baseline run over it. The response weighs the energy not
+    delivered at ``request.non_delivery_price`` (the ``power_limit_penalty`` of the controller).
     """
     from mpctrano.scenarios import run_scenario
 
     if baseline is None:
-        baseline = run_scenario(model, scenario, plant=plant() if plant else None, forecaster=forecaster)
+        baseline = run_scenario(
+            model, scenario, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator)
+        )
     index = pd.DatetimeIndex(baseline.frame.index)
     window = request.window(index)
     if not window.any():
@@ -258,16 +276,22 @@ def respond(
     baseline_power = float(baseline.frame.loc[window, "P_meter"].mean())
     tariff = scenario.tariff.with_events([request.event(baseline_power)])
     responding = scenario.model_copy(
-        update={"name": f"{scenario.name} ({request.direction} {request.power / 1000:g} kW)", "tariff": tariff}
+        update={
+            "name": f"{scenario.name} ({request.direction} {request.power / 1000:g} kW)",
+            "tariff": tariff,
+            "settings": scenario.settings.model_copy(update={"power_limit_penalty": request.non_delivery_price}),
+        }
     )
-    response = run_scenario(model, responding, plant=plant() if plant else None, forecaster=forecaster)
+    response = run_scenario(
+        model, responding, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator)
+    )
     return ActivationResult(
         request=request, baseline=baseline, response=response, rebound_window_hours=rebound_window_hours
     )
 
 
 def flexibility_function(
-    model: RCModel,
+    model: BuildingModel,
     scenario: Scenario,
     step_start: datetime,
     step_hours: float,
@@ -275,23 +299,26 @@ def flexibility_function(
     plant: Callable[[], Plant] | None = None,
     forecaster: Forecaster | None = None,
     baseline: ClosedLoopResult | None = None,
+    estimator: Callable[[], StateEstimator] | None = None,
 ) -> ActivationResult:
     """The response of the billed power to a price step (the flexibility function of Junker et al.).
 
     The price is multiplied by ``price_factor`` during the step; the result reads like an
     activation: ``delta`` is the power reduction, the metrics give the energy shed, the rebound
-    and the delay to the maximum response (see :meth:`ActivationResult.metrics`).
+    and its duration (see :meth:`ActivationResult.metrics`).
     """
     from mpctrano.scenarios import run_scenario
 
     if baseline is None:
-        baseline = run_scenario(model, scenario, plant=plant() if plant else None, forecaster=forecaster)
+        baseline = run_scenario(
+            model, scenario, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator)
+        )
     end = pd.Timestamp(step_start) + pd.Timedelta(hours=step_hours)
     event = DemandResponseEvent(start=step_start, end=end, price_multiplier=price_factor)
     stepped = scenario.model_copy(
         update={"name": f"{scenario.name} (price x{price_factor:g})", "tariff": scenario.tariff.with_events([event])}
     )
-    response = run_scenario(model, stepped, plant=plant() if plant else None, forecaster=forecaster)
+    response = run_scenario(model, stepped, plant=_plant(plant), forecaster=forecaster, estimator=_estimator(estimator))
     in_step = (baseline.frame.index >= pd.Timestamp(step_start)) & (baseline.frame.index < end)
     window = baseline.frame.loc[in_step, "P_meter"]
     if window.empty:
@@ -303,7 +330,7 @@ def flexibility_function(
 
 
 # --------------------------------------------------------------------------- flexibility envelope
-def plan_comfort_violation(solution: MPCSolution, model: RCModel) -> float:
+def plan_comfort_violation(solution: MPCSolution, model: BuildingModel) -> float:
     """Comfort violations of an open-loop plan [K.h] over the zones."""
     temperatures = solution.comfort_temperatures[model.comfort_states].to_numpy(dtype=float).T
     violation = np.maximum(solution.lower - temperatures, 0) + np.maximum(temperatures - solution.upper, 0)
@@ -316,11 +343,12 @@ def plan_comfort_violation(solution: MPCSolution, model: RCModel) -> float:
 class FlexibilityEnvelope:
     """How much billed power the building can shed (``down``) or absorb (``up``) for a duration.
 
-    For each duration, the largest constant change of the billed power from ``start`` that the
-    controller can hold while keeping the comfort violations of its whole plan below
-    ``tolerance_kh``, found by bisection on the cap (or floor) of the billed power; the energy
-    and the extra cost of that plan against the unconstrained one come with it. The end effect of
-    the horizon matters: the plan must have room after the window to recover.
+    For each duration, the largest constant change of the billed power from the start of the window that the
+    controller can hold while adding at most ``tolerance_kh`` of comfort violations to those of its unconstrained
+    plan, found by bisection on the cap (or floor) of the billed power; the energy and the extra cost of that plan
+    against the unconstrained one come with it. Absorbing is bounded by the full-load power of the building
+    (:meth:`~mpctrano.mpc.ModelPredictiveController.full_load_power`). The end effect of the horizon matters: the
+    plan must have room after the window to recover.
     """
 
     frame: pd.DataFrame
@@ -340,17 +368,18 @@ class FlexibilityEnvelope:
     ) -> FlexibilityEnvelope:
         model, dt = controller.model, controller.settings.time_step
         baseline = controller.solve(x0, forecast)
-        if baseline.meter is None:
-            raise ValueError("The envelope needs a model with a meter (electrical inputs).")
+        if baseline.meter is None or not baseline.success:
+            raise ValueError(f"The unconstrained plan failed: {baseline.status}.")
         billed = baseline.meter["P_meter"].to_numpy(dtype=float)
         n = len(billed)
-        capacity = model.consumption_capacity(controller.upper_bounds) or float(controller.upper_bounds.sum())
+        allowed = plan_comfort_violation(baseline, model) + tolerance_kh
+        capacity = controller.full_load_power(x0, forecast)
+        first = round(offset_hours * 3600 / dt)
+        if first >= n:
+            raise ValueError("The window starts after the horizon.")
         rows = []
         for duration in durations:
-            first = round(offset_hours * 3600 / dt)
             last = min(n, first + max(1, round(duration * 3600 / dt)))
-            if first >= n:
-                raise ValueError("The window starts after the horizon.")
             window = slice(first, last)
             row: dict[str, float] = {"duration_h": duration}
             for direction in ("down", "up"):
@@ -369,7 +398,7 @@ class FlexibilityEnvelope:
                     else:
                         floors[window] = billed[window] + power
                     solution = controller.solve(x0, forecast, power_limits=limits, power_floors=floors)
-                    feasible = solution.success and plan_comfort_violation(solution, model) <= tolerance_kh
+                    feasible = solution.success and plan_comfort_violation(solution, model) <= allowed
                     if feasible and solution.meter is not None:
                         delivered = solution.meter["P_meter"].to_numpy(dtype=float)[window]
                         held = (billed[window] - delivered if direction == "down" else delivered - billed[window]).min()
@@ -380,15 +409,9 @@ class FlexibilityEnvelope:
                         high = power
                 row[f"{direction}_kw"] = best / 1000
                 row[f"{direction}_energy_kwh"] = best * (last - first) * dt / JOULE_PER_KWH
-                costs = best_solution.costs
-                row[f"{direction}_cost"] = (costs["energy"] + costs["export"] + costs["gas"] + costs["capacity"]) - (
-                    baseline.costs["energy"]
-                    + baseline.costs["export"]
-                    + baseline.costs["gas"]
-                    + baseline.costs["capacity"]
-                )
+                row[f"{direction}_cost"] = best_solution.economic_cost - baseline.economic_cost
             rows.append(row)
-        return cls(frame=pd.DataFrame(rows).set_index("duration_h"), baseline_cost=baseline.total_cost)
+        return cls(frame=pd.DataFrame(rows).set_index("duration_h"), baseline_cost=baseline.economic_cost)
 
 
 __all__ = [

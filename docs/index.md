@@ -1,50 +1,90 @@
 # Workflow
 
 mpctrano sits downstream of Trano. The building description (`house.yaml`) stays the single source
-of truth: Trano derives the RC structure and the physics-based initial parameters, mpctrano
-calibrates them, estimates the states and controls the heating.
+of truth: Trano renders it into Modelica models with its `FastSmoothBuildings` library, mpctrano calibrates
+them on monitoring data, estimates their state and controls the systems of the building.
+
+```
+ house.yaml ──trano (FastSmoothBuildingsMPC)──▶ building_mpc ──rumoca──▶ CasADi ODE  xdot = f(t, x, u, p)
+            ──trano (FastSmoothBuildings)─────▶ the same building with the controllers of the YAML (rule-based reference)
+```
 
 ## 1. Model
 
 ```python
-from mpctrano import RCModel
-from trano.mpc import RCModelType
+from mpctrano import BuildingModel
 
-model = RCModel.from_yaml("house.yaml", model_type=RCModelType.r3c2)   # calls Trano
-model = RCModel.from_files("house.mo", "house.mpc.json")               # or the files of `trano create-model house.yaml mpc`
+model = BuildingModel.from_yaml("house.yaml")                       # calls Trano (FastSmoothBuildingsMPC library)
+model = BuildingModel.from_file("house.mo")                         # or the package of `trano create-model house.yaml FastSmoothBuildingsMPC`
+closed_loop = BuildingModel.from_yaml("house.yaml", library="FastSmoothBuildings")  # the controllers of the YAML
 ```
 
-`RCModel` keeps the Modelica source, the interface and the current parameter vector. It exposes:
+The `FastSmoothBuildingsMPC` model is close to the Buildings library: layered walls and floors, windows with
+the angular optics of their glazing, convection and long-wave exchanges in the room, infiltration,
+the hydronic circuits of the YAML (radiators, valves, mixing valves, pumps, boilers, air-to-water
+heat pumps and their buffer), ventilation units with heat recovery and PV arrays. The controls of
+the systems are inputs. `BuildingModel` reads everything from the Modelica model:
 
-* `continuous` - CasADi function `xdot = f(x, u, d, p)` with the controls `u` (`<zone>_QHea`) and
-  the disturbances `d` (`TOut`, `HSol_*`, `<zone>_QInt`) separated;
-* `discrete(dt)` - RK4 zero-order-hold step `x_next = F(x, u, d, p)` with automatically chosen
-  stable sub-steps; `p` stays symbolic so the same function serves the calibration;
-* `affine(dt)` - the exact matrices `A, Bu, Bd, c` of the discrete step at the current parameters
-  (the RC models are linear), used by the Kalman filter;
-* `simulate(x0, controls, disturbances, dt)` - open-loop simulation (`mapaccum`);
-* `with_parameters({...})` / `calibrated_interface()` / `write(directory)` - parameter management.
+* `control_names` - the inputs with a `min` and a `max`: valve positions, mixing valves, boiler part
+  load ratio or heat pump speed (between 0 and 1), the heat of ideal emitters [W];
+* `disturbance_names` - the weather channels (`weather_inputs.TDryBul`, `.TBlaSky`, `.winSpe`,
+  `.winDir`, `.HDirNor`, `.HDifHor`, `.HGloHor`) and the internal gains per floor area of each
+  occupancy model (`<occupancy>_gai.QRad`, `.QCon`);
+* `comfort_states` - the air temperature of each zone (`<zone>.TAir`);
+* `meters` - the energy the systems drew or produced since the start, states in kWh: `EFue` (fuel),
+  `EEle` (electricity of a heat pump), `EFan` (fans), `EPro` (PV);
+* `simulate(x0, controls, disturbances, dt, start_time)` - CVODES simulation, controls held over each
+  step; the model depends on the time of the year (the solar position is computed inside it);
+* `with_parameters({...})`, `select_parameters(patterns)`, `write(directory)`.
 
-The interface order is the CasADi vector order, which mpctrano checks against the rumoca export.
+The model is nonlinear and stiff (water nodes): the optimisation problems collocate it on Radau
+points (`trano_optimization`), which keeps them stable whatever the step. rumoca does not report the
+unit of array states (wall layers, radiator water): `BuildingModel` restores the kelvin on them so that
+the collocation scales and bounds them as temperatures.
+
+The variables are named after the elements of the YAML (`space_001.TAir`, `boiler_001.EEle`,
+`externalwall_0.G[1]`): `BuildingModel.from_yaml` generates the model without the containers Trano groups
+the elements in since 0.57 (`network.model(include_container=False)`), and `BuildingModel.from_file`
+strips their prefixes (`envelope1.`, `production1.`, ...) from a containerised model, as written by
+`trano create-model`. Both give the same model; `tests/test_trano_contract.py` checks it, with the
+translation of Trano's models by rumoca, against the installed Trano.
+
+The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`); `uv sync`
+builds it from source, see the installation section of the README. The collocation, the moving
+horizon estimation and the CasADi model come from `trano-optimization` (formerly `trano.optimization`).
 
 ## 2. Disturbances
 
-`WeatherForecaster.from_model(model)` reads the TMY3 `.mos` weather file referenced by the Trano
-model, computes the outdoor temperature and the irradiance on every orientation of the envelope
-(direct + isotropic diffuse + ground reflected, as the Buildings library blocks used by Trano's
-runnable model) and the internal gains of each zone from the occupancy schedule declared in the
-interface (`SimpleOccupancy`: 7h-19h, (35+70)/24 W/m²). `ForecastNoise` adds lead-time dependent
-errors to study imperfect forecasts; `DataForecaster` replays recorded disturbances.
+`WeatherForecaster.from_model(model)` reads the TMY3 `.mos` weather file of the runnable model (a
+file of the same name next to the YAML) and the occupancy schedules of the YAML: the weather channels
+at the middle of each step, the black-body sky temperature computed as the Buildings weather reader
+does (from the dew point and the opaque sky cover), and the radiant and convective gains of each
+occupancy model. `ForecastNoise` adds lead-time dependent errors to the temperatures, the irradiance
+and the gains; `DataForecaster` replays recorded disturbances.
 
 ## 3. Calibration, estimation, control
 
-See [calibration](calibration.md), [estimation](estimation.md) and [mpc](mpc.md).
+See [monitoring data](data.md), [calibration](calibration.md), [estimation](estimation.md) and
+[MPC](mpc.md).
 
-## 4. Closed loop and scenarios
+## 4. Closed loop, scenarios and the rule-based reference
 
-`run_closed_loop(controller, estimator, plant, forecaster, start, steps)` runs the cycle
-*measure → correct → forecast → solve → apply → predict* and returns a `ClosedLoopResult` with
-the trajectories and the `ControlMetrics` (energy, cost, comfort violation in K·h, peak power,
-share of energy bought below the median price). `Scenario` bundles a tariff, a comfort
-specification, the MPC settings, the forecast noise and the estimator type; `run_scenario`
-and `Project.run` execute it; `compare` puts several runs side by side.
+`run_closed_loop(controller, estimator, plant, forecaster, steps)` runs the cycle
+*measure → correct → forecast → solve → apply → predict* against a `ModelPlant` (a BuildingModel playing
+the real building, with sensor noise) and returns a `ClosedLoopResult` with the trajectories and the
+`ControlMetrics`, read from the meters of the plant: fuel and electricity bought and sold, cost at
+the price of each carrier, capacity charge, comfort violation in K·h, peak electric power, share of
+the energy bought below the median price.
+
+`run_rule_based(closed_loop, forecaster, start, steps, dt, comfort, tariff)` simulates the closed-loop
+`BuildingModel` of the same YAML, with the controllers it describes (thermostats on the valves, the boiler
+or heat pump holding its supply temperature, the mixing valve its set point), costed and assessed the
+same way: the reference the MPC is compared with.
+
+`Scenario` bundles a tariff, a comfort specification, the MPC settings, the forecast noise and the
+estimator; `run_scenario`, `run_scenario_rule_based` and `Project.run` / `Project.run_rule_based`
+execute it; `compare` puts several runs side by side.
+
+The executed tutorial notebooks are in the *Tutorials* section of this site; their source is in
+[`tutorials/`](https://github.com/andoludo/mpctrano/tree/main/tutorials), and each one opens in Google Colab
+with its *Open in Colab* badge (`06_your_building` to edit the building itself).

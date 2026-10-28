@@ -6,44 +6,17 @@ from typing import Literal
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
-from trano.mpc import RCModelType
 
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
-from mpctrano.estimation import KalmanFilter, MovingHorizonEstimator, StateEstimator
+from mpctrano.estimation import MovingHorizonEstimator, PerfectEstimator, StateEstimator
 from mpctrano.forecast import ForecastNoise, Forecaster, WeatherForecaster
-from mpctrano.model import RCModel
+from mpctrano.model import BuildingModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, initial_state_of, run_closed_loop
-from mpctrano.synthetic import perturb
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based
 from mpctrano.tariff import AnyTariff, DemandResponseEvent, DynamicTariff, FlatTariff, TimeOfUseTariff
 
 DEFAULT_START = "2023-01-16"
 """A Monday in the middle of the heating season of the typical year."""
-
-
-class Mismatch(BaseModel):
-    """How the plant differs from the control model: structure, parameters, sensors and forecasts.
-
-    The plant is generated from the same YAML with ``plant_model_type`` (``None`` keeps the
-    structure of the control model) and its envelope parameters are perturbed log-normally with
-    ``parameter_std``; the sensors add ``measurement_std`` of noise and the forecasts the errors
-    of ``forecast_noise``.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    plant_model_type: RCModelType | None = Field(
-        RCModelType.r4c3, description="RC structure of the plant, None for the structure of the controller"
-    )
-    parameter_std: float = Field(0.3, ge=0, description="Log-normal perturbation of the envelope parameters")
-    seed: int = 0
-    measurement_std: float = Field(0.05, ge=0, description="Sensor noise of the temperatures [K]")
-    forecast_noise: ForecastNoise | None = None
-
-    @classmethod
-    def none(cls) -> Mismatch:
-        """A perfect model: same structure, same parameters, no noise."""
-        return cls(plant_model_type=None, parameter_std=0.0, measurement_std=0.0)
 
 
 class Scenario(BaseModel):
@@ -57,9 +30,8 @@ class Scenario(BaseModel):
     start: str = DEFAULT_START
     days: float = Field(2.0, gt=0)
     forecast_noise: ForecastNoise | None = None
-    estimator: Literal["kalman", "mhe"] = "kalman"
-    mismatch: Mismatch | None = Field(
-        None, description="Plant mismatch; None for a perfect model unless a plant is given"
+    estimator: Literal["mhe", "perfect"] = Field(
+        "mhe", description="Moving horizon estimation from the air temperatures, or the true state of the plant"
     )
 
     @property
@@ -86,7 +58,7 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         start=timestamp + pd.Timedelta(hours=17),
         end=timestamp + pd.Timedelta(hours=20),
         price_multiplier=3.0,
-        power_limit=4000.0,
+        power_limit=800.0,
     )
     scenarios = [
         Scenario(
@@ -127,7 +99,7 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
         ),
         Scenario(
             name="imperfect_forecast",
-            description="Time-of-use tariff with forecast errors and a moving horizon estimator.",
+            description="Time-of-use tariff with forecast errors (2 K on the temperatures, 30 % on the irradiance).",
             tariff=time_of_use,
             comfort=comfort,
             forecast_noise=ForecastNoise(temperature_std=2.0, irradiance_relative_std=0.3, seed=1),
@@ -140,58 +112,64 @@ def scenario_catalogue(start: str = DEFAULT_START, days: float = 2.0, horizon: i
     }
 
 
-def build_estimator(scenario: Scenario, model: RCModel, x0: object = None) -> StateEstimator:
-    if scenario.estimator == "mhe":
-        return MovingHorizonEstimator(model, scenario.settings.time_step, x0=x0)  # type: ignore[arg-type]
-    return KalmanFilter(model, scenario.settings.time_step, x0=x0)  # type: ignore[arg-type]
-
-
-def build_plant(model: RCModel, mismatch: Mismatch, time_step: float, plant_model: RCModel | None = None) -> ModelPlant:
-    """The plant of a mismatch: ``plant_model`` (another structure from the same YAML) or ``model``,
-    perturbed and read through noisy sensors."""
-    base = plant_model if plant_model is not None else model
-    perturbed = (
-        perturb(base, relative_std=mismatch.parameter_std, seed=mismatch.seed) if mismatch.parameter_std else base
-    )
-    return ModelPlant(perturbed, time_step, measurement_std=mismatch.measurement_std, seed=mismatch.seed)
+def build_estimator(scenario: Scenario, model: BuildingModel, plant: Plant) -> StateEstimator:
+    if scenario.estimator == "perfect":
+        return PerfectEstimator(plant)
+    return MovingHorizonEstimator(model, scenario.settings.time_step, plant.time)
 
 
 def run_scenario(
-    model: RCModel,
+    model: BuildingModel,
     scenario: Scenario,
-    plant: Plant | RCModel | None = None,
+    plant: Plant | BuildingModel | None = None,
     forecaster: Forecaster | None = None,
     estimator: StateEstimator | None = None,
 ) -> ClosedLoopResult:
     """Closed loop of the scenario with ``model`` in the controller and ``plant`` as the building.
 
-    ``plant`` defaults to the plant of ``scenario.mismatch`` (same structure as ``model``; use
-    :class:`~mpctrano.project.Project` for another structure) or to ``model`` itself (perfect
-    model); an :class:`RCModel` is wrapped into a :class:`ModelPlant`. The forecaster defaults to
-    the weather file of the model with the forecast noise of the scenario or of the mismatch.
+    ``plant`` defaults to ``model`` itself (perfect model); a :class:`BuildingModel` is wrapped into a
+    :class:`ModelPlant` starting at the start of the scenario. The forecaster defaults to the weather file of the
+    model, with the forecast errors of the scenario.
     """
     settings = scenario.settings
-    noise = scenario.forecast_noise or (scenario.mismatch.forecast_noise if scenario.mismatch else None)
     if forecaster is None:
-        forecaster = WeatherForecaster.from_model(model, noise=noise)
+        forecaster = WeatherForecaster.from_model(model, noise=scenario.forecast_noise)
     if plant is None:
-        mismatch = scenario.mismatch or Mismatch.none()
-        plant = build_plant(model, mismatch.model_copy(update={"plant_model_type": None}), settings.time_step)
-    elif isinstance(plant, RCModel):
-        plant = ModelPlant(plant, settings.time_step)
+        plant = ModelPlant(model, settings.time_step, scenario.start)
+    elif isinstance(plant, BuildingModel):
+        plant = ModelPlant(plant, settings.time_step, scenario.start)
     if estimator is None:
-        estimator = build_estimator(scenario, model, initial_state_of(plant, model))
+        estimator = build_estimator(scenario, model, plant)
     controller = ModelPredictiveController(model, settings, scenario.comfort, scenario.tariff)
-    return run_closed_loop(controller, estimator, plant, forecaster, scenario.start, scenario.steps, name=scenario.name)
+    return run_closed_loop(controller, estimator, plant, forecaster, scenario.steps, name=scenario.name)
+
+
+def run_scenario_rule_based(
+    closed_loop: BuildingModel, scenario: Scenario, forecaster: Forecaster | None = None
+) -> ClosedLoopResult:
+    """The controllers of the YAML (the closed-loop ``BuildingModel``) over the period of the scenario, costed with its
+    tariff and assessed against its comfort band: the reference of the MPC runs."""
+    settings = scenario.settings
+    return run_rule_based(
+        closed_loop,
+        forecaster or WeatherForecaster.from_model(closed_loop),
+        scenario.start,
+        scenario.steps,
+        settings.time_step,
+        scenario.comfort,
+        scenario.tariff,
+        fuel_price=settings.fuel_price,
+        feed_in_price=settings.feed_in_price,
+        name=f"{scenario.name} (rule based)",
+    )
 
 
 __all__ = [
     "DEFAULT_START",
     "ComfortSchedule",
-    "Mismatch",
     "Scenario",
     "build_estimator",
-    "build_plant",
     "run_scenario",
+    "run_scenario_rule_based",
     "scenario_catalogue",
 ]

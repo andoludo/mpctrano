@@ -75,6 +75,11 @@ class Tariff(BaseModel, ABC):
         """Minimum billed power of each step [W] (an upward activation request)."""
         return np.zeros(len(index))
 
+    @property
+    def has_export_price(self) -> bool:
+        """Whether the tariff remunerates the export (otherwise it is sold at the energy price, net metering)."""
+        return False
+
     def signal(self, index: pd.DatetimeIndex) -> TariffSignal:
         return TariffSignal(
             index=index,
@@ -191,6 +196,10 @@ class DynamicTariff(Tariff):
     def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
         return np.zeros(len(index)) if self.export_series is None else _held(self.export_series, index)
 
+    @property
+    def has_export_price(self) -> bool:
+        return self.export_series is not None
+
 
 def _held(series: pd.Series, index: pd.DatetimeIndex) -> np.ndarray:
     """Values of a series held between its samples, evaluated on ``index``."""
@@ -256,6 +265,10 @@ class DemandResponseTariff(Tariff):
     def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
         return self.base.export_price(index)
 
+    @property
+    def has_export_price(self) -> bool:
+        return self.base.has_export_price
+
 
 MONTHS_PER_YEAR = 12
 
@@ -294,6 +307,10 @@ class CapacityTariff(Tariff):
 
     def export_price(self, index: pd.DatetimeIndex) -> np.ndarray:
         return self.base.export_price(index)
+
+    @property
+    def has_export_price(self) -> bool:
+        return self.base.has_export_price
 
     def with_events(self, events: list[DemandResponseEvent]) -> CapacityTariff:  # type: ignore[override]
         base = (

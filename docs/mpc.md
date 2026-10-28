@@ -1,68 +1,43 @@
 # Model predictive control, tariffs and flexibility
 
-## Energy systems and the meter
-
-With trano >= 0.36 the YAML systems are part of the model (interface version 2): a heat pump
-makes the heating input of its zones *electrical* (`<zone>_PHea`, heat `= COP(TOut, TSup) · P`),
-a chiller adds `<zone>_PCoo`, a hot water tank, a battery and an electric vehicle add states and
-inputs, PV adds a generation disturbance. `mpctrano.meter.Meter` builds the balance at the meter:
-
-```
-P_net    = Σ electrical inputs − Σ battery discharge − Σ PV generation
-P_import − P_export = P_net,  P_import, P_export ≥ 0,  P_export ≤ Σ battery discharge + Σ PV generation
-                                      # no split without a source: P_import = P_net
-P_meter  = P_heat + P_import          # billed at the tariff; P_heat = ideal thermal inputs
-P_gas    = Σ Q_boiler / efficiency    # billed at MPCSettings.gas_price
-```
-
-The interface also gives what the ODE cannot carry: the compressor limit shared by the zones (and
-tanks) of one heat pump, the state of charge bounds, the tank temperature band and the sessions of
-the vehicles. `RCModel.control_groups`, `storage_bands`, `vehicles`, `control_bounds()` and
-`state_bounds()` expose them. `RCModel.with_storage_band(tank, lower, upper)` returns a copy with
-another band for a tank (a one-kelvin band at the set temperature locks it), `compressor_load`
-reads how a run used the shared compressors (mean load, share of the steps at the limit, share of
-the electricity per input) and `plot_dispatch` draws the dispatch against the limit.
-
 ## Optimisation problem
 
-At every step, from the estimated state `x0` and the forecasts over `N` steps of `dt` seconds:
+At every step, from the estimated state `x0`, the time `t0` and the forecasts over `N` steps of `dt`
+seconds, `ModelPredictiveController` solves with IPOPT:
 
 ```
-min   Σ_k π_k · P_meter,k · dt / 3.6e6                   energy cost [EUR], π in EUR/kWh
-    − Σ_k π_exp,k · P_export,k · dt / 3.6e6               export revenue
-    + π_gas · Σ_k P_gas,k · dt / 3.6e6                    fuel of the boilers
-    + c_cap · P_peak / 1000                               capacity charge [EUR/kW] on the horizon peak
-    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600     comfort violations of the zones and tanks [K·h]
-    + w_lim · Σ_k s_lim,k · dt / 3.6e6                    energy above a demand response power limit
-    + w_ramp · Σ_k |u_k - u_{k-1}|²                        optional smoothing
-    + w_ev · Σ_k v_k / 3.6e6                               energy missing in a vehicle at departure
-s.t.  x_{k+1} = F(x_k, u_k, d_k, p)
-      lower ≤ u ≤ upper (design power, compressor, charger and tank limits of the interface)
-      Σ_{i ∈ heat pump} u_{i,k} ≤ P_el,max                 shared compressor limit
-      state bounds (temperatures, state of charge)
-      T_lower,k - s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k      soft comfort band on every zone and tank
-      P_meter,k ≤ limit_k + s_lim,k,     P_meter,k ≤ P_peak
-      u_ev,k ≤ plugged_k · P_max,    E_ev,k+1 + v_k ≥ departure_k · E_target
+min   Σ_k (π_k b_k − π^in_k (b_k − e_k) + π^fuel_k f_k)    energy cost [EUR], prices in EUR/kWh
+    + c_cap · P_peak / 1000                                 capacity charge [EUR/kW] on the peak electric power
+    + Σ_k (w₁ (s⁻ + s⁺) + w₂ (s⁻² + s⁺²)) · dt / 3600       comfort violations [K·h]
+    + w_lim · Σ_k s_lim,k · dt / 3.6e6                      electricity above a demand response power limit
+    + w_move · Σ_k |v_k − v_{k−1}|² + w_effort · Σ_k |v_k|²   moves and effort of the controls (scaled to [0, 1])
+s.t.  the BuildingModel collocated on Radau IIA points in each step
+      the bounds of each control (0-1 for the valves, the heat pump speed and the boiler load)
+      T_lower,k − s⁻_k ≤ T_zone,k+1 ≤ T_upper,k + s⁺_k        soft comfort band on every zone
+      P_k ≤ limit_k + s_lim,k,     P_k ≤ P_peak                electric power bought from the grid
 ```
 
-`MPCSettings` holds the horizon, the time step, the penalties and the power bounds. The problem
-is built once (`casadi.Opti` with parameters) and every `solve()` only updates the initial state,
-the disturbance forecast, the prices, the comfort bounds and the power limits, with a shifted warm
-start. If IPOPT does not converge the last iterate is returned with `success=False` (the closed
-loop keeps running and counts the failures).
+`e_k` is the net electricity of step `k` [kWh], read from the meters of the model (the electricity
+of the heat pumps and fans, the heat of the ideal emitters, minus the PV production), `b_k` its
+smooth positive part (bought, the rest is sold at the feed-in price), `f_k` the fuel the boilers drew
+and `P_k = b_k / dt` the electric power. Since the energy comes from the meters, the efficiency of the
+systems is part of the plan: the COP of a heat pump is better in the mild afternoon than in the cold
+night, the efficiency of a boiler depends on its load and its water temperature.
+
+`MPCSettings` holds the horizon, the time step, the penalties, `fuel_price` and `feed_in_price` (the
+tariff price when not given) and the IPOPT options. The problem is built once (`casadi.Opti` with the
+time, the forecasts, the prices and the bounds as parameters) and every `solve()` updates them and
+warm starts IPOPT from a CVODES simulation of the previous plan shifted by one step, with a small
+initial barrier parameter (`warm_mu_init`), which halves the iterations of the receding-horizon
+solves. If IPOPT does not converge the last iterate is returned with `success=False` (the closed loop
+keeps running and counts the failures), and the next solve starts cold.
 
 Comfort bounds apply at the end of each step (the occupied band starting at 7h constrains the
-temperature reached at 7h); prices apply to the energy of the step.
+temperature reached at 7h); prices apply to the energy of the step. `controller.energy` gives the
+electricity bought and net, the fuel and the electric power of each step of the last plan.
 
-## Plant mismatch
-
-`Mismatch` describes how the plant differs from the control model: another RC structure generated
-from the same YAML (`plant_model_type`, R4C3 by default so that the plant has the emitter state
-the R3C2 controller lacks), log-normally perturbed envelope parameters (`parameter_std`), sensor
-noise and forecast noise. `Project.plant(mismatch)` builds it and `Project.run(scenario)` uses it
-unless a plant is given; `Scenario.mismatch` keeps it with the scenario. The signals of the plant
-are matched by name, so the controller only needs the measured states (zone temperatures, tank,
-batteries), the controls and the disturbances to exist in both.
+On the heat pump house of the tests (27 states), a 24-hour plan with hourly steps solves in 5 to 20 s;
+the six-zone heat pump house of the Trano test suite (111 states) takes over a minute.
 
 ## Tariffs
 
@@ -73,9 +48,11 @@ batteries), the controls and the disturbances to exist in both.
 | `DynamicTariff`        | a price series (`from_csv`, `synthetic_day_ahead`), held between samples |
 | `DemandResponseTariff` | any tariff + `DemandResponseEvent`s: price multiplier and/or power cap |
 
-Every tariff can carry a `capacity_charge` [EUR/kW] on the peak power of the horizon. A
-`DemandResponseEvent` power cap is a soft constraint with a high penalty (`power_limit_penalty`):
-it is respected unless comfort would collapse.
+The tariffs price the electricity; the fuel has its own price (`MPCSettings.fuel_price`). Every
+tariff can carry a `capacity_charge` [EUR/kW] on the peak electric power of the horizon. A
+`DemandResponseEvent` power cap applies to the electric power bought from the grid; it is a soft
+constraint with a high penalty (`power_limit_penalty`): it is respected unless comfort would
+collapse.
 
 ## Comfort
 
@@ -83,33 +60,28 @@ it is respected unless comfort would collapse.
 `ComfortSpec` assigns a schedule per zone (`default` otherwise) and `map("widen", delta)` or
 `map("constant")` transforms all of them.
 
-## Capacity tariff
-
-`CapacityTariff(base=..., capacity_price=50.0)` bills, like the Flemish distribution tariff, the
-average of the monthly peaks (highest quarter-hour average power of the month, floored at
-`minimum_peak_kw`) at `capacity_price` EUR/kW/year. One kilowatt of monthly peak costs
-`capacity_price / 12`, the `capacity_charge` the controller applies to the larger of the peak of
-the month so far (`peak_so_far`, carried by the closed loop) and the peak of its horizon. With
-hourly steps the peak is an hourly average, which underestimates the quarter-hour peak.
-
 ## Flexibility
 
-The flexibility of a building is what the thermal mass allows between the bounds: with a cheap
-night the controller pre-heats and lets the temperature float during the expensive hours; with a
-capacity charge it spreads the morning boost; during a demand response event it sheds load. The
-comfort band is the lever: `wide_comfort_band` in the scenario catalogue widens it by 1 K.
+The flexibility of a building is what the thermal mass and the buffers allow between the bounds:
+with a cheap night the controller pre-heats and lets the temperature float during the expensive
+hours; with a capacity charge it spreads the morning boost; during a demand response event it sheds
+load. The comfort band is the lever: `wide_comfort_band` in the scenario catalogue raises its upper
+bound by 2 K.
 
 Costs are only comparable under the same tariff. `value_of_flexibility(model, scenario)` runs the
 scenario twice, with the price-aware MPC and with a price-agnostic one (flat price, same comfort
 band and model), costs both runs with the tariff of the scenario and reports the saving, the
-energy shifted and the share of energy bought at low prices. For the three-zone test building the
-envelope time constant is about 40 h: part of the heat stored at night pays back after the
-expensive hours, so the controller starts pre-heating when the price spread exceeds roughly four
-(e.g. 0.40 / 0.10 EUR/kWh), and more when the upper bound leaves room (`widen(2.0, "upper")`).
+energy shifted and the share of energy bought at low prices.
+
+The reference of a building is its own control: `run_rule_based` (or `Project.run_rule_based`)
+simulates the controllers of the YAML on the same building. On the boiler house of the tests, over a
+January day with the band of its thermostat, the MPC costs 12 % less than the controllers of the YAML
+under a flat and under a time-of-use tariff, with almost no discomfort (0.05 K·h against 3.7 K·h, the
+warm-up of the thermostat), and buys 30 % of its energy off-peak against 10 %.
 
 The controller can only exploit the storage it believes in: with the uncalibrated Trano
 parameters against a different real building, the pre-heating is mis-sized and the comfort band
-is missed (tutorial 5 shows both cases). Calibrate before trusting the price response.
+is missed (tutorial 5 shows it). Calibrate before trusting the price response.
 
 `compare(runs, baseline="flat")` puts several runs side by side (same tariff for the costs to be
 comparable):
@@ -121,23 +93,38 @@ comparable):
 * `low_price_share`, `mean_price` - share of the energy bought below the median price, average price paid,
 * `comfort_violation_kh`, `max_violation`, `peak_power_kw`.
 
-`price_response(run)` gives the energy consumed at each price level.
+`price_response(run)` gives the energy bought at each price level.
 
-### Explicit flexibility
+## Cooling with ideal emitters
 
-`ActivationRequest(start, duration_hours, direction, power)` asks to shed (`down`) or absorb
-(`up`) a power against the baseline; `respond(model, scenario, request, plant=factory)` runs the
-baseline and the response from the same plant state (the request becomes a soft cap or floor on
-the billed power relative to the mean baseline power of the window, as a baseline-settled
-aggregator would do) and `ActivationResult.metrics` reports the delivered energy and power, the
-delivery ratio, the rebound energy, peak, duration and ratio, the cost and comfort changes.
-`flexibility_function` reads the response to a price step the same way (Junker et al., 2018).
+The ideal emitter of a zone (`radiator` of variant `ideal` in the YAML) is a heat flow input of the
+`FastSmoothBuildingsMPC` model, which Trano bounds to heating (`min=0`). `BuildingModel.with_control_bounds` gives it
+a negative lower bound: the same equations cool the zone. The controller costs its heat at
+`MPCSettings.heat_cop` and its cooling at `MPCSettings.cooling_eer` (electricity per unit of heat or
+cooling); the closed loop meters it alike.
 
-### Flexibility envelope
+```python
+office = BuildingModel.from_yaml("office.yaml").with_control_bounds({"emitter_001_Q.Q_flow": (-12000.0, None)})
+settings = MPCSettings(horizon=24, heat_cop=3.5, cooling_eer=3.0)
+```
 
-`FlexibilityEnvelope.compute(controller, x0, forecast, durations)` finds, for each duration, the
-largest constant change of the billed power the controller can hold from the current state while
-its plan keeps the comfort violations below a tolerance (bisection on a per-solve cap or floor,
-`solve(power_limits=..., power_floors=...)`), with the energy and the extra cost of that plan. The
-upward search is bounded by `RCModel.consumption_capacity`, the largest draw the control bounds
-and the shared compressor limits allow.
+## Electrical storages at the meter
+
+A stationary battery and an electric vehicle are optimised in the balance of the meter next to the
+thermal storage of the building (`mpctrano.storage`): linear state-of-charge models with a round-trip
+efficiency and power bounds; the vehicle charges while plugged in (`arrival_hour` to `departure_hour`),
+leaves with at least `departure_energy_kwh` (soft, at `missing_energy_price`) and comes back
+`driven_kwh` lower. The controller carries their state from one solve to the next
+(`ModelPredictiveController.advance`, called by the closed loop) and reports the plan in
+`MPCSolution.storage`.
+
+```python
+settings = MPCSettings(
+    horizon=24,
+    batteries=(Battery(capacity_kwh=8, max_charge_w=3000, max_discharge_w=3000),),
+    vehicles=(ElectricVehicle(capacity_kwh=50, max_charge_w=7400, arrival_hour=18, departure_hour=7, driven_kwh=12),),
+)
+```
+
+The energy stored in a battery at the end of the horizon is valued at the mean price of the horizon,
+so that the controller does not empty it before the end.

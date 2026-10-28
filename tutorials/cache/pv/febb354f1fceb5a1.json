@@ -1,0 +1,36 @@
+{
+ "name": "pv | day-ahead + negative midday | battery",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 4.277576544153218,
+  "sold_kwh": 0.004345197474183307,
+  "energy_kwh": 4.277576544153218,
+  "energy_cost": 0.49942870977335785,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 0.46412736844905567,
+  "max_violation": 0.10759912103048919,
+  "peak_power_kw": 1.2148168940500366,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 5.072743645286044,
+  "self_consumption": 0.9991434226174191,
+  "low_price_share": 0.9987162632301888,
+  "mean_price": 0.11680744632813517,
+  "steps": 24
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 653.2377235370004,
+ "parts": {
+  "price": "day-ahead + negative midday",
+  "storages": "battery",
+  "days": 1.0
+ }
+}

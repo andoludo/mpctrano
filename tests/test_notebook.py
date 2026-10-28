@@ -1,12 +1,12 @@
-"""Notebook helpers: pre-generated models, the result cache, price options and the widgets (headless)."""
+"""Notebook helpers: the tutorial building, the result cache, price options and the widgets (headless)."""
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
-from trano.mpc import RCModelType
 
-from mpctrano import FlatTariff, Mismatch
+from mpctrano import FlatTariff
 from mpctrano.notebook import (
     ResultCache,
     TutorialBuilding,
@@ -19,24 +19,25 @@ from mpctrano.notebook import (
     scenario,
 )
 from mpctrano.scenarios import run_scenario
-
-HOUSE = Path(__file__).parent.parent / "tutorials" / "models" / "house"
-START = "2023-01-16"
+from tests.conftest import HEAT_PUMP_HOUSE, START
 
 
 @pytest.fixture(scope="module")
 def building() -> TutorialBuilding:
-    return TutorialBuilding(HOUSE, "base")
+    return TutorialBuilding(HEAT_PUMP_HOUSE, start=pd.Timestamp(START), spin_up_days=1.0)
 
 
-def test_tutorial_building_loads_both_structures(building: TutorialBuilding) -> None:
-    assert "base" in TutorialBuilding.variants(HOUSE)
-    assert building.control.interface.zones[0].model_type == "R3C2"
-    assert building.plant_model.interface.zones[0].model_type == "R4C3"
-    project = building.project()
-    assert project.plant_model(RCModelType.r4c3) is building.plant_model
-    plant = building.plant(Mismatch(parameter_std=0.1))
-    assert plant.model.interface.zones[0].model_type == "R4C3"
+def test_tutorial_building_has_its_models_and_spun_up_states(building: TutorialBuilding) -> None:
+    assert building.closed_loop.control_names == []
+    assert building.truth.state_names == building.model.state_names
+    assert not np.allclose(building.truth.parameters, building.model.parameters, equal_nan=True)
+    perfect, mismatch = building.initial_state(), building.initial_state(mismatch=True)
+    assert not np.allclose(perfect, building.model.initial_state)
+    assert not np.allclose(perfect, mismatch)
+    plant = building.plant(mismatch=True)
+    assert plant.model is building.truth and plant.measurement_std == building.measurement_std
+    np.testing.assert_allclose(plant.state, mismatch)
+    assert building.plant().measurement_std == 0.0
 
 
 def test_days_follow_quick_mode(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,6 +60,7 @@ def test_price_options_cover_the_period() -> None:
     spike = options["day-ahead + evening spike"].energy_price(index)
     assert spike[17] > 2 * options["day-ahead"].energy_price(index)[17]
     assert (options["day-ahead + negative midday"].export_price(index)[11:15] < 0).all()
+    assert options["day-ahead"].has_export_price
 
 
 def test_comfort_spec_from_widget_values() -> None:
@@ -69,38 +71,37 @@ def test_comfort_spec_from_widget_values() -> None:
 
 def test_cache_round_trip(tmp_path: Path, building: TutorialBuilding) -> None:
     cache = ResultCache(tmp_path / "cache")
-    run = scenario("flat", FlatTariff(price=0.25), comfort_spec(21, 24, 3), START, 0.25)
+    run = scenario("flat", FlatTariff(price=0.25), comfort_spec(21, 24, 3), START, 0.25, horizon=6)
     calls = []
 
     def compute():
         calls.append(1)
-        return run_scenario(building.control, run, plant=building.plant(Mismatch(parameter_std=0.1)))
+        return run_scenario(building.model, run, plant=building.plant(mismatch=True))
 
     first = cache.run(compute, variant="base", price="flat", band=3.0)
     second = cache.run(compute, variant="base", price="flat", band=3.0)
     assert len(calls) == 1
-    pd.testing.assert_frame_equal(first.frame, second.frame)
+    pd.testing.assert_frame_equal(first.frame, second.frame, check_freq=False)
     assert second.metrics.model_dump(exclude={"self_consumption"}) == first.metrics.model_dump(
         exclude={"self_consumption"}
     )
-    assert second.heating_columns == first.heating_columns
+    assert second.comfort_states == first.comfort_states
     index = cache.index()
-    assert list(index["variant"]) == ["base"] and index["total_cost"].iloc[0] == pytest.approx(first.metrics.total_cost)
-    table = kpi_table({"first": first})
-    assert "total_cost" in table.columns
+    assert list(index["variant"]) == ["base"]
+    assert index["total_cost"].iloc[0] == pytest.approx(first.metrics.total_cost)
+    assert "total_cost" in kpi_table({"first": first}).columns
 
 
 def test_widgets_build_headless(tmp_path: Path, building: TutorialBuilding) -> None:
     prices = price_options(START, 1, sample=None)
-    explorer = plan_explorer(building, prices, START)
+    explorer = plan_explorer(building, prices)
     assert len(explorer.children) == 3
     cache = ResultCache(tmp_path / "cache")
-    runs = {"flat": {"price": "flat"}}
 
     def compute(price: str):
-        run = scenario(price, prices[price], comfort_spec(21, 24, 3), START, 0.25)
-        return run_scenario(building.control, run, plant=building.plant(Mismatch(parameter_std=0.1)))
+        run = scenario(price, prices[price], comfort_spec(21, 24, 3), START, 0.25, horizon=6)
+        return run_scenario(building.model, run, plant=building.plant(mismatch=True))
 
-    widget = closed_loop_explorer(cache, runs, compute, {"price": ["flat"]})
+    widget = closed_loop_explorer(cache, {"flat": {"price": "flat"}}, compute, {"price": ["flat"]})
     assert len(widget.children) == 2
     assert cache.has(cache.key(price="flat"))

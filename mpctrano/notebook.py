@@ -1,15 +1,15 @@
-"""Helpers of the interactive tutorials: pre-generated models, cached closed-loop results, widgets.
+"""Helpers of the interactive tutorials: tutorial buildings, cached closed-loop results, widgets.
 
 The notebooks only wire these functions to ``ipywidgets`` controls:
 
-* :class:`TutorialBuilding` loads the control model (R3C2) and the plant model (R4C3) of a
-  pre-generated variant from ``tutorials/models/<typology>/``;
-* :class:`ResultCache` stores closed-loop results as parquet frames keyed by the parameters of
-  the run, so that a widget reads a cached run in milliseconds and only a "recompute" button
-  pays the closed-loop cost;
-* :func:`plan_explorer` and :func:`closed_loop_explorer` build the widgets; the live widgets
-  re-solve a single open-loop MPC plan (a fraction of a second), the closed-loop ones read
-  the cache;
+* :class:`TutorialBuilding` generates the ``FastSmoothBuildingsMPC`` model of a YAML with Trano, the closed-loop
+``BuildingModel``
+  of the same YAML (the rule-based reference), a perturbed copy playing the real building and the states reached
+  after a few days of the controllers of the YAML (:func:`~mpctrano.simulation.spin_up`);
+* :class:`ResultCache` stores closed-loop results as parquet frames keyed by the parameters of the run, so that a
+  widget reads a cached run in milliseconds and only a "recompute" button pays the closed-loop cost;
+* :func:`plan_explorer` and :func:`closed_loop_explorer` build the widgets: the live one re-solves one open-loop
+  MPC plan (seconds), the closed-loop one reads the cache;
 * :func:`quick_mode` and :func:`days` shorten the periods when ``MPCTRANO_QUICK=1`` (CI).
 """
 
@@ -26,18 +26,19 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
-from trano.mpc import RCModelType
 
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.forecast import WeatherForecaster
 from mpctrano.metrics import ControlMetrics
-from mpctrano.model import RCModel
+from mpctrano.model import BuildingModel
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
-from mpctrano.scenarios import Mismatch, Scenario, build_plant
-from mpctrano.simulation import ClosedLoopResult, ModelPlant
+from mpctrano.scenarios import DEFAULT_START, Scenario
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_rule_based, spin_up
+from mpctrano.synthetic import perturb
 from mpctrano.tariff import FlatTariff, Tariff, TimeOfUseTariff
 
 QUICK_VARIABLE = "MPCTRANO_QUICK"
@@ -60,48 +61,103 @@ def timed(label: str) -> Any:  # noqa: ANN401
     print(f"{label}: {time.perf_counter() - started:.1f} s")
 
 
-# --------------------------------------------------------------------------- pre-generated models
+# --------------------------------------------------------------------------- tutorial buildings
 @dataclass
 class TutorialBuilding:
-    """A pre-generated variant of a tutorial typology: control model (R3C2) and plant model (R4C3)."""
+    """A tutorial building from its YAML: control model, rule-based reference, true building, spun-up states.
 
-    directory: Path
-    variant: str = "base"
-    controller: RCModelType = RCModelType.r3c2
-    plant_structure: RCModelType = RCModelType.r4c3
+    The *true building* is the Trano model with its parameter groups at random values (``relative_std``, ``seed``,
+    see :meth:`~mpctrano.project.Project.true_building`): the plant of the closed loops with model mismatch, with
+    ``measurement_std`` [K] of sensor noise. Every run starts at ``start`` from the state the controllers of the YAML
+    reach after ``spin_up_days``.
+    """
 
-    @classmethod
-    def variants(cls, directory: Path) -> list[str]:
-        stems = {path.name.removesuffix("_r3c2.mpc.json") for path in Path(directory).glob("*_r3c2.mpc.json")}
-        return sorted(stems)
-
-    def model(self, structure: RCModelType) -> RCModel:
-        stem = f"{self.variant}_{structure.value.lower()}"
-        return RCModel.from_files(self.directory / f"{stem}.mo", self.directory / f"{stem}.mpc.json")
-
-    @cached_property
-    def control(self) -> RCModel:
-        return self.model(self.controller)
-
-    @cached_property
-    def plant_model(self) -> RCModel:
-        return self.model(self.plant_structure)
+    yaml: Path
+    start: pd.Timestamp = field(default_factory=lambda: pd.Timestamp(DEFAULT_START))
+    spin_up_days: float = 3.0
+    relative_std: float = 0.2
+    seed: int = 0
+    measurement_std: float = 0.1
+    control_bounds: dict[str, tuple[float | None, float | None]] | None = None
+    """Other bounds on some controls (:meth:`~mpctrano.model.BuildingModel.with_control_bounds`): a negative lower
+    bound on an ideal emitter lets the controller cool with it."""
+    _states: dict[tuple[bool, bool, pd.Timestamp], np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
     @cached_property
-    def forecaster(self) -> WeatherForecaster:
-        return WeatherForecaster.from_model(self.control)
-
     def project(self) -> Project:
-        """A project on the control model whose plants of the other structure are pre-loaded."""
-        project = Project.from_model(self.control)
-        project.plants[self.plant_structure] = self.plant_model
-        project.plants[self.controller] = self.control
-        return project
+        return Project.from_yaml(self.yaml)
 
-    def plant(self, mismatch: Mismatch | None = None, time_step: float = 3600.0) -> ModelPlant:
-        mismatch = mismatch or Mismatch()
-        plant_model = self.plant_model if mismatch.plant_model_type == self.plant_structure else None
-        return build_plant(self.control, mismatch, time_step, plant_model=plant_model)
+    @cached_property
+    def model(self) -> BuildingModel:
+        """The ``FastSmoothBuildingsMPC`` model of the YAML (with :attr:`control_bounds`): the model of the
+        controller."""
+        model = self.project.model
+        return model if self.control_bounds is None else model.with_control_bounds(self.control_bounds)
+
+    @property
+    def forecaster(self) -> WeatherForecaster:
+        return self.project.forecaster
+
+    @cached_property
+    def closed_loop(self) -> BuildingModel:
+        """The closed-loop ``BuildingModel`` of the YAML: the building with its controllers (the rule-based
+        reference)."""
+        return self.project.closed_loop()
+
+    @cached_property
+    def truth(self) -> BuildingModel:
+        """The true building: the model with perturbed parameter groups."""
+        return perturb(self.model, relative_std=self.relative_std, seed=self.seed)
+
+    @cached_property
+    def true_closed_loop(self) -> BuildingModel:
+        """The closed-loop model of the true building."""
+        return self.project.true_closed_loop(relative_std=self.relative_std, seed=self.seed)
+
+    def initial_state(
+        self, mismatch: bool = False, start: pd.Timestamp | str | None = None, closed_loop: bool = False
+    ) -> np.ndarray:
+        """The state at ``start`` (default: :attr:`start`) after the spin-up: of the true building with ``mismatch``,
+        of the closed-loop model with ``closed_loop``."""
+        start = pd.Timestamp(start or self.start)
+        key = (mismatch, closed_loop, start)
+        if key not in self._states:
+            reference = self.true_closed_loop if mismatch else self.closed_loop
+            model = reference if closed_loop else (self.truth if mismatch else self.model)
+            self._states[key] = spin_up(model, reference, start, self.spin_up_days)
+        return self._states[key].copy()
+
+    def plant(
+        self, mismatch: bool = False, time_step: float = 3600.0, start: pd.Timestamp | str | None = None
+    ) -> ModelPlant:
+        """A fresh plant at ``start``: the model itself, or the true building with sensor noise (``mismatch``)."""
+        start = pd.Timestamp(start or self.start)
+        return ModelPlant(
+            self.truth if mismatch else self.model,
+            time_step,
+            start,
+            x0=self.initial_state(mismatch, start),
+            measurement_std=self.measurement_std if mismatch else 0.0,
+            seed=self.seed,
+        )
+
+    def rule_based(self, run: Scenario, mismatch: bool = False) -> ClosedLoopResult:
+        """The controllers of the YAML over the period of ``run``, on the same building and from the same spun-up
+        state as the MPC, costed with its tariff and assessed against its comfort band."""
+        settings = run.settings
+        return run_rule_based(
+            self.true_closed_loop if mismatch else self.closed_loop,
+            WeatherForecaster.from_model(self.closed_loop, weather=self.forecaster.weather),
+            run.start,
+            run.steps,
+            settings.time_step,
+            run.comfort,
+            run.tariff,
+            fuel_price=settings.fuel_price,
+            feed_in_price=settings.feed_in_price,
+            x0=self.initial_state(mismatch, run.start, closed_loop=True),
+            name=f"{run.name} (rule based)",
+        )
 
 
 # --------------------------------------------------------------------------- cache
@@ -110,7 +166,6 @@ class ResultCache:
     """Closed-loop results stored as ``<key>.parquet`` + ``<key>.json`` under ``directory``."""
 
     directory: Path
-    _index: dict[str, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.directory = Path(self.directory)
@@ -131,16 +186,17 @@ class ResultCache:
     def load(self, key: str) -> ClosedLoopResult:
         frame_path, meta_path = self.paths(key)
         meta = json.loads(meta_path.read_text())
-        frame = pd.read_parquet(frame_path)
         return ClosedLoopResult(
             name=meta["name"],
-            frame=frame,
+            frame=pd.read_parquet(frame_path),
             metrics=ControlMetrics.model_validate(meta["metrics"]),
             time_step=meta["time_step"],
+            zones=meta["zones"],
+            comfort_states=meta["comfort_states"],
+            fuel_price=meta["fuel_price"],
+            feed_in_price=meta["feed_in_price"],
             failures=meta["failures"],
             elapsed=meta["elapsed"],
-            heating_columns=meta["heating_columns"],
-            gas_price=meta["gas_price"],
         )
 
     def store(self, key: str, result: ClosedLoopResult, **parts: Any) -> None:  # noqa: ANN401
@@ -150,10 +206,12 @@ class ResultCache:
             "name": result.name,
             "metrics": result.metrics.model_dump(),
             "time_step": result.time_step,
+            "zones": result.zones,
+            "comfort_states": result.comfort_states,
+            "fuel_price": result.fuel_price,
+            "feed_in_price": result.feed_in_price,
             "failures": result.failures,
             "elapsed": result.elapsed,
-            "heating_columns": result.heating_columns,
-            "gas_price": result.gas_price,
             "parts": json.loads(json.dumps(parts, default=_serialise)),
         }
         meta_path.write_text(json.dumps(meta, indent=1))
@@ -177,12 +235,13 @@ class ResultCache:
         rows = []
         for meta_path in sorted(self.directory.glob("*.json")):
             meta = json.loads(meta_path.read_text())
+            metrics = ControlMetrics.model_validate(meta["metrics"])
             rows.append(
                 {
                     "key": meta_path.stem,
                     **meta.get("parts", {}),
-                    "total_cost": ControlMetrics.model_validate(meta["metrics"]).total_cost,
-                    "comfort_violation_kh": meta["metrics"]["comfort_violation_kh"],
+                    "total_cost": metrics.total_cost,
+                    "comfort_violation_kh": metrics.comfort_violation_kh,
                     "elapsed": meta["elapsed"],
                 }
             )
@@ -207,11 +266,11 @@ def price_options(
     """Ready-made price signals over the period: flat, time-of-use, day-ahead, a scarcity spike, negative hours.
 
     The day-ahead prices come from the cached sample ``sample`` relocated onto the period when it is
-    available, from the synthetic day-ahead generator otherwise.
+    available (``tutorials/scripts/fetch_prices.py``), from the synthetic day-ahead generator otherwise.
     """
     start = pd.Timestamp(start)
     components = components or RetailComponents(grid_fee=0.10, taxes=0.03, vat=0.06, export_share=0.4)
-    period = int(days_) + 3
+    period = int(np.ceil(days_)) + 3
     try:
         signal = PriceSignal.from_cached(sample, components) if sample else None
     except FileNotFoundError:
@@ -249,6 +308,36 @@ def comfort_spec(
     return ComfortSpec(default=schedule)
 
 
+def scenario(
+    name: str,
+    tariff: Tariff,
+    comfort: ComfortSpec,
+    start: pd.Timestamp | str,
+    days_: float,
+    **settings: Any,  # noqa: ANN401
+) -> Scenario:
+    """A scenario from the building blocks of the widgets (moving horizon estimation by default)."""
+    return Scenario(
+        name=name,
+        description=name,
+        tariff=tariff,
+        comfort=comfort,
+        settings=MPCSettings(**settings),
+        start=str(pd.Timestamp(start).date()),
+        days=days_,
+    )
+
+
+def kpi_table(results: Mapping[str, ClosedLoopResult], columns: tuple[str, ...] | None = None) -> pd.DataFrame:
+    """Headline indicators of several runs, one row each."""
+    columns = columns or (
+        "total_cost", "energy_kwh", "sold_kwh", "comfort_violation_kh", "peak_power_kw", "low_price_share",
+        "failures",
+    )  # fmt: skip
+    frame = pd.DataFrame({name: result.summary() for name, result in results.items()}).T
+    return frame[[column for column in columns if column in frame.columns]].astype(float).round(2)
+
+
 # --------------------------------------------------------------------------- widgets
 def _widgets() -> Any:  # noqa: ANN401
     try:
@@ -263,43 +352,47 @@ def _widgets() -> Any:  # noqa: ANN401
 def plan_explorer(
     building: TutorialBuilding,
     prices: Mapping[str, Tariff],
-    start: pd.Timestamp | str,
-    on_solution: Callable[[MPCSolution, RCModel], Any] | None = None,
+    start: pd.Timestamp | str | None = None,
+    on_solution: Callable[[MPCSolution, BuildingModel], Any] | None = None,
 ) -> Any:  # noqa: ANN401
-    """Widgets re-solving one open-loop MPC plan live: prices, comfort band, horizon, weights.
+    """Widgets re-solving one open-loop MPC plan live: prices, comfort band, horizon, comfort weight.
 
-    ``on_solution(solution, model)`` renders the plan (the plotly figure by default).
+    One controller is kept per horizon and weight, so that a change of price or band warm-starts from the previous
+    plan. ``on_solution(solution, model)`` renders the plan (the plotly figure by default).
     """
     widgets = _widgets()
     from IPython.display import display
 
     from mpctrano.plot import plot_plan
 
-    model, forecaster = building.control, building.forecaster
-    start = pd.Timestamp(start)
+    model, forecaster = building.model, building.forecaster
+    start = pd.Timestamp(start or building.start)
+    x0 = building.initial_state(start=start)
+    controllers: dict[tuple[int, float], ModelPredictiveController] = {}
     controls = {
         "price": widgets.Dropdown(options=list(prices), value=next(iter(prices)), description="Price"),
         "lower": widgets.FloatSlider(value=21.0, min=18.0, max=23.0, step=0.5, description="Occupied min [degC]"),
         "upper": widgets.FloatSlider(value=24.0, min=22.0, max=27.0, step=0.5, description="Occupied max [degC]"),
         "setback": widgets.FloatSlider(value=3.0, min=0.0, max=6.0, step=0.5, description="Night setback [K]"),
-        "horizon": widgets.Dropdown(options=[12, 24, 36, 48], value=24, description="Horizon [h]"),
+        "horizon": widgets.Dropdown(options=[12, 24, 36], value=24, description="Horizon [h]"),
         "comfort_penalty": widgets.FloatLogSlider(
             value=5.0, base=10, min=-1, max=2, step=0.25, description="Comfort weight"
         ),
     }
 
     def update(price: str, lower: float, upper: float, setback: float, horizon: int, comfort_penalty: float) -> None:
-        settings = MPCSettings(horizon=horizon, comfort_penalty=comfort_penalty)
-        controller = ModelPredictiveController(
-            model, settings, comfort_spec(lower, max(upper, lower + 0.5), setback), prices[price]
-        )
-        forecast = forecaster.forecast(start, horizon, settings.time_step)
-        started = time.perf_counter()
-        solution = controller.solve(model.initial_state, forecast)
-        elapsed = time.perf_counter() - started
+        key = (horizon, comfort_penalty)
+        comfort = comfort_spec(lower, max(upper, lower + 0.5), setback)
+        if key not in controllers:
+            settings = MPCSettings(horizon=horizon, comfort_penalty=comfort_penalty)
+            controllers[key] = ModelPredictiveController(model, settings, comfort, prices[price])
+        controller = controllers[key]
+        controller.comfort, controller.tariff = comfort, prices[price]
+        forecast = forecaster.forecast(start, horizon, controller.settings.time_step)
+        solution = controller.solve(x0, forecast)
         print(
-            f"{solution.status} in {solution.iterations} iterations, {elapsed:.2f} s; "
-            f"cost {solution.total_cost:.2f} EUR"
+            f"{solution.status} in {solution.iterations} iterations, {solution.solve_time:.1f} s; "
+            f"cost {solution.economic_cost:.2f} EUR"
         )
         if on_solution is None:
             display(plot_plan(solution, model))  # type: ignore[no-untyped-call]
@@ -307,10 +400,7 @@ def plan_explorer(
             on_solution(solution, model)
 
     output = widgets.interactive_output(update, controls)
-    layout = widgets.VBox(
-        [widgets.HBox(list(controls.values())[:3]), widgets.HBox(list(controls.values())[3:]), output]
-    )
-    return layout
+    return widgets.VBox([widgets.HBox(list(controls.values())[:3]), widgets.HBox(list(controls.values())[3:]), output])
 
 
 def closed_loop_explorer(
@@ -335,7 +425,7 @@ def closed_loop_explorer(
         name: widgets.Dropdown(options=options, value=options[0], description=name)
         for name, options in dimensions.items()
     }
-    recompute = widgets.Button(description="Recompute", tooltip="Run the closed loop again (slow)")
+    recompute = widgets.Button(description="Recompute", tooltip="Run the closed loop again (minutes)")
     output = widgets.Output()
 
     def selected() -> tuple[str, Mapping[str, Any]] | None:
@@ -366,36 +456,6 @@ def closed_loop_explorer(
     recompute.on_click(lambda _button: show(force=True))
     show()
     return widgets.VBox([widgets.HBox([*controls.values(), recompute]), output])
-
-
-def kpi_table(results: Mapping[str, ClosedLoopResult], columns: tuple[str, ...] | None = None) -> pd.DataFrame:
-    """Headline indicators of several runs, one row each."""
-    columns = columns or (
-        "total_cost", "energy_kwh", "export_kwh", "comfort_violation_kh", "peak_power_kw",
-        "low_price_share", "failures",
-    )  # fmt: skip
-    frame = pd.DataFrame({name: result.summary() for name, result in results.items()}).T
-    return frame[[column for column in columns if column in frame.columns]].astype(float).round(2)
-
-
-def scenario(
-    name: str,
-    tariff: Tariff,
-    comfort: ComfortSpec,
-    start: pd.Timestamp | str,
-    days_: float,
-    **settings: Any,  # noqa: ANN401
-) -> Scenario:
-    """A scenario from the building blocks of the widgets."""
-    return Scenario(
-        name=name,
-        description=name,
-        tariff=tariff,
-        comfort=comfort,
-        settings=MPCSettings(**settings),
-        start=str(pd.Timestamp(start).date()),
-        days=days_,
-    )
 
 
 __all__ = [

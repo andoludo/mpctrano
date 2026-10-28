@@ -1,20 +1,24 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
 from pydantic import ValidationError
 
 from mpctrano import (
+    CapacityTariff,
     ComfortSchedule,
     ComfortSpec,
     DemandResponseEvent,
     DynamicTariff,
     FlatTariff,
-    RCModel,
     TimeOfUseTariff,
 )
+from mpctrano.metrics import ControlMetrics, Prices
 from mpctrano.scenarios import Scenario
 
 INDEX = pd.date_range("2023-01-16", periods=48, freq="h")  # Monday and Tuesday
+THREE_ZONES = SimpleNamespace(zone_names=["space_001", "space_002", "space_003"])
 
 
 def test_flat_tariff() -> None:
@@ -71,7 +75,56 @@ def test_demand_response_events() -> None:
     )
 
 
-def test_comfort_schedule_bounds_and_transforms(model: RCModel) -> None:
+def test_power_floors_and_notice_of_the_events() -> None:
+    known = FlatTariff().with_events([DemandResponseEvent(start=INDEX[17], end=INDEX[19], power_floor=1500)])
+    assert known.signal(INDEX).floors[17] == 1500 and known.signal(INDEX).floors[19] == 0
+    notified = FlatTariff().with_events(
+        [DemandResponseEvent(start=INDEX[17], end=INDEX[19], power_floor=1500, notice_hours=2)]
+    )
+    assert notified.signal(INDEX[15:]).floors[2] == 1500  # notified two hours ahead
+    assert notified.signal(INDEX[10:]).floors[7] == 0  # not yet notified at 10h
+    assert FlatTariff().signal(INDEX).floors.sum() == 0
+
+
+def test_capacity_tariff_monthly_charge_and_peaks() -> None:
+    tariff = CapacityTariff(base=FlatTariff(price=0.25), capacity_price=48.0)
+    assert tariff.capacity_charge == pytest.approx(4.0)
+    index = pd.date_range("2023-01-30", periods=72, freq="h")
+    power = np.zeros(72)
+    power[10] = 6000.0  # January peak 6 kW
+    power[60] = 1000.0  # February peak below the 2.5 kW floor
+    assert list(tariff.monthly_peaks(index, power).round(2)) == [6.0, 2.5]
+    assert tariff.capacity_cost(index, power) == pytest.approx((6.0 + 2.5) * 4.0)
+    np.testing.assert_allclose(tariff.signal(index).prices, 0.25)
+    with_event = tariff.with_events(
+        [DemandResponseEvent(start="2023-01-30 10:00", end="2023-01-30 12:00", power_floor=2000.0)]
+    )
+    assert isinstance(with_event, CapacityTariff)
+    assert with_event.power_floor(index)[10] == 2000.0 and with_event.power_floor(index)[13] == 0.0
+    energy = pd.DataFrame({"fuel": 0.0, "bought": power / 1000, "sold": 0.0}, index=index)
+    band = np.full((1, 72), 293.15)
+    metrics = ControlMetrics.compute(energy, Prices.of(tariff, index), band, band, band, 3600.0)
+    assert metrics.capacity_cost == pytest.approx((6.0 + 2.5) * 4.0)
+
+
+def test_the_export_is_paid_at_the_export_price_of_the_tariff() -> None:
+    series = pd.Series(0.30, index=INDEX)
+    export = pd.Series(0.05, index=INDEX)
+    with_export = DynamicTariff(series=series, export_series=export)
+    assert with_export.has_export_price and with_export.with_events([]).has_export_price
+    assert CapacityTariff(base=with_export).has_export_price
+    np.testing.assert_allclose(Prices.of(with_export, INDEX).feed_in, 0.05)
+    np.testing.assert_allclose(Prices.of(DynamicTariff(series=series), INDEX).feed_in, 0.30)  # net metering
+    np.testing.assert_allclose(Prices.of(with_export, INDEX, feed_in_price=0.0).feed_in, 0.0)
+    energy = pd.DataFrame({"fuel": 0.0, "bought": 0.0, "sold": 1.0, "generated": 2.0}, index=INDEX)
+    band = np.full((1, 48), 293.15)
+    metrics = ControlMetrics.compute(energy, Prices.of(with_export, INDEX), band, band, band, 3600.0)
+    assert metrics.energy_cost == pytest.approx(-0.05 * 48)
+    assert metrics.generation_kwh == pytest.approx(96.0)
+    assert metrics.self_consumption == pytest.approx(0.5)
+
+
+def test_comfort_schedule_bounds_and_transforms() -> None:
     schedule = ComfortSchedule(occupied_lower=21, occupied_upper=24, unoccupied_lower=17, unoccupied_upper=27)
     lower, upper = schedule.bounds(INDEX)
     assert lower[7] == pytest.approx(294.15) and lower[6] == pytest.approx(290.15)
@@ -85,7 +138,7 @@ def test_comfort_schedule_bounds_and_transforms(model: RCModel) -> None:
     constant = schedule.constant()
     assert constant.unoccupied_lower == 21
     spec = ComfortSpec(default=schedule, zones={"space_003": schedule.constant()})
-    bounds = spec.bounds(model, INDEX)
+    bounds = spec.bounds(THREE_ZONES, INDEX)
     assert bounds.lower.shape == (3, 48)
     assert bounds.lower[2, 3] == pytest.approx(294.15)  # constant band in zone 3
     assert bounds.lower[0, 3] == pytest.approx(290.15)

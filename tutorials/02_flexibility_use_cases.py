@@ -1,217 +1,230 @@
 # %% [markdown]
 # # 02 - Flexibility use cases: what the house can do for the grid, and what it costs
 #
+# [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/andoludo/mpctrano/blob/main/tutorials/02_flexibility_use_cases.ipynb)
+#
 # **Learning objectives**
 #
-# 1. Quantify **implicit flexibility**: what the price-aware controller saves against a
-#    price-agnostic one under day-ahead prices, hourly and at the 15-minute market time unit, and
-#    how much energy it moves in time.
-# 2. Shave the **peak** under a capacity tariff on the monthly quarter-hour peak (the Flemish
-#    *capaciteitstarief*): how the controller trades energy cost against capacity cost.
-# 3. Deliver **explicit flexibility**: respond to an up or down activation request against a
-#    baseline, measure the delivered energy and the **rebound**.
-# 4. Map the **flexibility envelope** (power versus duration, at what cost) and the response to a
-#    price step (the flexibility function).
-# 5. See what **negative prices** and PV self-consumption do to the dispatch, with and without a
-#    battery and an EV.
+# 1. Quantify **implicit flexibility**: what the price-aware controller saves against a price-agnostic one under
+#    day-ahead prices, how much energy it moves in time, and what planning on the 15-minute market time unit
+#    changes.
+# 2. Shave the **peak** under a capacity tariff on the monthly peak (the Flemish *capaciteitstarief*): how the
+#    controller trades energy cost against capacity cost, and why the floor of the tariff matters for a small
+#    heat pump.
+# 3. Deliver **explicit flexibility**: respond to an up or down activation request against a baseline, measure
+#    the delivered energy and the **rebound**.
+# 4. Map the **flexibility envelope** (power versus duration, at what cost) and the response to a price step (the
+#    flexibility function).
+# 5. See what **negative prices** do to a house with PV.
 #
-# The definitions follow IEA EBC Annex 67 and the characterisation of Reynders, Diriken and
-# Saelens (2017), the flexibility function of Junker et al. (2018) and the BOPTEST KPIs of Blum et
-# al. (2021); every source is listed in `tutorials/references.md`. The closed-loop runs come from
-# `tutorials/cache/flexibility/` (`make cache`); the live widgets solve one open-loop plan.
+# The definitions follow IEA EBC Annex 67 and the characterisation of Reynders, Diriken and Saelens (2017), the
+# flexibility function of Junker et al. (2018) and the BOPTEST KPIs of Blum et al. (2021); every source is listed
+# in `tutorials/references.md`. The closed loops (against the true building of tutorial 01, with moving horizon
+# estimation) come from `tutorials/cache/flexibility/` (`make cache`); the plans of section 1 are solved live.
 #
-# **Runtimes** (this container): a 3-day hourly closed loop about 18 s, a 3-day 15-minute closed
-# loop about 2 min, the flexibility envelope (two directions, four durations) about 20 s.
+# **Runtimes** (this container): a two-day hourly closed loop about ten minutes; a 24-hour plan 5 to 20 s at
+# hourly steps, one to two minutes at 15-minute steps; the envelope about twenty plans.
+
+# %%
+import sys
+
+if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctrano and rumoca (a no-op elsewhere)
+    import subprocess
+
+    subprocess.run(  # a fixed command; the clone is skipped when it exists
+        ["git", "clone", "-q", "--depth", "1", "https://github.com/andoludo/mpctrano", "/content/mpctrano"], check=False
+    )
+    sys.path.insert(0, "/content/mpctrano")
+    from tutorials import _colab
+
+    _colab.setup()
 
 # %%
 import pandas as pd
 from IPython.display import display
 
-from mpctrano import ComfortSpec, FlexibilityEnvelope, ModelPredictiveController, MPCSettings, compare, price_response
-from mpctrano.flexibility import flexibility_function
+from mpctrano import ComfortSpec, ModelPredictiveController, MPCSettings, price_response
+from mpctrano.flexibility import compare, shifted_energy
 from mpctrano.notebook import closed_loop_explorer, kpi_table, quick_mode, timed
-from mpctrano.plot import plot_activation, plot_closed_loop, plot_envelope
-from mpctrano.scenarios import build_plant
+from mpctrano.plot import plot_activation, plot_closed_loop, plot_envelope, plot_plan
 from tutorials import _flexibility as study
-from tutorials._house import PERFECT, START
+from tutorials._house import START, building
 
 pd.set_option("display.width", 200)
 print(f"quick mode: {quick_mode()}; cached runs: {study.DAYS:g} days from {START.date()}")
+tariffs = study.tariffs()
 
 # %% [markdown]
-# ## 1. Implicit flexibility: day-ahead prices, hourly and 15-minute
+# ## 1. Implicit flexibility under day-ahead prices
 #
-# Since 1 October 2025 the single day-ahead coupling trades 15-minute products. A controller that
-# plans on the quarter-hour sees sharper price ramps and can follow them with a slow floor heating
-# only through the compressor, so the gain against hourly planning is modest for a house and
-# larger for fast systems. `value_of_flexibility` costs a *price-agnostic* run (flat price, same
-# comfort band) with the same tariff: the difference is what the flexibility is worth.
+# The *price-agnostic* controller has the same model, comfort band and constraints, but plans at the mean price of
+# the period; costing its run with the day-ahead tariff gives what the house would pay without reacting to the
+# price. The difference is what the flexibility is worth under that tariff (`value_of_flexibility`).
 
 # %%
-implicit = {label: study.cached(**parts) for label, parts in study.implicit_runs().items()}
-table = kpi_table(implicit, ("total_cost", "energy_kwh", "comfort_violation_kh", "peak_power_kw", "low_price_share"))
-table["mean solve time [s]"] = [round(result.frame["solve_time"].mean(), 3) for result in implicit.values()]
-display(table)
-display(plot_closed_loop(implicit["base | 15min"], "base house, 15-minute day-ahead prices"))
+rows = {}
+for variant in ("base", "old"):
+    aware = study.cached(study="implicit", variant=variant, pricing="aware", days=study.DAYS)
+    agnostic = study.cached(study="implicit", variant=variant, pricing="agnostic", days=study.DAYS)
+    costed = agnostic.metrics_under(tariffs["day-ahead"])
+    rows[variant] = {
+        "aware cost": aware.metrics.total_cost,
+        "agnostic cost": costed.total_cost,
+        "saving %": 100 * (costed.total_cost - aware.metrics.total_cost) / costed.total_cost,
+        "aware kWh": aware.metrics.energy_kwh,
+        "agnostic kWh": costed.energy_kwh,
+        "shifted kWh": shifted_energy(aware, agnostic),
+        "low-price share aware": aware.metrics.low_price_share,
+        "low-price share agnostic": costed.low_price_share,
+        "comfort aware K.h": aware.metrics.comfort_violation_kh,
+        "comfort agnostic K.h": costed.comfort_violation_kh,
+    }
+display(pd.DataFrame(rows).T.round(2))
+aware = study.cached(study="implicit", variant="base", pricing="aware", days=study.DAYS)
+display(plot_closed_loop(aware, "base house, price aware, day-ahead prices"))
 
 # %% [markdown]
-# The share of energy bought below the median price (`low_price_share`) is the simplest signature
-# of load shifting; `price_response` gives the whole distribution: how many kWh were bought at each
-# price level.
+# The share of energy bought below the median price is the simplest signature of load shifting; `price_response`
+# gives the whole distribution: how many kWh were bought at each price level.
 
 # %%
-display(price_response(implicit["base | 1h"]).round(3).tail(8))
+display(price_response(aware).sort_index().round(3).tail(8))
+
+# %% [markdown]
+# ### Hourly or 15-minute planning
+#
+# Since 1 October 2025 the single day-ahead coupling trades 15-minute products. Below, the same plan at hourly
+# and at 15-minute steps (the same 24-hour horizon: 24 or 96 steps, four times the variables). A heat pump on a
+# buffer can follow a quarter-hour price only through its compressor: compare the energy bought and the cost.
+
+# %%
+house = building("base")
+horizon_hours = 6 if quick_mode() else 24
+plans = {}
+for label, time_step in (("1 h", 3600.0), ("15 min", 900.0)):
+    steps = round(horizon_hours * 3600 / time_step)
+    controller = ModelPredictiveController(
+        house.model, MPCSettings(horizon=steps, time_step=time_step), ComfortSpec(), tariffs["day-ahead"]
+    )
+    with timed(f"plan at {label}"):
+        plans[label] = controller.solve(house.initial_state(), house.forecaster.forecast(START, steps, time_step))
+summary = {}
+for label, plan in plans.items():
+    step = (plan.index[1] - plan.index[0]).total_seconds()
+    summary[label] = {
+        "status": plan.status,
+        "cost EUR": plan.economic_cost,
+        "electricity kWh": float(plan.meter["P_meter"].sum()) * step / 3.6e6,
+        "peak kW": float(plan.meter["P_meter"].max()) / 1000,
+        "solve s": plan.solve_time,
+    }
+display(pd.DataFrame(summary).round(3))
+display(plot_plan(plans["15 min"], house.model, "base house, 15-minute plan"))
 
 # %% [markdown]
 # ## 2. Peak shaving under the capacity tariff
 #
-# The Flemish distribution tariff bills the average of the twelve monthly peaks (highest
-# quarter-hour average power of the month, floored at 2.5 kW) at about 50 EUR/kW/year (2025
-# levels: 48.9 to 56.9 depending on the area). One extra kilowatt of monthly peak therefore costs
-# about 4 EUR; the controller carries the peak of the month so far and weighs the energy saving of
-# a cheap-hour boost against the capacity cost of the higher peak. With hourly steps the peak is
-# the hourly average, which underestimates the quarter-hour peak.
+# The Flemish distribution tariff bills the average of the twelve monthly peaks (highest quarter-hour average
+# power of the month, floored at 2.5 kW) at about 50 EUR/kW/year (2025 levels: 48.9 to 56.9 depending on the
+# area). One extra kilowatt of monthly peak costs about 4 EUR; the controller carries the peak of the month so far
+# and weighs the energy saving of a cheap-hour boost against the capacity cost of a higher peak. The runs use a
+# time-of-use tariff and a deep night setback (5 K), so that the morning recovery makes the peak. With hourly
+# steps the peak is the hourly average, which underestimates the quarter-hour peak.
 
 # %%
 capacity = {label: study.cached(**parts) for label, parts in study.capacity_runs().items()}
-rows = {}
-for variant in ("base", "old", "radiators"):
+rows = []
+for variant in ("base", "old"):
     subset = {label: result for label, result in capacity.items() if label.startswith(variant)}
-    comparison = compare(subset, baseline=f"{variant} | 0 EUR/kW/year")
-    rows[variant] = comparison[
-        ["total_cost", "capacity_cost", "peak_power_kw", "peak_reduction_pct", "comfort_violation_kh"]
-    ]
-display(pd.concat(rows.values()).round(2))
+    comparison = compare(subset, baseline=f"{variant} | none")
+    rows.append(
+        comparison[["total_cost", "capacity_cost", "peak_power_kw", "peak_reduction_pct", "comfort_violation_kh"]]
+    )
+display(pd.concat(rows).round(2))
 
 # %%
-dimensions = {"variant": ["base", "old", "radiators"], "capacity_price": list(study.CAPACITY_PRICES)}
+dimensions = {"variant": ["base", "old"], "capacity": list(study.CAPACITY)}
 display(closed_loop_explorer(study.CACHE, study.capacity_runs(), study.compute, dimensions))
+display(plot_closed_loop(capacity["old | 50 EUR/kW/year, 2.5 kW floor"], "old house under the Flemish capacity tariff"))
 
 # %% [markdown]
 # ## 3. Explicit flexibility: activation requests and the rebound
 #
-# An aggregator or the DSO asks for a change of the billed power during a window against a
-# baseline (here the plan of the same controller without the request). The controller receives
-# the request as a soft cap (down) or floor (up) on the billed power one hour before the window
-# (`ActivationRequest.notice_hours`), delivers what the comfort band allows and **rebounds**
-# afterwards: the heat not delivered during a shed has to be delivered later, the heat absorbed
-# during an upward activation is saved later. The metrics (`ActivationResult.metrics`) give the
-# delivered energy, the rebound energy and peak and their ratio, in the spirit of the available
-# storage capacity and storage efficiency of Reynders et al.
+# An aggregator or the DSO asks for a change of the electricity bought during a window against a baseline (here
+# the run of the same controller without the request). The controller receives the request as a soft cap (down)
+# or floor (up) one hour before the window (`ActivationRequest.notice_hours`), delivers what the comfort band
+# allows and **rebounds** afterwards: the heat not delivered during a shed is delivered later, the heat stored
+# during an upward activation is not bought later. The metrics give the delivered energy, the rebound energy and
+# peak and their ratio, in the spirit of the available storage capacity and storage efficiency of Reynders et al.
 
 # %%
-results = {label: study.activation("base", label) for label in study.ACTIVATIONS}
-metrics = pd.DataFrame({label: result.metrics for label, result in results.items()}).T
-display(metrics.round(2))
-display(plot_activation(results["shed 1 kW, 2 h at 17h"], "base house: shed 1 kW for 2 h at 17h, second day"))
-
-# %% [markdown]
-# The sheds deliver only a fifth to a third of the request: 1 kW is more than the 0.6 kW the house
-# draws at those hours, so the cap is zero, and with one hour of notice the controller keeps a few
-# hundred watts running rather than let the air temperature fall out of the band. The absorptions
-# are delivered up to the compressor limit, and about half of the absorbed energy is saved in the
-# following hours (`rebound_ratio`), which is the **rebound** the DSO has to expect. The
-# `big_heat_pump` variant only differs where the 3 kW limit of the base house binds, the 2 kW
-# absorption:
-
-# %%
-big = {label: study.activation("big_heat_pump", label) for label in study.ACTIVATIONS}
-display(
-    pd.DataFrame({label: result.metrics for label, result in big.items()})
-    .T[["delivered_energy_kwh", "delivery_ratio", "rebound_energy_kwh", "rebound_ratio", "cost_change"]]
-    .round(2)
-)
+results = {label: study.activation(label) for label in study.ACTIVATIONS}
+display(pd.DataFrame({label: result.metrics for label, result in results.items()}).T.round(2))
+display(plot_activation(results["shed 0.3 kW, 2 h at 17h"], "base house: shed 0.3 kW for 2 h at 17h"))
+display(plot_activation(results["absorb 0.5 kW, 2 h at 13h"], "base house: absorb 0.5 kW for 2 h at 13h"))
 
 # %% [markdown]
 # ## 4. Flexibility envelope and flexibility function
 #
-# The **envelope** answers the aggregator's question before any request: from the current state,
-# how much power can the house shed or absorb for one, two, four or eight hours without leaving the
-# comfort band, and what does that plan cost against the unconstrained one? It is a sweep of
-# constrained MPC solves (bisection on the cap or floor of the billed power).
+# The **envelope** answers the aggregator's question before any request: from the current state, how much power
+# can the house shed or absorb for one, two or four hours without leaving the comfort band, and what does that
+# plan cost against the unconstrained one? It is a sweep of constrained MPC plans (bisection on the cap or floor
+# of the electricity bought; absorbing is bounded by the full-load power of the heat pump).
 
 # %%
-house = study.building("base")
-model = house.control
-tariffs = study.price_options(START, study.DAYS, study.COMPONENTS)
-controller = ModelPredictiveController(model, MPCSettings(horizon=24), ComfortSpec(), tariffs["day-ahead"])
-at = START + pd.Timedelta(hours=6)
-with timed("flexibility envelope"):
-    envelope = FlexibilityEnvelope.compute(
-        controller,
-        model.initial_state,
-        house.forecaster.forecast(at, 24, 3600.0),
-        durations=(1.0, 2.0, 4.0, 8.0),
-        iterations=6,
-    )
-display(envelope.frame.round(2))
-display(plot_envelope(envelope, "base house at 6h, day-ahead prices"))
+for at in study.ENVELOPE_TIMES:
+    envelope = study.envelope(at)
+    display(envelope.round(3))
+    display(plot_envelope(envelope, f"base house at {at} on the first day, day-ahead prices"))
 
 # %% [markdown]
-# The **flexibility function** of Junker et al. characterises the demand response to a penalty
-# (price) step rather than to a power request: here the price is multiplied by three for three
-# hours and the change of the billed power is read like an activation.
+# The **flexibility function** of Junker et al. characterises the response to a penalty (price) step rather than
+# to a power request: here the price is multiplied by three for three hours from 17h, and the change of the
+# electricity bought reads like an activation.
 
 # %%
-run = study.scenario("day-ahead", tariffs["day-ahead"], study.comfort_spec(*study.BAND), START, study.LIVE_DAYS)
-with timed("flexibility function"):
-    response = flexibility_function(
-        model, run, START + pd.Timedelta(hours=17), 3.0, price_factor=3.0,
-        plant=lambda: build_plant(model, PERFECT, 3600.0),
-    )  # fmt: skip
-display(pd.Series(response.metrics).round(2).to_frame("price step x3, 3 h"))
-display(plot_activation(response, "flexibility function: price x3 for 3 h at 17h on the first day"))
+response = study.activation("price step")
+display(pd.Series(response.metrics).round(2).to_frame("price x3 for 3 h at 17h"))
+display(plot_activation(response, "flexibility function: price x3 for 3 h at 17h"))
 
 # %% [markdown]
-# ## 5. Negative prices and PV self-consumption
+# ## 5. Negative prices and PV
 #
-# With PV on the roof the meter exports at midday; a negative wholesale price (a renewable
-# surplus) turns the midday import into something the controller *wants* to do: it pre-heats the
-# house and the tank, charges the battery and the vehicle when they are there. Self-consumption is
-# the share of the generation used on site.
+# With 20 m2 of PV the house exports at midday; a negative wholesale price (a renewable surplus) turns the midday
+# import into something the controller *wants*: it charges the buffer and the walls, and the export is paid at the
+# (negative) export price. Self-consumption is the share of the generation used on site.
 
 # %%
 pv = {label: study.cached(**parts) for label, parts in study.pv_runs().items()}
 display(
     kpi_table(
         pv,
-        (
-            "total_cost",
-            "energy_kwh",
-            "export_kwh",
-            "export_revenue",
-            "generation_kwh",
-            "self_consumption",
-            "comfort_violation_kh",
-        ),
+        ("total_cost", "energy_kwh", "sold_kwh", "generation_kwh", "self_consumption", "comfort_violation_kh"),
     )
 )
-display(
-    plot_closed_loop(pv["pv_battery_ev | day-ahead + negative midday"], "PV, battery and EV: negative midday prices")
-)
+display(plot_closed_loop(pv["pv | day-ahead + negative midday"], "PV house: negative midday prices"))
 
 # %% [markdown]
 # ## Key takeaways
 #
-# * Implicit flexibility pays a few percent on a day-ahead signal for a well-insulated house on
-#   floor heating; the 15-minute resolution changes the plan more than the bill, because the
-#   compressor, not the price, limits how fast the house can follow.
-# * Under the capacity tariff the controller flattens the morning boost: the peak reduction is
-#   worth about 4 EUR per kW and month, which competes with the energy saving of concentrating
-#   the heating in the cheap hours.
-# * Explicit activations are delivered as long as the comfort band and the compressor leave room:
-#   a shed larger than the running power is cut to what the band tolerates, an absorption is
-#   delivered up to the compressor limit and about half of it comes back as a lower consumption
-#   within a few hours, a rebound the DSO must expect, which is the argument for coordinating the
-#   activations (tutorial 06).
-# * The envelope is asymmetric: the house absorbs more than it sheds in the morning (cold slab,
-#   compressor headroom) and the reverse in the evening.
-# * Negative prices reward absorption, and the storage order follows the round-trip efficiency:
-#   tank and floor first, battery second, vehicle when plugged in.
+# * **Implicit flexibility is worth little with a flat winter price**: the price-aware controller shifts 0.8 kWh
+#   (base house) to 3.2 kWh (old house) into the cheap hours over two days and saves 0.45 % of the bill. The
+#   synthetic day-ahead signal has a small spread in January; the saving scales with the spread, not with the
+#   building (`tutorials/scripts/fetch_prices.py` brings a real year in). The 15-minute plan costs twenty times the
+#   solve for a 3 % different answer: the hour is the right step for a heavy house.
+# * **A capacity tariff is the strong signal**: at 150 EUR/kW/year without a floor the base house cuts its monthly
+#   peak by 81 % (1.77 to 0.34 kW) and the old house by 78 %, trading a little comfort (1.6 against 1.0 K.h); with a
+#   2.5 kW floor the base house has nothing to gain (its peak is below the floor) and pays the floor.
+# * **Explicit activations are delivered when the plan has room**: a 1 kW absorption at 13h is delivered in full with
+#   a 0.6 kWh rebound over the next three hours; a 0.3 kW shed at 17h is delivered at 83 % over two hours and 57 %
+#   over four, because the evening plan is already lean. The envelope says the same: at 13h and 19h the house
+#   can absorb 1.3 to 1.5 kW for hours, it can shed almost nothing.
+# * **PV without a battery does not react to negative prices**: with 9.3 kWh of January PV consumed on site and
+#   nothing to charge, the controller's day costs the same (1.53 EUR) whether midday prices go negative or not;
+#   tutorial 05 adds the storages that make them count.
 #
 # ## Further reading
 #
-# `tutorials/references.md`: Annex 67 and Annex 82 for the definitions, Reynders, Diriken and
-# Saelens (2017) and Stinner et al. (2016) for the characterisation, Junker et al. (2018) for the
-# flexibility function, the Vlaamse Nutsregulator sheets for the capacity tariff, and section B for
-# the market context picked up in tutorial 07.
+# `tutorials/references.md`: Annex 67 and Annex 82 for the definitions, Reynders, Diriken and Saelens (2017) and
+# Stinner et al. (2016) for the characterisation, Junker et al. (2018) for the flexibility function, the Vlaamse
+# Nutsregulator sheets for the capacity tariff.

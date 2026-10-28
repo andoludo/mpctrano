@@ -1,7 +1,8 @@
-"""Performance indicators: fit of a model to data and comfort / cost of a control run."""
+"""Performance indicators: fit of a model to data and energy, cost and comfort of a control run."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -9,7 +10,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from mpctrano.model import RCModel
+    from mpctrano.tariff import CapacityTariff, Tariff
 
 
 class FitMetrics(BaseModel):
@@ -47,109 +48,121 @@ class FitMetrics(BaseModel):
         return pd.DataFrame({"rmse": self.rmse, "mae": self.mae, "max_error": self.max_error, "r2": self.r2})
 
 
-class ControlMetrics(BaseModel):
-    """Energy, cost, comfort and peak of a (closed-loop) control run.
+@dataclass(frozen=True)
+class Prices:
+    """Prices of the carriers over the steps of a run [EUR/kWh] and the capacity charge [EUR/kW].
 
-    ``energy_kwh`` is the energy billed at the tariff: the ideal heating of the zones without
-    system plus the electricity imported from the grid; the export, the gas and the PV
-    generation are reported separately.
+    With a :class:`~mpctrano.tariff.CapacityTariff` the capacity cost is that of the monthly peaks (``capacity``),
+    otherwise ``capacity_charge`` times the peak of the run.
     """
 
-    energy_kwh: float = Field(description="Energy billed at the tariff (ideal heating + grid import) [kWh]")
-    energy_cost: float = Field(description="Energy cost at the tariff [EUR]")
-    capacity_cost: float = Field(0.0, description="Capacity charge of the peak power [EUR]")
+    electricity: np.ndarray
+    feed_in: np.ndarray
+    fuel: np.ndarray
+    capacity_charge: float = 0.0
+    capacity: CapacityTariff | None = None
+
+    @classmethod
+    def of(
+        cls,
+        tariff: Tariff,
+        index: pd.DatetimeIndex,
+        fuel_price: float | None = None,
+        feed_in_price: float | None = None,
+    ) -> Prices:
+        """The prices of ``tariff`` on ``index``. The fuel is bought at ``fuel_price``, the electricity sold at
+        ``feed_in_price``, or else at the export price of the tariff when it has one, at its energy price otherwise
+        (net metering)."""
+        from mpctrano.tariff import CapacityTariff
+
+        signal = tariff.signal(index)
+        steps = len(index)
+
+        def price(value: float | None) -> np.ndarray:
+            return signal.prices.copy() if value is None else np.full(steps, float(value))
+
+        feed_in = signal.export.copy() if feed_in_price is None and tariff.has_export_price else price(feed_in_price)
+        return cls(
+            electricity=signal.prices,
+            feed_in=feed_in,
+            fuel=price(fuel_price),
+            capacity_charge=signal.capacity_charge,
+            capacity=tariff if isinstance(tariff, CapacityTariff) else None,
+        )
+
+
+class ControlMetrics(BaseModel):
+    """Energy, cost, comfort and peak of a run, from the meters of the building."""
+
+    fuel_kwh: float = Field(description="Fuel drawn [kWh]")
+    electricity_kwh: float = Field(description="Electricity bought from the grid [kWh]")
+    sold_kwh: float = Field(description="Electricity sold to the grid [kWh]")
+    energy_kwh: float = Field(description="Energy bought: fuel and electricity [kWh]")
+    energy_cost: float = Field(description="Cost of the fuel and of the electricity bought, less the sales [EUR]")
+    capacity_cost: float = Field(0.0, description="Capacity charge of the peak electric power [EUR]")
     comfort_violation_kh: float = Field(description="Integral of the band violations over the zones [K.h]")
     max_violation: float = Field(description="Largest band violation [K]")
-    peak_power_kw: float = Field(description="Peak billed power [kW]")
-    low_price_share: float = Field(description="Share of the energy consumed below the median price")
-    mean_price: float = Field(description="Energy-weighted average price paid [EUR/kWh]")
-    steps: int
-    export_kwh: float = Field(0.0, description="Energy exported to the grid [kWh]")
-    export_revenue: float = Field(0.0, description="Revenue of the exported energy [EUR]")
-    gas_kwh: float = Field(0.0, description="Fuel energy of the boilers [kWh]")
-    gas_cost: float = Field(0.0, description="Cost of the fuel [EUR]")
-    generation_kwh: float = Field(0.0, description="PV generation [kWh]")
+    peak_power_kw: float = Field(description="Peak electric power bought [kW]")
+    peak_fuel_power_kw: float = Field(description="Peak fuel power [kW]")
+    generation_kwh: float = Field(0.0, description="Electricity produced on site (PV) [kWh]")
     self_consumption: float = Field(
-        float("nan"), description="Share of the PV generation consumed on site (NaN without PV)"
+        float("nan"), description="Share of the production consumed on site (NaN without production)"
     )
+    low_price_share: float = Field(description="Share of the energy bought below the median electricity price")
+    mean_price: float = Field(description="Average price of the energy bought [EUR/kWh]")
+    steps: int
 
     @property
     def total_cost(self) -> float:
-        return self.energy_cost + self.capacity_cost + self.gas_cost - self.export_revenue
+        return self.energy_cost + self.capacity_cost
 
     @classmethod
     def compute(
         cls,
-        index: pd.DatetimeIndex,
-        powers: np.ndarray,
+        energy: pd.DataFrame,
+        prices: Prices,
         temperatures: np.ndarray,
         lower: np.ndarray,
         upper: np.ndarray,
-        prices: np.ndarray,
         time_step: float,
-        capacity_charge: float = 0.0,
-        export: np.ndarray | None = None,
-        export_prices: np.ndarray | None = None,
-        gas: np.ndarray | None = None,
-        gas_price: float = 0.0,
-        generation: np.ndarray | None = None,
     ) -> ControlMetrics:
-        """``powers`` are the billed powers ``(n, N)`` [W] (summed), ``temperatures`` the zone temperatures
-        ``(n_zones, N)`` at the end of each step; ``export``, ``gas`` and ``generation`` are ``(N,)`` [W]."""
+        """``energy`` has the ``fuel``, ``bought`` and ``sold`` energy of each step [kWh] (and the ``generated``
+        energy with on-site production), on a time index; ``temperatures``, ``lower`` and ``upper`` are
+        ``(n_zones, N)``, the temperatures at the end of each step."""
         hours = time_step / 3600
-        total = np.sum(np.atleast_2d(powers), axis=0)
-        energy = total * hours / 1000
+        fuel, bought, sold = (energy[name].to_numpy(dtype=float) for name in ("fuel", "bought", "sold"))
+        generated = float(energy["generated"].sum()) if "generated" in energy else 0.0
+        purchased = fuel + bought
+        cost_of_energy = prices.fuel * fuel + prices.electricity * bought - prices.feed_in * sold
         violation = np.maximum(lower - temperatures, 0) + np.maximum(temperatures - upper, 0)
-        median = float(np.median(prices))
-        total_energy = float(energy.sum())
-        exported = np.zeros_like(total) if export is None else np.asarray(export, dtype=float) * hours / 1000
-        export_prices = np.zeros_like(prices) if export_prices is None else np.asarray(export_prices, dtype=float)
-        gas_energy = np.zeros_like(total) if gas is None else np.asarray(gas, dtype=float) * hours / 1000
-        generated = None if generation is None else np.asarray(generation, dtype=float) * hours / 1000
-        self_consumption = float("nan")
-        if generated is not None and generated.sum() > 0:
-            self_consumption = float(1 - exported.sum() / generated.sum())
+        total = float(purchased.sum())
+        steps = len(energy)
+        cheap = prices.electricity < float(np.median(prices.electricity)) if steps else np.zeros(0, dtype=bool)
+        peak = float(bought.max() / hours) if steps else 0.0
+        capacity_cost = (
+            prices.capacity.capacity_cost(pd.DatetimeIndex(energy.index), bought / hours * 1000)
+            if prices.capacity is not None and steps
+            else prices.capacity_charge * peak
+        )
         return cls(
-            energy_kwh=total_energy,
-            energy_cost=float(np.sum(prices * energy)),
-            capacity_cost=float(capacity_charge * total.max() / 1000) if len(total) else 0.0,
+            fuel_kwh=float(fuel.sum()),
+            electricity_kwh=float(bought.sum()),
+            sold_kwh=float(sold.sum()),
+            energy_kwh=total,
+            energy_cost=float(cost_of_energy.sum()),
+            capacity_cost=capacity_cost,
             comfort_violation_kh=float(np.sum(violation) * hours),
             max_violation=float(np.max(violation)) if violation.size else 0.0,
-            peak_power_kw=float(total.max() / 1000) if len(total) else 0.0,
-            low_price_share=float(energy[prices < median].sum() / total_energy) if total_energy > 0 else 0.0,
-            mean_price=float(np.sum(prices * energy) / total_energy) if total_energy > 0 else float("nan"),
-            steps=len(index),
-            export_kwh=float(exported.sum()),
-            export_revenue=float(np.sum(export_prices * exported)),
-            gas_kwh=float(gas_energy.sum()),
-            gas_cost=float(gas_price * gas_energy.sum()),
-            generation_kwh=0.0 if generated is None else float(generated.sum()),
-            self_consumption=self_consumption,
+            peak_power_kw=peak,
+            peak_fuel_power_kw=float(fuel.max() / hours) if steps else 0.0,
+            generation_kwh=generated,
+            self_consumption=1 - float(sold.sum()) / generated if generated > 0 else float("nan"),
+            low_price_share=float(purchased[cheap].sum() / total) if total > 0 else 0.0,
+            mean_price=float((prices.fuel * fuel + prices.electricity * bought).sum() / total)
+            if total > 0
+            else float("nan"),
+            steps=steps,
         )
 
     def frame(self) -> pd.DataFrame:
         return pd.DataFrame({"value": self.model_dump()})
-
-
-def compressor_load(frame: pd.DataFrame, model: RCModel, margin: float = 0.02) -> pd.DataFrame:
-    """Use of the shared compressors of a closed-loop or open-loop frame, one row per control group.
-
-    ``mean_load`` is the average of the summed electrical inputs of the group over its limit,
-    ``binding_share`` the share of steps within ``margin`` of the limit (where the compressor,
-    not the price, decides the dispatch), ``peak_kw`` the highest summed input; the share of the
-    group's electricity drawn by each input follows (``share_<input>``).
-    """
-    rows = {}
-    for group in model.control_groups:
-        names = [model.control_names[i] for i in group.indices]
-        total = frame[names].sum(axis=1)
-        row: dict[str, float] = {
-            "limit_kw": group.max_power / 1000,
-            "peak_kw": float(total.max()) / 1000,
-            "mean_load": float(total.mean()) / group.max_power,
-            "binding_share": float((total >= (1 - margin) * group.max_power).mean()),
-        }
-        energy = frame[names].sum()
-        row |= {f"share_{name}": float(energy[name] / energy.sum()) if energy.sum() > 0 else 0.0 for name in names}
-        rows[group.system] = row
-    return pd.DataFrame(rows).T

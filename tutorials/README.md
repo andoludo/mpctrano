@@ -7,14 +7,22 @@ series are in [`PLAN.md`](PLAN.md); the verified literature and regulatory sourc
 
 | Notebook | Topic | Status |
 |---|---|---|
-| `00_setup_check` | toolchain check, first CasADi model from a YAML | ready |
-| `01_house_heat_pump` | single-family house, heat pump + floor heating (reference implementation) | ready |
-| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices | ready |
-| `03_apartment_block` | central heat pump, radiators, DHW tank, shared compressor | ready |
-| `04_office_cooling` | AHU + chiller, occupancy schedule, summer week | planned |
-| `05_pv_battery_ev` | PV, battery and EV charger next to the thermal storage | planned |
-| `06_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
-| `07_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+| `00_setup_check` | toolchain check, first BuildingModel from a YAML, one MPC plan | ready |
+| `01_house_heat_pump` | a house with a heat pump: pipeline, plan widget, closed loop vs the controllers of the YAML, estimation | ready |
+| `02_flexibility_use_cases` | implicit / explicit flexibility, capacity tariff, envelope, negative prices with PV | ready |
+| `03_calibration_from_yaml` | parameters declared in the YAML, calibration of the closed-loop model on noisy data, how IPOPT solves it, before and after | ready |
+| `04_office_cooling` | an office in summer: ideal cooling at an EER, occupancy, capacity charge | ready |
+| `05_pv_battery_ev` | PV, a battery and a vehicle at the meter next to the thermal storage | ready |
+| `06_your_building` | edit the YAML in a cell, regenerate the models, plan, MPC vs the controllers of the YAML | ready |
+| `07_district_coordination` | 3 to 5 buildings behind one feeder: independent, centralised, ADMM | planned |
+| `08_grid_perspective` | value of the flexibility for the TSO and the DSO, market and regulation | planned |
+| `09_apartment_block` | central heat pump, radiators, DHW tank | waiting for the DHW tank in FastSmoothBuildings (see `PLAN.md`) |
+
+The executed notebooks are published on the documentation site
+([andoludo.github.io/mpctrano](https://andoludo.github.io/mpctrano/), section *Tutorials*): the figures are
+interactive there, the widgets of the live sections are not (they need a kernel). To play with them without
+installing anything, open a notebook in Google Colab with its *Open in Colab* badge: the first cell clones the
+repository and installs mpctrano and the rumoca wheel (a minute; `06_your_building` is the one to edit).
 
 The script tutorials of the package itself (calibration, state estimation, tariffs) are in
 [`package/`](package/).
@@ -22,13 +30,16 @@ The script tutorials of the package itself (calibration, state estimation, tarif
 ## Prerequisites
 
 * Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/).
-* Everything else is a Python package: `trano` (YAML to Modelica), `rumoca` (Modelica to CasADi,
-  binary wheels for Linux, macOS and Windows), `casadi` (bundles IPOPT), the notebook stack.
-  No Modelica compiler, no FMU and no Docker is needed for the notebooks.
+* Everything else is a Python package: `trano` (YAML to Modelica, its `FastSmoothBuildings` library),
+  `rumoca` (Modelica to CasADi), `casadi` (bundles IPOPT), the notebook stack. No Modelica
+  compiler, no FMU and no Docker is needed for the notebooks.
+* A Rust toolchain ([rustup](https://rustup.rs)): the FastSmoothBuildings models need rumoca 0.10.3 (rumoca
+  main up to commit `c74cddf`), not on PyPI yet, which `uv sync` builds from source (about
+  10 minutes the first time, cached afterwards).
 
 ```bash
 git clone https://github.com/andoludo/mpctrano && cd mpctrano
-uv sync                      # dev and docs groups included (jupyterlab, ipywidgets, jupytext, nbmake)
+uv sync                      # rumoca built from source; dev and docs groups (jupyterlab, ipywidgets, jupytext, nbmake)
 uv run pre-commit install    # optional: ruff, mypy and jupytext sync on every commit
 ```
 
@@ -49,49 +60,51 @@ Execute every notebook top to bottom, as the CI does (quick mode, cached results
 make notebooks
 ```
 
-## Regenerate the models from the YAML files
+## The buildings and the cached runs
 
-The building descriptions are in `buildings/` and the generated Modelica models and interfaces in
-`models/` (committed, so that the notebooks never need to call Trano):
+The buildings are YAML files in `buildings/`: the single-zone heat pump house of the Trano test suite
+(`house/base.yaml`), its `old` (uninsulated, 55 degC radiator) and `pv` (20 m2 of PV) variants, and a
+two-zone office with ideal emitters (`office/base.yaml`), with the Uccle weather file next to them.
+Trano generates the models when a notebook starts (10 to 30 s per building).
 
-```bash
-uv run python tutorials/scripts/generate_models.py          # all typologies
-uv run python tutorials/scripts/generate_models.py house    # one typology
-```
-
-## Cached results
-
-The closed-loop runs the notebooks show are pre-computed and committed in `tutorials/cache/`
-(parquet frames keyed by the run parameters, see `mpctrano.notebook.ResultCache`). The widgets read
-them in milliseconds; the **Recompute** button runs the closed loop again. To rebuild the cache after
-a change of the models or of the study definitions (`tutorials/_house.py`, `tutorials/_flexibility.py`):
+The closed loops the notebooks read are cached in `cache/` (parquet frames keyed by the parameters
+of the run, committed): the studies `_house.py`, `_flexibility.py`, `_office.py` and `_pv.py`
+define them and `scripts/build_cache.py` computes the missing ones.
 
 ```bash
-uv run python tutorials/scripts/build_cache.py                 # only the missing runs of every study
-uv run python tutorials/scripts/build_cache.py flexibility     # one study
-uv run python tutorials/scripts/build_cache.py --force         # everything (about 20 min per study)
+uv run python tutorials/scripts/build_cache.py              # every study, three runs at a time (hours)
+uv run python tutorials/scripts/build_cache.py office       # one study
+uv run python tutorials/scripts/build_cache.py --force      # recompute
 ```
+
+The runs are deterministic (fixed seeds and solver tolerances), so a rebuilt cache reproduces the
+committed one up to the solver's tolerance. `06_your_building` reads no cache: it writes the YAML of its cell to
+`tutorials/output/your_building/` and computes everything live.
 
 ## Price data
 
-Real day-ahead prices are cached in `mpctrano/data/prices/` (see `provenance.md` there) and loaded
-with `PriceSignal.from_cached(name)`; no API key is needed to run the notebooks. To refresh or
-extend the samples:
+The studies use the synthetic day-ahead signal of `PriceSignal.synthetic` unless a real sample is
+cached in `mpctrano/data/prices/` (see `provenance.md` there; none is committed yet, the data
+providers were not reachable from the machine that built the cache). To download one, with
+network access:
 
 ```bash
 uv run python tutorials/scripts/fetch_prices.py energy-charts 2024-01-01 2025-01-01 --name be_day_ahead_2024
 ENTSOE_TOKEN=... uv run python tutorials/scripts/fetch_prices.py entsoe 2025-10-01 2025-11-01 --name be_day_ahead_2025_10
 ```
 
+`price_options` picks `be_day_ahead_2024` up automatically; rebuild the cache afterwards.
+
 ## Troubleshooting
 
-* **Linux and macOS**: `uv sync` is enough. If `import rumoca` fails, check that the platform has a
-  wheel (`uv pip install rumoca` prints the candidates); rumoca 0.10 ships manylinux x86_64 and
-  aarch64, macOS arm64 and x86_64 and Windows x86_64 wheels.
-* **Windows**: use PowerShell or the Windows Terminal; `make` is not available by default, run the
-  commands of the `makefile` directly (`uv run pytest --nbmake ...`). Long paths: enable
-  `git config core.longpaths true` before cloning.
+* **Linux and macOS**: `uv sync` is enough once Rust is installed. If the rumoca build fails,
+  check `cargo --version`; rumoca pins its toolchain in `rust-toolchain.toml` and rustup installs
+  it on the first build. The setup-check notebook stops with a message when the installed rumoca
+  cannot export the FastSmoothBuildings models.
+* **Windows**: use PowerShell or the Windows Terminal with the MSVC build tools for Rust; `make` is
+  not available by default, run the commands of the `makefile` directly (`uv run pytest --nbmake
+  ...`). Long paths: enable `git config core.longpaths true` before cloning.
 * **IPOPT is slow or fails**: the notebooks fix the IPOPT tolerances and seeds; reduce the horizon
   or the number of days with the widgets, or set `MPCTRANO_QUICK=1` to run the short versions.
-* **No internet**: everything runs offline from the cached models and prices; only
-  `fetch_prices.py` and the model regeneration need Trano (local) and the network (prices).
+* **No internet**: once installed, everything runs offline (Trano generates the models locally, the
+  prices are cached); only `fetch_prices.py` needs the network.

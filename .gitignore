@@ -219,10 +219,11 @@ __marimo__/
 
 # mpctrano outputs
 tutorials/output/
+scripts/output/
 
 # mkdocs
 /site
 tutorials/**/trano.log
 
-# Pre-generated tutorial models are committed (the global *.mo rule above excludes build output)
-!tutorials/models/**/*.mo
+# copies of the executed notebooks made by `make docs`
+docs/tutorials/*.ipynb

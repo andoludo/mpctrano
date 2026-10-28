@@ -1,21 +1,32 @@
-"""mpctrano: calibration, state estimation and economic MPC of Trano RC building models.
+"""mpctrano: calibration, state estimation and economic MPC of the FastSmoothBuildings models of Trano.
 
 Workflow::
 
-    from mpctrano import Project, MonitoringData, scenario_catalogue
+    from mpctrano import MonitoringData, Project, scenario_catalogue
 
-    project = Project.from_yaml("house.yaml")                 # Trano generates the RC model
-    data = MonitoringData.from_csv("monitoring.csv")          # measurements of the real building
-    project.calibrate(data)                                   # IPOPT least squares
-    result = project.run(scenario_catalogue()["time_of_use"])  # state estimation + MPC
+    project = Project.from_yaml("house.yaml")                  # Trano generates the FastSmoothBuildingsMPC model
+    project.calibrate(MonitoringData.from_csv("monitoring.csv"))  # IPOPT least squares on the parameter groups
+    scenario = scenario_catalogue()["time_of_use"]
+    mpc = project.run(scenario)                                # state estimation + MPC
+    reference = project.run_rule_based(scenario)               # the controllers of the YAML
 """
 
 from importlib.metadata import PackageNotFoundError, version
 
-from mpctrano.calibration import CalibrationResult, CalibrationSettings, Calibrator, evaluate, simulate_fit
+from mpctrano.calibration import (
+    DEFAULT_GROUPS,
+    YamlGroup,
+    OPTIONAL_GROUPS,
+    CalibrationResult,
+    CalibrationSettings,
+    Calibrator,
+    ParameterGroup,
+    evaluate,
+    simulate_fit,
+)
 from mpctrano.comfort import ComfortSchedule, ComfortSpec
 from mpctrano.data import DataReport, MonitoringData
-from mpctrano.estimation import KalmanFilter, MovingHorizonEstimator, StateEstimator
+from mpctrano.estimation import EstimatorSettings, MovingHorizonEstimator, PerfectEstimator, StateEstimator
 from mpctrano.flexibility import (
     ActivationRequest,
     ActivationResult,
@@ -35,15 +46,22 @@ from mpctrano.forecast import (
     WeatherFile,
     WeatherForecaster,
 )
-from mpctrano.metrics import ControlMetrics, FitMetrics, compressor_load
-from mpctrano.model import RCModel
+from mpctrano.metrics import ControlMetrics, FitMetrics, Prices
+from mpctrano.model import BuildingModel, ModelError
 from mpctrano.mpc import ModelPredictiveController, MPCSettings, MPCSolution
 from mpctrano.prices import PriceSignal, RetailComponents
 from mpctrano.project import Project
-from mpctrano.meter import Meter
-from mpctrano.scenarios import Mismatch, Scenario, build_plant, run_scenario, scenario_catalogue
-from mpctrano.simulation import ClosedLoopResult, ModelPlant, run_closed_loop
-from mpctrano.synthetic import ExcitationSettings, SyntheticData, generate_monitoring_data, perturb
+from mpctrano.scenarios import Scenario, run_scenario, run_scenario_rule_based, scenario_catalogue
+from mpctrano.simulation import ClosedLoopResult, ModelPlant, Plant, run_closed_loop, run_rule_based, spin_up
+from mpctrano.storage import Battery, ElectricVehicle
+from mpctrano.synthetic import (
+    SyntheticData,
+    generate_closed_loop_data,
+    generate_monitoring_data,
+    perturb,
+    random_factors,
+)
+from mpctrano.yaml_parameters import CalibrationSpec, YamlParameter
 from mpctrano.tariff import (
     CapacityTariff,
     DemandResponseEvent,
@@ -61,10 +79,15 @@ except PackageNotFoundError:  # pragma: no cover - source checkout without insta
     __version__ = "0.0.0"
 
 __all__ = [
+    "DEFAULT_GROUPS",
+    "OPTIONAL_GROUPS",
     "ActivationRequest",
     "ActivationResult",
+    "Battery",
+    "BuildingModel",
     "CalibrationResult",
     "CalibrationSettings",
+    "CalibrationSpec",
     "Calibrator",
     "CapacityTariff",
     "ClosedLoopResult",
@@ -76,25 +99,27 @@ __all__ = [
     "DemandResponseEvent",
     "DemandResponseTariff",
     "DynamicTariff",
-    "ExcitationSettings",
+    "ElectricVehicle",
+    "EstimatorSettings",
     "FitMetrics",
     "FlatTariff",
     "FlexibilityEnvelope",
     "ForecastNoise",
     "Forecaster",
-    "KalmanFilter",
     "MPCSettings",
     "MPCSolution",
-    "Meter",
-    "Mismatch",
+    "ModelError",
     "ModelPlant",
     "ModelPredictiveController",
     "MonitoringData",
     "MovingHorizonEstimator",
     "OccupancySchedule",
+    "ParameterGroup",
+    "PerfectEstimator",
+    "Plant",
     "PriceSignal",
+    "Prices",
     "Project",
-    "RCModel",
     "RetailComponents",
     "Scenario",
     "StateEstimator",
@@ -104,20 +129,25 @@ __all__ = [
     "TimeOfUseTariff",
     "WeatherFile",
     "WeatherForecaster",
+    "YamlGroup",
+    "YamlParameter",
     "__version__",
-    "build_plant",
     "compare",
-    "compressor_load",
     "evaluate",
     "flexibility_function",
+    "generate_closed_loop_data",
     "generate_monitoring_data",
     "perturb",
     "price_response",
+    "random_factors",
     "respond",
     "run_closed_loop",
+    "run_rule_based",
     "run_scenario",
+    "run_scenario_rule_based",
     "scenario_catalogue",
     "shifted_energy",
     "simulate_fit",
+    "spin_up",
     "value_of_flexibility",
 ]

@@ -1,0 +1,37 @@
+{
+ "name": "old | capacity none",
+ "metrics": {
+  "fuel_kwh": 0.0,
+  "electricity_kwh": 30.89737414994848,
+  "sold_kwh": 0.0,
+  "energy_kwh": 30.89737414994848,
+  "energy_cost": 6.352018561967496,
+  "capacity_cost": 0.0,
+  "comfort_violation_kh": 1.749527287614569,
+  "max_violation": 0.33305224416449164,
+  "peak_power_kw": 3.6575041089350506,
+  "peak_fuel_power_kw": 0.0,
+  "generation_kwh": 0.0,
+  "self_consumption": NaN,
+  "low_price_share": 0.7693666048072642,
+  "mean_price": 0.20558441410394376,
+  "steps": 48
+ },
+ "time_step": 3600.0,
+ "zones": [
+  "space_001"
+ ],
+ "comfort_states": [
+  "space_001.TAir"
+ ],
+ "fuel_price": null,
+ "feed_in_price": null,
+ "failures": 0,
+ "elapsed": 1266.4008686060006,
+ "parts": {
+  "study": "capacity",
+  "variant": "old",
+  "capacity": "none",
+  "days": 2.0
+ }
+}

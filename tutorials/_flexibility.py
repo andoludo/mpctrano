@@ -1,164 +1,228 @@
 """Study definition of the flexibility tutorial (02): cached runs shared with ``scripts/build_cache.py``.
 
-Use cases on the house variants: implicit flexibility under hourly and 15-minute day-ahead prices,
-peak shaving under the Flemish-style capacity tariff, explicit activations with their rebound,
-negative prices with PV. The runs are keyed by their parameters in ``tutorials/cache/flexibility/``.
+Use cases on the house variants: implicit flexibility under day-ahead prices (price aware against price agnostic),
+peak shaving under a capacity tariff, explicit activations with their rebound, the flexibility function, the
+flexibility envelope, and negative prices with PV. Every run is a closed loop against the true building of the
+variant with moving horizon estimation, from the spun-up state; the runs are keyed by their parameters in
+``tutorials/cache/flexibility/``.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from mpctrano import ActivationRequest, CapacityTariff, respond, run_scenario
-from mpctrano.flexibility import ActivationResult
-from mpctrano.notebook import ResultCache, TutorialBuilding, comfort_spec, days, price_options, scenario
-from mpctrano.prices import RetailComponents
+from mpctrano import (
+    ActivationRequest,
+    CapacityTariff,
+    ComfortSpec,
+    FlexibilityEnvelope,
+    ModelPredictiveController,
+    MovingHorizonEstimator,
+    MPCSettings,
+    flexibility_function,
+    respond,
+    run_scenario,
+)
+from mpctrano.flexibility import ActivationResult, price_agnostic_tariff
+from mpctrano.notebook import ResultCache, comfort_spec, days, price_options, scenario
+from mpctrano.scenarios import Scenario
 from mpctrano.simulation import ClosedLoopResult
-from tutorials._house import MISMATCH, MODELS, PERFECT, START
+from tutorials._house import HERE, START, building
 
-HERE = Path(__file__).parent
 CACHE = ResultCache(HERE / "cache" / "flexibility")
-DAYS = 3.0
+DAYS = 2.0
 """Period of the cached runs."""
-LIVE_DAYS = days(DAYS)
-"""Period of the runs the notebook computes live (one day in quick mode)."""
-COMPONENTS = RetailComponents(grid_fee=0.10, taxes=0.03, vat=0.06, export_share=0.4)
+LIVE_DAYS = days(1.0, quick=0.25)
+"""Period of the runs the notebook computes live (six hours in quick mode)."""
 BAND = (21.0, 24.0, 3.0)
-CAPACITY_PRICES = (0.0, 50.0, 150.0)
-"""EUR/kW/year: none, the Flemish 2025 level (48.9 to 56.9) and a steep one."""
-ACTIVATIONS: dict[str, dict[str, Any]] = {
-    "shed 1 kW, 2 h at 7h": {"direction": "down", "power": 1000.0, "hour": 7.0, "duration": 2.0},
-    "shed 1 kW, 2 h at 17h": {"direction": "down", "power": 1000.0, "hour": 17.0, "duration": 2.0},
-    "shed 0.5 kW, 4 h at 17h": {"direction": "down", "power": 500.0, "hour": 17.0, "duration": 4.0},
-    "absorb 1 kW, 2 h at 13h": {"direction": "up", "power": 1000.0, "hour": 13.0, "duration": 2.0},
-    "absorb 2 kW, 1 h at 13h": {"direction": "up", "power": 2000.0, "hour": 13.0, "duration": 1.0},
+CAPACITY: dict[str, tuple[float, float] | None] = {
+    "none": None,
+    "50 EUR/kW/year, 2.5 kW floor": (50.0, 2.5),
+    "150 EUR/kW/year, no floor": (150.0, 0.0),
 }
+"""Capacity tariffs: none, the Flemish one (2025 level, the peak floored at 2.5 kW) and a steep one without floor."""
+ACTIVATIONS: dict[str, dict[str, Any]] = {
+    "shed 0.3 kW, 2 h at 17h": {"direction": "down", "power": 300.0, "hour": 17.0, "duration": 2.0},
+    "shed 0.3 kW, 4 h at 17h": {"direction": "down", "power": 300.0, "hour": 17.0, "duration": 4.0},
+    "absorb 0.5 kW, 2 h at 13h": {"direction": "up", "power": 500.0, "hour": 13.0, "duration": 2.0},
+    "absorb 1 kW, 1 h at 13h": {"direction": "up", "power": 1000.0, "hour": 13.0, "duration": 1.0},
+}
+"""Requests sized to the house: it draws 0.3 to 0.6 kW in the evening and its compressor about 1.2 kW at most."""
+PRICE_STEP = {"hour": 17.0, "duration": 3.0, "factor": 3.0}
+ENVELOPE_TIMES = {"13h": START + pd.Timedelta(hours=13), "19h": START + pd.Timedelta(hours=19)}
+"""When the envelope is computed on the first day: at midday the house is in its band and the compressor idle
+(room to absorb, nothing to shed); in the evening the heat pump runs (room to shed). At 6h the morning recovery
+saturates the heat pump and any shed breaks the 7h set point."""
+ENVELOPE_DURATIONS = (1.0, 2.0, 4.0)
 
 
-def building(variant: str = "base") -> TutorialBuilding:
-    return TutorialBuilding(MODELS, variant)
+def tariffs(days_: float = DAYS) -> dict[str, Any]:
+    return dict(price_options(START, days_))
 
 
-def plant_factory(variant: str, mismatch: str, time_step: float = 3600.0):
-    return lambda: building(variant).plant(MISMATCH if mismatch == "mismatch" else PERFECT, time_step)
+def _run(variant: str, name: str, tariff: Any, days_: float, band: tuple[float, float, float] = BAND) -> Scenario:
+    return scenario(f"{variant} | {name}", tariff, comfort_spec(*band), START, days_)
 
 
-# --------------------------------------------------------------------------- implicit: hourly vs 15 min
+def estimator(variant: str, run: Scenario) -> MovingHorizonEstimator:
+    """A moving horizon estimator started from the spun-up state the model expects (not the plant's)."""
+    house = building(variant)
+    return MovingHorizonEstimator(house.model, run.settings.time_step, run.start, x0=house.initial_state())
+
+
+def _closed_loop(variant: str, run: Scenario) -> ClosedLoopResult:
+    """The closed loop of ``run`` against the true building of the variant, with moving horizon estimation."""
+    house = building(variant)
+    return run_scenario(
+        house.model,
+        run,
+        plant=house.plant(mismatch=True),
+        forecaster=house.forecaster,
+        estimator=estimator(variant, run),
+    )
+
+
+# --------------------------------------------------------------------------- implicit flexibility
 def implicit_runs() -> dict[str, dict[str, Any]]:
     return {
-        f"{variant} | {resolution}": {"study": "implicit", "variant": variant, "resolution": resolution, "days": DAYS}
-        for variant in ("base", "old", "big_heat_pump")
-        for resolution in ("1h", "15min")
+        f"{variant} | {pricing}": {"study": "implicit", "variant": variant, "pricing": pricing, "days": DAYS}
+        for variant in ("base", "old")
+        for pricing in ("aware", "agnostic")
     }
 
 
-def compute_implicit(variant: str, resolution: str, days: float, **_: Any) -> ClosedLoopResult:
-    """Price-aware closed loop at the resolution of the price signal (15 min: 96 steps a day)."""
-    house = building(variant)
-    tariffs = price_options(START, days, COMPONENTS)
-    time_step = 3600.0 if resolution == "1h" else 900.0
-    horizon = 24 if resolution == "1h" else 96
-    run = scenario(
-        f"{variant} {resolution}",
-        tariffs["day-ahead"],
-        comfort_spec(*BAND),
-        START,
-        days,
-        horizon=horizon,
-        time_step=time_step,
-    )
-    return run_scenario(house.control, run, plant=house.plant(MISMATCH, time_step))
+def compute_implicit(variant: str, pricing: str, days: float, **_: Any) -> ClosedLoopResult:
+    """The price-aware run follows the day-ahead prices; the price-agnostic one plans at their mean (cost it with
+    ``metrics_under`` the day-ahead tariff)."""
+    tariff = tariffs(days)["day-ahead"]
+    if pricing == "agnostic":
+        index = pd.date_range(START, periods=round(days * 24), freq="h")
+        tariff = price_agnostic_tariff(tariff, index)
+    return _closed_loop(variant, _run(variant, f"day-ahead, price {pricing}", tariff, days))
 
 
 # --------------------------------------------------------------------------- peak shaving
 def capacity_runs() -> dict[str, dict[str, Any]]:
     return {
-        f"{variant} | {price:g} EUR/kW/year": {
-            "study": "capacity",
-            "variant": variant,
-            "capacity_price": price,
-            "days": DAYS,
-        }
-        for variant in ("base", "old", "radiators")
-        for price in CAPACITY_PRICES
+        f"{variant} | {capacity}": {"study": "capacity", "variant": variant, "capacity": capacity, "days": DAYS}
+        for variant in ("base", "old")
+        for capacity in CAPACITY
     }
 
 
-def compute_capacity(variant: str, capacity_price: float, days: float, **_: Any) -> ClosedLoopResult:
-    house = building(variant)
-    base = price_options(START, days, COMPONENTS)["time of use"]
-    tariff = CapacityTariff(base=base, capacity_price=capacity_price) if capacity_price > 0 else base  # type: ignore[arg-type]
-    run = scenario(f"{variant} capacity {capacity_price:g}", tariff, comfort_spec(20.0, 24.0, 4.0), START, days)
-    return run_scenario(house.control, run, plant=house.plant(MISMATCH))
+def capacity_tariff(capacity: str, days_: float = DAYS) -> Any:
+    base = tariffs(days_)["time of use"]
+    spec = CAPACITY[capacity]
+    if spec is None:
+        return base
+    price, floor = spec
+    return CapacityTariff(base=base, capacity_price=price, minimum_peak_kw=floor)
+
+
+def compute_capacity(variant: str, capacity: str, days: float, **_: Any) -> ClosedLoopResult:
+    """Time-of-use prices and a deep night setback: the morning recovery makes the peak."""
+    run = _run(variant, f"capacity {capacity}", capacity_tariff(capacity, days), days, band=(21.0, 24.0, 5.0))
+    return _closed_loop(variant, run)
 
 
 # --------------------------------------------------------------------------- explicit activations
 def activation_runs() -> dict[str, dict[str, Any]]:
     return {
-        f"{variant} | {label}": {"study": "activation", "variant": variant, "activation": label, "days": DAYS}
-        for variant in ("base", "big_heat_pump")
-        for label in ACTIVATIONS
+        f"base | {label}": {"study": "activation", "variant": "base", "activation": label, "days": DAYS}
+        for label in ("baseline", *ACTIVATIONS, "price step")
     }
 
 
-def _activation(variant: str, label: str, days: float = DAYS) -> ActivationResult:
-    """Baseline and response of an activation on the second day of the study (both runs cached)."""
-    house = building(variant)
+def _activation_run(days_: float) -> Scenario:
+    return _run("base", "day-ahead", tariffs(days_)["day-ahead"], days_)
+
+
+def _request(label: str) -> ActivationRequest:
     spec = ACTIVATIONS[label]
-    tariffs = price_options(START, days, COMPONENTS)
-    run = scenario(f"{variant} activation", tariffs["day-ahead"], comfort_spec(*BAND), START, days)
-    request = ActivationRequest(
-        start=START + pd.Timedelta(days=1, hours=spec["hour"]),
+    return ActivationRequest(
+        start=START + pd.Timedelta(hours=spec["hour"]),
         duration_hours=spec["duration"],
         direction=spec["direction"],
         power=spec["power"],
     )
-    baseline = CACHE.run(
-        lambda: run_scenario(house.control, run, plant=plant_factory(variant, "mismatch")()),
-        study="activation", variant=variant, activation="baseline", days=days,
-    )  # fmt: skip
-    factory = plant_factory(variant, "mismatch")
-    response = CACHE.run(
-        lambda: respond(house.control, run, request, plant=factory, baseline=baseline).response,
-        study="activation", variant=variant, activation=label, days=days,
-    )  # fmt: skip
+
+
+def activation(label: str, days_: float = DAYS) -> ActivationResult:
+    """Baseline and response of an activation (both runs cached), or of the price step of the flexibility
+    function (``label="price step"``)."""
+    baseline = cached(study="activation", variant="base", activation="baseline", days=days_)
+    response = cached(study="activation", variant="base", activation=label, days=days_)
+    if label == "price step":
+        in_step = (baseline.frame.index >= _step_start()) & (
+            baseline.frame.index < _step_start() + pd.Timedelta(hours=PRICE_STEP["duration"])
+        )
+        request = ActivationRequest(
+            start=_step_start(),
+            duration_hours=PRICE_STEP["duration"],
+            direction="down",
+            power=max(float(baseline.frame.loc[in_step, "P_meter"].mean()), 1.0),
+        )
+    else:
+        request = _request(label)
     return ActivationResult(request=request, baseline=baseline, response=response)
 
 
-def activation(variant: str, label: str, days: float = DAYS) -> ActivationResult:
-    """Baseline and response of an activation of the study (both runs cached)."""
-    return _activation(variant, label, days)
+def _step_start() -> pd.Timestamp:
+    return START + pd.Timedelta(hours=PRICE_STEP["hour"])
 
 
-def compute_activation(variant: str, activation: str, days: float, **_: Any) -> ClosedLoopResult:
-    """Entry point of the cache builder: computes (and caches) the baseline and the response."""
+def compute_activation(activation: str, days: float, **_: Any) -> ClosedLoopResult:
+    """The baseline, the response to an activation request or to the price step (from the cached baseline)."""
+    run = _activation_run(days)
     if activation == "baseline":
-        house = building(variant)
-        tariffs = price_options(START, days, COMPONENTS)
-        run = scenario(f"{variant} activation", tariffs["day-ahead"], comfort_spec(*BAND), START, days)
-        return run_scenario(house.control, run, plant=plant_factory(variant, "mismatch")())
-    return _activation(variant, activation, days).response
+        return _closed_loop("base", run)
+    house = building("base")
+    baseline = cached(study="activation", variant="base", activation="baseline", days=days)
+
+    def plant() -> Any:
+        return house.plant(mismatch=True)
+
+    def fresh_estimator() -> MovingHorizonEstimator:
+        return estimator("base", run)
+
+    if activation == "price step":
+        return flexibility_function(
+            house.model,
+            run,
+            _step_start(),
+            PRICE_STEP["duration"],
+            price_factor=PRICE_STEP["factor"],
+            plant=plant,
+            forecaster=house.forecaster,
+            baseline=baseline,
+            estimator=fresh_estimator,
+        ).response
+    return respond(
+        house.model,
+        run,
+        _request(activation),
+        plant=plant,
+        forecaster=house.forecaster,
+        baseline=baseline,
+        estimator=fresh_estimator,
+    ).response
 
 
 # --------------------------------------------------------------------------- negative prices and PV
 def pv_runs() -> dict[str, dict[str, Any]]:
     return {
-        f"{variant} | {price}": {"study": "pv", "variant": variant, "price": price, "days": DAYS}
-        for variant in ("pv", "pv_battery_ev")
+        f"pv | {price}": {"study": "pv", "variant": "pv", "price": price, "days": DAYS}
         for price in ("day-ahead", "day-ahead + negative midday")
     }
 
 
 def compute_pv(variant: str, price: str, days: float, **_: Any) -> ClosedLoopResult:
-    house = building(variant)
-    tariffs = price_options(START, days, COMPONENTS)
-    run = scenario(f"{variant} {price}", tariffs[price], comfort_spec(*BAND), START, days)
-    return run_scenario(house.control, run, plant=house.plant(MISMATCH))
+    return _closed_loop(variant, _run(variant, price, tariffs(days)[price], days))
 
 
+# --------------------------------------------------------------------------- the study
 STUDIES = {
     "implicit": (implicit_runs, compute_implicit),
     "capacity": (capacity_runs, compute_capacity),
@@ -180,3 +244,23 @@ def compute(**parts: Any) -> ClosedLoopResult:
 
 def cached(**parts: Any) -> ClosedLoopResult:
     return CACHE.run(lambda: compute(**parts), **parts)
+
+
+def envelope(time: str = "13h", force: bool = False) -> pd.DataFrame:
+    """The flexibility envelope of the base house at ``time`` on the first day (:data:`ENVELOPE_TIMES`), day-ahead
+    prices (cached as a CSV: about thirty open-loop solves)."""
+    path = CACHE.directory / f"envelope_base_{time}.csv"
+    if path.exists() and not force:
+        return pd.read_csv(path, index_col="duration_h")
+    at = ENVELOPE_TIMES[time]
+    house = building("base")
+    controller = ModelPredictiveController(house.model, MPCSettings(horizon=24), ComfortSpec(), tariffs()["day-ahead"])
+    frame = FlexibilityEnvelope.compute(
+        controller,
+        house.initial_state(start=at),
+        house.forecaster.forecast(at, 24, 3600.0),
+        durations=ENVELOPE_DURATIONS,
+        iterations=5,
+    ).frame
+    frame.to_csv(path)
+    return frame

@@ -1,10 +1,10 @@
-"""Closed-loop simulation: estimator -> MPC -> plant, step after step.
+"""Closed loop of a BuildingModel: estimator -> MPC -> plant, and the rule-based reference.
 
-The plant is usually the *true* building: the same RC structure with other parameters
-(:func:`mpctrano.synthetic.perturb`), a higher-order structure generated from the same YAML
-(an R4C3 plant against an R3C2 controller) or the calibrated model itself with measurement
-noise. The controller only sees the measured states (zone temperatures, storages) and the
-(possibly imperfect) forecasts.
+The plant is a BuildingModel simulated with CVODES, keeping its own clock (the model depends on the time of the year).
+The controls are those of the systems (valves, compressor speed, boiler load), not the heat delivered: the energy and
+its cost are read from the meters of the plant (fuel, electricity, production) at the price of each carrier. The
+same accounting applies to :func:`run_rule_based`, which simulates the closed-loop ``BuildingModel`` of the same YAML,
+with the controllers it describes, as the reference the MPC is compared with.
 """
 
 from __future__ import annotations
@@ -16,13 +16,13 @@ from typing import Protocol
 import numpy as np
 import pandas as pd
 
+from mpctrano.comfort import ComfortSpec
 from mpctrano.estimation import StateEstimator
-from mpctrano.forecast import Forecaster
-from mpctrano.meter import Meter
-from mpctrano.metrics import ControlMetrics
-from mpctrano.model import RCModel
-from mpctrano.mpc import ModelPredictiveController
-from mpctrano.tariff import Tariff
+from mpctrano.forecast import Forecaster, seconds_of_year
+from mpctrano.metrics import ControlMetrics, Prices
+from mpctrano.model import BuildingModel
+from mpctrano.mpc import WATT_HOUR_TO_JOULE, ModelPredictiveController
+from mpctrano.tariff import CapacityTariff, Tariff
 
 
 class Plant(Protocol):
@@ -31,121 +31,197 @@ class Plant(Protocol):
     @property
     def state(self) -> np.ndarray: ...
 
-    def align(self, model: RCModel) -> None:
-        """Adopt the signal order of the control model (measured states, controls, disturbances)."""
+    @property
+    def time(self) -> pd.Timestamp: ...
 
     def measure(self) -> np.ndarray:
-        """Measured states in the order of ``model.measured_states`` of the control model."""
+        """Measured zone air temperatures [K]."""
 
     def step(self, control: np.ndarray, disturbance: np.ndarray) -> np.ndarray:
-        """Apply the inputs (control model order) during one control interval; returns the new state."""
+        """Apply the inputs during one control interval; returns the new state."""
 
 
 @dataclass
 class ModelPlant:
-    """An RC model used as the real building, with sensor noise.
+    """A BuildingModel playing the real building, with sensor noise on the zone air temperatures."""
 
-    The plant may have another RC structure than the controller (e.g. R4C3 against R3C2): the
-    signals are matched by name after :meth:`align`, so the plant needs every measured state,
-    control and disturbance of the control model.
-    """
-
-    model: RCModel
+    model: BuildingModel
     time_step: float
+    start: pd.Timestamp | str
     x0: np.ndarray | None = None
     measurement_std: float = 0.05
-    """Sensor noise of the temperatures [K]."""
-    energy_measurement_relative_std: float = 0.0
-    """Sensor noise of the stored energies, relative to the measured value."""
     seed: int | None = 0
-    substeps: int | None = None
     _x: np.ndarray = field(init=False, repr=False)
+    _steps: int = field(init=False, repr=False, default=0)
 
     def __post_init__(self) -> None:
-        self.dynamics = self.model.discrete(self.time_step, self.substeps)
+        self.start = pd.Timestamp(self.start)
         self._x = self.model.initial_state.copy() if self.x0 is None else np.asarray(self.x0, dtype=float).copy()
         self._generator = np.random.default_rng(self.seed)
-        self.align(self.model)
-
-    def align(self, model: RCModel) -> None:
-        try:
-            self._measured = [self.model.state_names.index(name) for name in model.measured_states]
-            self._control_order = [model.control_names.index(name) for name in self.model.control_names]
-            self._disturbance_order = [model.disturbance_names.index(name) for name in self.model.disturbance_names]
-        except ValueError as error:
-            raise ValueError(f"The plant {self.model.name} lacks a signal of the control model: {error}") from error
-        self._energy = np.array([self.model.state_spec(name).unit == "J" for name in model.measured_states], dtype=bool)
 
     @property
     def state(self) -> np.ndarray:
         return self._x.copy()
 
+    @property
+    def time(self) -> pd.Timestamp:
+        return pd.Timestamp(self.start) + pd.Timedelta(seconds=self._steps * self.time_step)
+
     def measure(self) -> np.ndarray:
-        values = self._x[self._measured]
-        noise = self._generator.normal(0, self.measurement_std, values.shape)
-        if self._energy.any():
-            relative = self._generator.normal(0, self.energy_measurement_relative_std, values.shape)
-            noise = np.where(self._energy, values * relative, noise)
-        return values + noise
+        temperatures = self._x[self.model.comfort_indices]
+        return temperatures + self._generator.normal(0, self.measurement_std, temperatures.shape)
 
     def step(self, control: np.ndarray, disturbance: np.ndarray) -> np.ndarray:
-        u = np.asarray(control, dtype=float)[self._control_order]
-        d = np.asarray(disturbance, dtype=float)[self._disturbance_order]
-        self._x = np.asarray(self.dynamics(self._x, u, d, self.model.parameters), dtype=float).reshape(-1)
+        start_time = float(seconds_of_year(pd.DatetimeIndex([self.time]))[0])
+        trajectory = self.model.simulate(
+            self._x,
+            np.asarray(control, dtype=float).reshape(-1, 1),
+            np.asarray(disturbance, dtype=float).reshape(-1, 1),
+            self.time_step,
+            start_time=start_time,
+        )
+        self._x = trajectory[:, -1].copy()
+        self._steps += 1
         return self.state
+
+
+def metered_energy(
+    model: BuildingModel,
+    before: np.ndarray,
+    after: np.ndarray,
+    control: np.ndarray,
+    time_step: float,
+    heat_cop: float = 1.0,
+    cooling_eer: float = 3.0,
+    storage_kwh: float = 0.0,
+) -> dict[str, float]:
+    """Energy of one step [kWh], read from the meters: fuel, electricity bought and sold (the electricity meters and
+    the heat of the ideal emitters through their COP, or their cooling through the EER, plus what the storages
+    took from the meter, netted with the production)."""
+    drawn = {"fuel": 0.0, "electricity": 0.0, "electricity_production": 0.0}
+    for name, carrier in model.meters.items():
+        index = model.state_names.index(name)
+        drawn[carrier] += float(after[index] - before[index])
+    flows = [float(control[model.control_names.index(name)]) for name in model.heat_controls]
+    heat = (
+        sum(max(flow, 0.0) / heat_cop + max(-flow, 0.0) / cooling_eer for flow in flows)
+        * time_step
+        / WATT_HOUR_TO_JOULE
+    )
+    net = drawn["electricity"] + heat + storage_kwh - drawn["electricity_production"]
+    return {
+        "fuel": drawn["fuel"],
+        "bought": max(net, 0.0),
+        "sold": max(-net, 0.0),
+        "generated": drawn["electricity_production"],
+    }
 
 
 @dataclass
 class ClosedLoopResult:
-    """Trajectories of a closed-loop run and its performance indicators.
+    """Trajectories of a run and its indicators.
 
-    ``frame`` holds, per step: the controls, the disturbances, the measured states
-    (``<state>_measured``), the estimates, the true states, the zone temperatures and storage
-    states at the end of the step (``<state>_end``), the comfort bounds, the price and the meter
-    columns (``P_import``, ``P_export``, ``P_meter``, ``P_gas``, ...).
+    ``frame`` has one row per step: the controls, the disturbances, the true states at the start of the step
+    (``<state>_true``), the zone air temperatures at its end (``<state>_end``), the comfort band (``<zone>_lower``,
+    ``<zone>_upper``), the energy of the step (``fuel``, ``bought``, ``sold`` [kWh]), the prices and, for an MPC
+    run, the measurements, the estimates and the solver statistics.
     """
 
     name: str
     frame: pd.DataFrame
     metrics: ControlMetrics
     time_step: float
+    zones: list[str]
+    comfort_states: list[str]
+    fuel_price: float | None = None
+    feed_in_price: float | None = None
     failures: int = 0
     elapsed: float = 0.0
-    heating_columns: list[str] = field(default_factory=list)
-    """Heating input of each zone (``<zone>_QHea`` or ``<zone>_PHea``)."""
-    gas_price: float = 0.0
 
     @property
-    def zones(self) -> list[str]:
-        return [column.removesuffix("_Ti_end") for column in self.frame.columns if column.endswith("_Ti_end")]
+    def energy(self) -> pd.Series:
+        """Energy bought at each step, fuel and electricity [kWh]."""
+        return (self.frame["fuel"] + self.frame["bought"]).rename("energy_kwh")
 
     def metrics_under(self, tariff: Tariff) -> ControlMetrics:
         """The indicators of this run costed with another tariff (same trajectories)."""
         index = pd.DatetimeIndex(self.frame.index)
-        signal = tariff.signal(index)
-        zones = self.zones
+        prices = Prices.of(tariff, index, self.fuel_price, self.feed_in_price)
         return ControlMetrics.compute(
-            index,
-            self.frame["P_meter"].to_numpy(dtype=float),
-            self.frame[[f"{zone}_Ti_end" for zone in zones]].to_numpy(dtype=float).T,
-            self.frame[[f"{zone}_lower" for zone in zones]].to_numpy(dtype=float).T,
-            self.frame[[f"{zone}_upper" for zone in zones]].to_numpy(dtype=float).T,
-            signal.prices,
+            self.frame,
+            prices,
+            self.frame[[f"{state}_end" for state in self.comfort_states]].to_numpy(dtype=float).T,
+            self.frame[[f"{zone}_lower" for zone in self.zones]].to_numpy(dtype=float).T,
+            self.frame[[f"{zone}_upper" for zone in self.zones]].to_numpy(dtype=float).T,
             self.time_step,
-            capacity_charge=signal.capacity_charge,
-            export=self.frame["P_export"].to_numpy(dtype=float),
-            export_prices=signal.export,
-            gas=self.frame["P_gas"].to_numpy(dtype=float),
-            gas_price=self.gas_price,
-            generation=self.frame["P_generation"].to_numpy(dtype=float),
         )
 
     def summary(self) -> pd.Series:
-        values = self.metrics.model_dump()
+        values: dict[str, float] = {**self.metrics.model_dump()}
         values["total_cost"] = self.metrics.total_cost
         values["failures"] = self.failures
-        values["mean_solve_time"] = float(self.frame["solve_time"].mean())
+        if "solve_time" in self.frame:
+            values["mean_solve_time"] = float(self.frame["solve_time"].mean())
         return pd.Series(values, name=self.name)
+
+
+def _record(
+    model: BuildingModel,
+    now: pd.Timestamp,
+    control: np.ndarray,
+    disturbance: np.ndarray,
+    before: np.ndarray,
+    after: np.ndarray,
+    energy: dict[str, float],
+) -> dict[str, object]:
+    row: dict[str, object] = {"time": now}
+    row |= dict(zip(model.control_names, control.tolist(), strict=True))
+    row |= dict(zip(model.disturbance_names, disturbance.tolist(), strict=True))
+    row |= {f"{name}_true": value for name, value in zip(model.state_names, before.tolist(), strict=True)}
+    row |= {
+        f"{name}_end": value
+        for name, value in zip(model.comfort_states, after[model.comfort_indices].tolist(), strict=True)
+    }
+    row |= energy
+    return row
+
+
+def _result(
+    name: str,
+    model: BuildingModel,
+    rows: list[dict[str, object]],
+    comfort: ComfortSpec,
+    tariff: Tariff,
+    fuel_price: float | None,
+    feed_in_price: float | None,
+    time_step: float,
+    failures: int,
+    started: float,
+) -> ClosedLoopResult:
+    frame = pd.DataFrame(rows).set_index("time")
+    index = pd.DatetimeIndex(frame.index)
+    bounds = comfort.bounds(model, index + pd.Timedelta(seconds=time_step))
+    for i, zone in enumerate(model.zone_names):
+        frame[f"{zone}_lower"] = bounds.lower[i]
+        frame[f"{zone}_upper"] = bounds.upper[i]
+    prices = Prices.of(tariff, index, fuel_price, feed_in_price)
+    frame["price"] = prices.electricity
+    frame["feed_in_price"] = prices.feed_in
+    frame["fuel_price"] = prices.fuel
+    frame["P_meter"] = frame["bought"] * WATT_HOUR_TO_JOULE / time_step  # billed electric power [W]
+    temperatures = frame[[f"{state}_end" for state in model.comfort_states]].to_numpy(dtype=float).T
+    return ClosedLoopResult(
+        name=name,
+        frame=frame,
+        metrics=ControlMetrics.compute(frame, prices, temperatures, bounds.lower, bounds.upper, time_step),
+        time_step=time_step,
+        zones=list(model.zone_names),
+        comfort_states=list(model.comfort_states),
+        fuel_price=fuel_price,
+        feed_in_price=feed_in_price,
+        failures=failures,
+        elapsed=time.perf_counter() - started,
+    )
 
 
 def run_closed_loop(
@@ -153,132 +229,132 @@ def run_closed_loop(
     estimator: StateEstimator,
     plant: Plant,
     forecaster: Forecaster,
-    start: pd.Timestamp | str,
     steps: int,
     name: str = "mpc",
 ) -> ClosedLoopResult:
-    """Run ``steps`` control intervals from ``start``."""
+    """Run ``steps`` control intervals from the time of the plant: measure, estimate, forecast, solve, apply.
+
+    Under a :class:`~mpctrano.tariff.CapacityTariff` with ``running_peak``, the controller carries the peak of the
+    month so far (from its floor ``minimum_peak_kw``, reset when the month changes).
+    """
     model, settings = controller.model, controller.settings
     dt = settings.time_step
-    start = pd.Timestamp(start)
-    plant.align(model)
     rows: list[dict[str, object]] = []
-    previous_control: np.ndarray | None = None
+    previous: np.ndarray | None = None
     failures = 0
+    tariff = controller.tariff
+    carries_peak = isinstance(tariff, CapacityTariff) and tariff.running_peak
+    peak_floor = 1000 * tariff.minimum_peak_kw if isinstance(tariff, CapacityTariff) else 0.0
+    peak_so_far, month = peak_floor, plant.time.to_period("M")
     started = time.perf_counter()
-    end_states = model.measured_states
-    end_indices = model.measured_indices
-    meter = Meter(model)
-    running_peak = bool(getattr(controller.tariff, "running_peak", False))
-    peak_so_far, peak_month = 0.0, start.month
-    for k in range(steps):
-        now = start + pd.Timedelta(seconds=k * dt)
-        if running_peak and now.month != peak_month:
-            peak_so_far, peak_month = 0.0, now.month
+    for _ in range(steps):
+        now = plant.time
+        if now.to_period("M") != month:
+            peak_so_far, month = peak_floor, now.to_period("M")
         measurement = plant.measure()
         estimate = estimator.correct(measurement)
-        forecast = forecaster.forecast(now, settings.horizon, dt)
-        solution = controller.solve(estimate, forecast, previous_control, peak_so_far=peak_so_far)
+        solution = controller.solve(
+            estimate,
+            forecaster.forecast(now, settings.horizon, dt),
+            previous,
+            peak_so_far=peak_so_far if carries_peak else 0.0,
+        )
         failures += not solution.success
         control = solution.first_control
         disturbance = forecaster.realisation(now, 1, dt).iloc[0].to_numpy(dtype=float)
-        if running_peak:
-            peak_so_far = max(peak_so_far, _billed_power(meter, control, disturbance))
-        true_before = plant.state
-        true_after = plant.step(control, disturbance)
+        before = plant.state
+        after = plant.step(control, disturbance)
         estimator.predict(control, disturbance)
-        previous_control = control
-        row: dict[str, object] = {"time": now}
-        row |= dict(zip(model.control_names, control.tolist(), strict=True))
-        row |= dict(zip(model.disturbance_names, disturbance.tolist(), strict=True))
-        row |= {f"{name_}_measured": value for name_, value in zip(end_states, measurement.tolist(), strict=True)}
-        row |= {f"{name_}_estimate": value for name_, value in zip(model.state_names, estimate.tolist(), strict=True)}
-        row |= _true_states(plant, model, true_before)
-        ends = _select(plant, model, true_after, end_indices)
-        row |= {f"{name_}_end": value for name_, value in zip(end_states, ends, strict=True)}
-        row |= {f"{zone}_lower": solution.lower[i, 0] for i, zone in enumerate(model.zone_names)}
-        row |= {f"{zone}_upper": solution.upper[i, 0] for i, zone in enumerate(model.zone_names)}
+        previous = control
+        exchange = controller.advance(solution)
+        energy = metered_energy(
+            model, before, after, control, dt, settings.heat_cop, settings.cooling_eer, storage_kwh=exchange
+        )
+        peak_so_far = max(peak_so_far, energy["bought"] * WATT_HOUR_TO_JOULE / dt)
+        row = _record(model, now, control, disturbance, before, after, energy)
+        if solution.storage is not None:
+            row |= {str(name): float(value) for name, value in solution.storage.iloc[0].items()}
         row |= {
-            "price": float(solution.prices[0]),
-            "export_price": float(controller.tariff.signal(pd.DatetimeIndex([now])).export[0]),
+            f"{state}_measured": value for state, value in zip(model.comfort_states, measurement.tolist(), strict=True)
+        }
+        row |= {f"{state}_estimate": value for state, value in zip(model.state_names, estimate.tolist(), strict=True)}
+        row |= {
             "planned_cost": solution.total_cost,
             "solve_time": solution.solve_time,
             "iterations": solution.iterations,
             "success": float(solution.success),
-            "status": solution.status,
-            "running_peak_kw": peak_so_far / 1000,
+            "peak_so_far": peak_so_far,
         }
         rows.append(row)
-    frame = pd.DataFrame(rows).set_index("time")
-    frame = pd.concat([frame, meter.evaluate(frame)], axis=1)
-    frame["P_meter"] = frame["P_heat"] + frame["P_import"]
-    index = pd.DatetimeIndex(frame.index)
-    temperatures = frame[[f"{name_}_end" for name_ in model.comfort_states]].to_numpy(dtype=float).T
-    lower = frame[[f"{zone}_lower" for zone in model.zone_names]].to_numpy(dtype=float).T
-    upper = frame[[f"{zone}_upper" for zone in model.zone_names]].to_numpy(dtype=float).T
-    metrics = ControlMetrics.compute(
-        index,
-        frame["P_meter"].to_numpy(dtype=float),
-        temperatures,
-        lower,
-        upper,
-        frame["price"].to_numpy(dtype=float),
+    return _result(
+        name,
+        model,
+        rows,
+        controller.comfort,
+        controller.tariff,
+        settings.fuel_price,
+        settings.feed_in_price,
         dt,
-        capacity_charge=controller.tariff.capacity_charge,
-        export=frame["P_export"].to_numpy(dtype=float),
-        export_prices=frame["export_price"].to_numpy(dtype=float),
-        gas=frame["P_gas"].to_numpy(dtype=float),
-        gas_price=settings.gas_price,
-        generation=frame["P_generation"].to_numpy(dtype=float),
-    )
-    return ClosedLoopResult(
-        name=name,
-        frame=frame,
-        metrics=metrics,
-        time_step=dt,
-        failures=failures,
-        elapsed=time.perf_counter() - started,
-        heating_columns=[model.control_names[index] for index in model.zone_heating_indices],
-        gas_price=settings.gas_price,
+        failures,
+        started,
     )
 
 
-def _billed_power(meter: Meter, control: np.ndarray, disturbance: np.ndarray) -> float:
-    """Billed power [W] of one step: ideal heating plus grid import of the applied inputs."""
-    model = meter.model
-    names = model.control_names + model.disturbance_names
-    applied = pd.DataFrame([dict(zip(names, [*control, *disturbance], strict=True))])
-    step = meter.evaluate(applied)
-    return float(step["P_heat"].iloc[0] + step["P_import"].iloc[0])
+def run_rule_based(
+    model: BuildingModel,
+    forecaster: Forecaster,
+    start: pd.Timestamp | str,
+    steps: int,
+    time_step: float,
+    comfort: ComfortSpec,
+    tariff: Tariff,
+    fuel_price: float | None = None,
+    feed_in_price: float | None = None,
+    x0: np.ndarray | None = None,
+    name: str = "rule_based",
+) -> ClosedLoopResult:
+    """The closed-loop ``BuildingModel`` (``BuildingModel.from_yaml(path, library="FastSmoothBuildings")``), run with
+    the controllers of its YAML over the same weather, and costed and assessed like an MPC run."""
+    if model.control_names:
+        raise ValueError(f"{model.name} has controls {model.control_names}: give the closed-loop BuildingModel.")
+    plant = ModelPlant(model, time_step, start, x0=x0, measurement_std=0.0)
+    rows = []
+    started = time.perf_counter()
+    none = np.zeros(0)
+    for _ in range(steps):
+        now = plant.time
+        disturbance = forecaster.realisation(now, 1, time_step).iloc[0].to_numpy(dtype=float)
+        before = plant.state
+        after = plant.step(none, disturbance)
+        rows.append(
+            _record(model, now, none, disturbance, before, after, metered_energy(model, before, after, none, time_step))
+        )
+    return _result(name, model, rows, comfort, tariff, fuel_price, feed_in_price, time_step, 0, started)
 
 
-def _plant_model(plant: Plant) -> RCModel | None:
-    return getattr(plant, "model", None)
+def spin_up(
+    model: BuildingModel,
+    closed_loop: BuildingModel,
+    start: pd.Timestamp | str,
+    days: float = 3.0,
+    forecaster: Forecaster | None = None,
+    time_step: float = 3600.0,
+) -> np.ndarray:
+    """A state of ``model`` at ``start`` after ``days`` of operation by the controllers of the YAML.
 
+    A BuildingModel starts with every temperature at its start value (the walls at the set point, the buffer at its
+    supply temperature): a closed loop from there spends its first day emptying heat the building would not hold.
+    The closed-loop ``BuildingModel`` of the same YAML runs ``days`` before ``start``; the states the two models share
+    (by name) are copied into the initial state of ``model``.
+    """
+    from mpctrano.forecast import WeatherForecaster
 
-def initial_state_of(plant: Plant, model: RCModel) -> np.ndarray:
-    """The plant state as seen by the control model (matched by name, unknown states at their initial value)."""
-    plant_model = _plant_model(plant)
-    state = plant.state
-    if plant_model is None or plant_model.state_names == model.state_names:
-        return np.asarray(state, dtype=float)
-    values = model.initial_state.copy()
-    for index, name in enumerate(model.state_names):
-        if name in plant_model.state_names:
-            values[index] = state[plant_model.state_names.index(name)]
-    return values
-
-
-def _select(plant: Plant, model: RCModel, state: np.ndarray, indices: list[int]) -> list[float]:
-    """Values of the control model states ``indices`` in a plant state vector (matched by name)."""
-    plant_model = _plant_model(plant)
-    if plant_model is None or plant_model.state_names == model.state_names:
-        return [float(value) for value in state[indices]]
-    positions = [plant_model.state_names.index(model.state_names[index]) for index in indices]
-    return [float(value) for value in state[positions]]
-
-
-def _true_states(plant: Plant, model: RCModel, state: np.ndarray) -> dict[str, object]:
-    plant_model = _plant_model(plant)
-    names = plant_model.state_names if plant_model is not None else model.state_names
-    return {f"{name}_true": float(value) for name, value in zip(names, state.tolist(), strict=True)}
+    forecaster = forecaster or WeatherForecaster.from_model(closed_loop)
+    plant = ModelPlant(closed_loop, time_step, pd.Timestamp(start) - pd.Timedelta(days=days))
+    none = np.zeros(0)
+    for _ in range(round(days * 86400 / time_step)):
+        plant.step(none, forecaster.realisation(plant.time, 1, time_step).iloc[0].to_numpy(dtype=float))
+    reached = dict(zip(closed_loop.state_names, plant.state.tolist(), strict=True))
+    return np.array(
+        [reached.get(name, value) for name, value in zip(model.state_names, model.initial_state, strict=True)]
+    )

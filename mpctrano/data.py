@@ -1,14 +1,13 @@
 """Monitoring data of a building: the measurements used for calibration and state estimation.
 
-The data is a regularly sampled, time-indexed :class:`pandas.DataFrame` whose columns are named
-after the signals of the Trano MPC interface:
+The data is a regularly sampled, time-indexed :class:`pandas.DataFrame` whose columns are named after the variables of
+the :class:`~mpctrano.model.BuildingModel` of the building:
 
-* measured zone temperatures ``<zone>_Ti`` [K] (at least one zone),
-* heating powers ``<zone>_QHea`` [W] (the control inputs),
-* disturbances ``TOut`` [K], ``HSol_<orientation>`` [W/m2] and ``<zone>_QInt`` [W]. The
-  disturbances that are not measured can be filled with a forecaster
-  (:meth:`MonitoringData.fill_disturbances`), e.g. the solar irradiance from the weather file and
-  the internal gains from the occupancy schedule.
+* the measured zone air temperatures ``<zone>.TAir`` [K] (at least one zone);
+* the controls applied, held from each sample to the next (``valve_001_y.y``, ``boiler_001_y.y``, ...);
+* optionally, the readings of the energy meters [kWh] (``boiler_001.EEle``, ``boiler_001.EFue``, ...), cumulative;
+* optionally, the disturbances (``weather_inputs.TDryBul``, ``occupancy_1_gai.QCon``, ...); the missing ones are
+  filled with a forecaster (:meth:`MonitoringData.fill_disturbances`), e.g. from the weather file of the model.
 
 Temperatures are stored in Kelvin; :meth:`MonitoringData.from_csv` converts from Celsius.
 """
@@ -23,13 +22,13 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from mpctrano.model import KELVIN
+from mpctrano.units import KELVIN
 
 if TYPE_CHECKING:
     from mpctrano.forecast import Forecaster
-    from mpctrano.model import RCModel
+    from mpctrano.model import BuildingModel
 
-TEMPERATURE_SUFFIXES = ("_Ti", "_Te", "_Th", "_Tm")
+TEMPERATURE_SUFFIXES = (".TAir", ".TDryBul", ".TBlaSky")
 
 
 class DataError(ValueError):
@@ -49,20 +48,21 @@ def time_step_of(index: pd.Index, tolerance: float = 1e-6) -> float:
 
 
 def is_temperature(column: str) -> bool:
-    return column == "TOut" or column.endswith(TEMPERATURE_SUFFIXES)
+    return column.endswith(TEMPERATURE_SUFFIXES)
 
 
 class DataReport(BaseModel):
-    """Result of :meth:`MonitoringData.validate` for a model."""
+    """What the data offers to a model."""
 
     samples: int
     time_step: float
-    measured_states: list[str]
+    measured_zones: list[str] = Field(description="Zone air temperatures measured")
     controls: list[str]
+    meters: list[str] = Field(description="Energy meters read")
     disturbances: list[str]
-    missing_controls: list[str] = Field(default_factory=list)
-    missing_disturbances: list[str] = Field(default_factory=list)
-    columns_with_gaps: list[str] = Field(default_factory=list)
+    missing_controls: list[str]
+    missing_disturbances: list[str]
+    columns_with_gaps: list[str]
 
     @property
     def complete(self) -> bool:
@@ -70,28 +70,8 @@ class DataReport(BaseModel):
 
     @property
     def usable(self) -> bool:
-        """Enough for calibration once the missing disturbances are filled."""
-        return bool(self.measured_states) and not self.missing_controls and not self.columns_with_gaps
-
-
-@dataclass(frozen=True)
-class Signals:
-    """Arrays extracted from monitoring data for a model (inputs act between two samples)."""
-
-    index: pd.DatetimeIndex
-    time_step: float
-    measurements: np.ndarray
-    """``(n_measured, N + 1)`` measured states."""
-    measured_states: list[int]
-    """Indices of the measured states in the state vector."""
-    controls: np.ndarray
-    """``(n_controls, N)``."""
-    disturbances: np.ndarray
-    """``(n_disturbances, N)``."""
-
-    @property
-    def steps(self) -> int:
-        return int(self.controls.shape[1])
+        """Enough to calibrate: an air temperature and every control (the disturbances can be filled)."""
+        return bool(self.measured_zones) and not self.missing_controls
 
 
 @dataclass(frozen=True)
@@ -118,8 +98,8 @@ class MonitoringData:
     ) -> MonitoringData:
         """Read a CSV file; ``time_column`` defaults to the first column.
 
-        ``temperature_unit="C"`` converts the temperature columns (``TOut``, ``*_Ti``...) to Kelvin,
-        ``rename`` maps the CSV headers to the interface names.
+        ``temperature_unit="C"`` converts the temperature columns (``*.TAir``, ``*.TDryBul``, ``*.TBlaSky``) to
+        Kelvin, ``rename`` maps the CSV headers to the names of the model.
         """
         frame = pd.read_csv(path)
         time_column = time_column or str(frame.columns[0])
@@ -202,7 +182,9 @@ class MonitoringData:
             frame[name] = np.asarray(values, dtype=float)
         return MonitoringData(frame)
 
-    def fill_disturbances(self, model: RCModel, forecaster: Forecaster, overwrite: bool = False) -> MonitoringData:
+    def fill_disturbances(
+        self, model: BuildingModel, forecaster: Forecaster, overwrite: bool = False
+    ) -> MonitoringData:
         """Add the disturbance columns the data lacks with the realisation of a forecaster."""
         missing = [name for name in model.disturbance_names if overwrite or name not in self.frame.columns]
         if not missing:
@@ -211,51 +193,16 @@ class MonitoringData:
         return self.with_columns(realisation[missing])
 
     # ----------------------------------------------------------------- model binding
-    def validate(self, model: RCModel) -> DataReport:
+    def validate(self, model: BuildingModel) -> DataReport:
         columns = set(self.columns)
-        measured_states = [name for name in model.comfort_states if name in columns]
-        controls = [name for name in model.control_names if name in columns]
-        disturbances = [name for name in model.disturbance_names if name in columns]
         return DataReport(
             samples=len(self.frame),
             time_step=self.time_step,
-            measured_states=measured_states,
-            controls=controls,
-            disturbances=disturbances,
+            measured_zones=[name for name in model.comfort_states if name in columns],
+            controls=[name for name in model.control_names if name in columns],
+            meters=[name for name in model.meters if name in columns],
+            disturbances=[name for name in model.disturbance_names if name in columns],
             missing_controls=[name for name in model.control_names if name not in columns],
             missing_disturbances=[name for name in model.disturbance_names if name not in columns],
             columns_with_gaps=[column for column in self.columns if self.frame[column].isna().any()],
         )
-
-    def signals(self, model: RCModel) -> Signals:
-        """Arrays for the model; raises :class:`DataError` when a control or disturbance is missing."""
-        report = self.validate(model)
-        if not report.measured_states:
-            raise DataError(f"No measured zone temperature among {model.comfort_states}.")
-        if report.missing_controls or report.missing_disturbances:
-            raise DataError(
-                f"Missing columns: {report.missing_controls + report.missing_disturbances}. "
-                "Use fill_disturbances() for the disturbances."
-            )
-        if report.columns_with_gaps:
-            raise DataError(f"Columns with missing values: {report.columns_with_gaps}.")
-        measured = [name for name in model.state_names if name in self.frame.columns]
-        return Signals(
-            index=self.index,
-            time_step=report.time_step,
-            measurements=self.frame[measured].to_numpy(dtype=float).T,
-            measured_states=[model.state_names.index(name) for name in measured],
-            controls=self.frame[model.control_names].to_numpy(dtype=float).T[:, :-1],
-            disturbances=self.frame[model.disturbance_names].to_numpy(dtype=float).T[:, :-1],
-        )
-
-    def initial_state(self, model: RCModel) -> np.ndarray:
-        """Initial state guess: every state of a zone starts at the measured zone temperature."""
-        x0 = model.initial_state.copy()
-        for zone in model.interface.zones:
-            if zone.indoor_temperature in self.frame.columns:
-                temperature = float(self.frame[zone.indoor_temperature].iloc[0])
-                for index, state in enumerate(model.interface.states):
-                    if state.zone == zone.name:
-                        x0[index] = temperature
-        return x0

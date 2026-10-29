@@ -6,6 +6,14 @@ release pipeline.
 
 ## [Unreleased]
 
+### Changed
+
+- rumoca comes from PyPI (0.10.3 or later) with FastSmoothBuildings 0.6.0 or later, which rewrites the function
+  shapes rumoca 0.10.3 refused: `pip install mpctrano` translates every model, and neither `uv sync` nor Colab builds
+  rumoca from source any more (no Rust toolchain; the `rumoca wheel` workflow is removed).
+  `rumoca_exports_building_models` translates an example of the installed library; a translation error names
+  `UPGRADE_COMMAND`. `RUMOCA_COMMIT` and `RUMOCA_REQUIREMENT` are removed.
+
 ### Fixed
 
 - rumoca 0.10.3 on PyPI (27 October 2026) cannot export the FastSmoothBuildings models to CasADi ("Target

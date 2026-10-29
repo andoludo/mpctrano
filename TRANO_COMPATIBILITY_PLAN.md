@@ -3,7 +3,7 @@
 Status: **done.** Proposed on 2026-10-20 against trano 0.57.0; carried out in the pull requests #4 to #11 (mpctrano
 0.9.0 requires trano 0.65 and trano-optimization 0.3.0). Checked on 2026-10-28 with trano 0.66.0,
 FastSmoothBuildings 0.5.0 and CasADi 3.8.2: every test, notebook and package tutorial passes with rumoca `c74cddf`;
-the rumoca 0.10.3 published on PyPI on 2026-10-27 does not export the models (section 6).
+the rumoca 0.10.3 published on PyPI on 2026-10-27 exports them from FastSmoothBuildings 0.6.0 on (section 6).
 
 Execution: one phase per working session, each ending with a pushed commit, so a session can stop after any phase
 and the next one resumes from this file. Every step names the files it touches and a "done when" check.
@@ -204,6 +204,8 @@ export. A zone with one adiabatic wall still fails after both changes: at least 
 wall models, not located yet. Ways out, in order of preference:
 a rumoca release that exports these bodies again (report the two snippets upstream), or FastSmoothBuildings
 functions written without the two shapes (one assignment per helper function; an array element per loop iteration).
-Until then mpctrano keeps the git pin, `rumoca_exports_building_models` probes both shapes, and the error message,
-the README and the Colab setup install the `c74cddf` build.
-
+Resolved on 2026-10-29 in FastSmoothBuildings 0.6.0, which avoids five shapes (the two above; a smooth function of
+a smooth function in an equation; `C[i]*der(T[i]) = Q[i]` in a for loop of equations; a parameter bound to an
+if-expression with a computed branch), listed in its `UsersGuide.Translation`. Its tests pass with rumoca 0.10.3
+from PyPI and with the commit 33c2114; mpctrano requires rumoca >= 0.10.3 and FastSmoothBuildings >= 0.6.0 from
+PyPI and no longer pins a rumoca commit.

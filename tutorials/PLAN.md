@@ -29,7 +29,7 @@ it); every test, notebook and package tutorial passed with trano 0.66.0 on 2026-
 ```
 trano YAML --(FastSmoothBuildingsMPC)--> building_mpc (controls of the systems as inputs)
            --(BuildingModel)-----> the same building with the controllers of the YAML (rule-based reference)
-           --(rumoca c74cddf)--> CasADi ODE xdot = f(t, x, u, p)
+           --(rumoca 0.10.3)--> CasADi ODE xdot = f(t, x, u, p)
            --> mpctrano: Radau collocation (trano_optimization), economic MPC on the meters,
                moving horizon estimation, calibration of parameter groups, closed loop, scenarios
 ```
@@ -150,11 +150,9 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
    sample is committed under `mpctrano/data/prices/`.
 5. **Pages and Colab**: the docs site publishes the executed notebooks (mkdocs-jupyter); the widgets
    of the live sections are static there. Every notebook carries an *Open in Colab* badge: its first
-   cell clones the repository and installs mpctrano with the rumoca wheel of the GitHub release
-   `rumoca-0.10.3-c74cddf` (built by `.github/workflows/rumoca-wheel.yaml` on the tag; without a
-   wheel for the runtime's Python it builds rumoca from source, about ten minutes). Colab is the
-   interactive deployment unless a Binder or JupyterLite one is preferred. The wheel workflow has to
-   be run by hand once from `main` (Actions > rumoca wheel) to create the release.
+   cell clones the repository and installs mpctrano from it, rumoca and FastSmoothBuildings as
+   wheels from PyPI. Colab is the interactive deployment unless a Binder or JupyterLite one is
+   preferred.
 6. **Calibration of a closed-loop model** (notebook 03): the collocated problem does not converge on
    a model with thermostats and hysteresis inside, so such a model is fitted by single shooting
    (`CalibrationSettings.method`, automatic): IPOPT with wide central differences and full steps on
@@ -168,9 +166,9 @@ first plan took 25 to 60 s per plan, the single-zone one 5 to 20 s.
 
 ## 5. Risks and mitigations
 
-* rumoca: the BuildingModel export needs rumoca main at `c74cddf`; later commits, and the 0.10.3 release on PyPI
-  built from them, stop at residual equations (section 6 of `TRANO_COMPATIBILITY_PLAN.md`). The commit stays
-  pinned in `pyproject.toml` until a release exports these models or FastSmoothBuildings avoids the two shapes.
+* rumoca: the BuildingModel export needs rumoca 0.10.3 or later with FastSmoothBuildings 0.6.0 or later, both
+  from PyPI (section 6 of `TRANO_COMPATIBILITY_PLAN.md`); a later rumoca may refuse other shapes, which the
+  translation tests of FastSmoothBuildings and of mpctrano catch.
 * Solve times grow with the number of zones and circuits (over a minute per plan for six zones):
   cache the closed loops, keep the live parts open loop, use the single-zone house for widgets.
 * Parameters settled at translation (the radiator output law, the heat pump maps) cannot be

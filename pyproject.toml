@@ -20,12 +20,11 @@ classifiers = [
 dependencies = [
     "trano>=0.65.0,<1",
     "trano-optimization>=0.3.0,<1",
-    # mpctrano reads the Modelica library from this package (mpctrano.model.used_libraries)
-    "fastsmoothbuildings>=0.5.0,<1",
-    # The releases on PyPI cannot export the FastSmoothBuildings models to CasADi (0.10.2 lacks the connected components,
-    # 0.10.3 refuses some of the library's functions): [tool.uv.sources] pins the commit that can; pip users install
-    # it first (README, Installation)
-    "rumoca>=0.10.2,<0.11",
+    # mpctrano reads the Modelica library from this package (mpctrano.model.used_libraries); 0.6.0 is the first release
+    # that rumoca 0.10.3 from PyPI exports to CasADi
+    "fastsmoothbuildings>=0.6.0,<1",
+    # 0.10.3 exports connected models to CasADi (0.10.2 does not)
+    "rumoca>=0.10.3,<0.11",
     "casadi>=3.6.7,<4",
     "numpy>=1.26",
     "pandas>=2.2.2,<3",
@@ -71,11 +70,6 @@ docs = [
 
 [tool.uv]
 default-groups = "all"
-
-[tool.uv.sources]
-# The CasADi export of the FastSmoothBuildings models needs rumoca main at c74cddf: later commits, and the 0.10.3 release
-# on PyPI built from them, stop at residual equations. uv builds it from source (Rust toolchain needed).
-rumoca = { git = "https://github.com/CogniPilot/rumoca", rev = "c74cddff6d7669fc2c3603d43529ab62e0964072", subdirectory = "crates/rumoca-bind-python" }
 
 [tool.uv.build-backend]
 module-root = ""

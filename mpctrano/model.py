@@ -19,7 +19,7 @@ translates into an explicit ODE ``xdot = f(t, x, u, p)``:
 The ``BuildingModel`` library of Trano gives the closed loop of the same building, with the controllers of its YAML:
 the rule-based reference of the MPC (:func:`mpctrano.simulation.run_rule_based`).
 
-The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to ``c74cddf``), which ``uv sync`` builds.
+The CasADi export of these models needs rumoca 0.10.3 or later with FastSmoothBuildings 0.6.0 or later (both on PyPI).
 """
 
 from __future__ import annotations
@@ -49,45 +49,24 @@ CLOSED_LOOP_LIBRARY = "FastSmoothBuildings"
 COMFORT_SUFFIX = ".TAir"
 _TEMPERATURE_STATE = re.compile(r"\.T(\[\d+\])?$")
 _WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
-RUMOCA_COMMIT = "c74cddf"
-"""Last rumoca commit known to export the connected FastSmoothBuildings models. Later ones, the 0.10.3 release on PyPI
-among them, keep "residual projection stages" for some function bodies of the library and their ``casadi-ode`` target
-refuses them."""
-RUMOCA_REQUIREMENT = (
-    "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072"
-    "#subdirectory=crates/rumoca-bind-python"
-)
-"""The pip requirement of that commit (``uv sync`` installs it from ``[tool.uv.sources]``)."""
-
-# Connected components, and the two function shapes of FastSmoothBuildings that the rumoca releases after RUMOCA_COMMIT
-# cannot export: a variable set by an if-expression and used by the next statement (Utilities.smoothLimit), and a
-# scalar reassigned in a loop and passed to an inlined smooth function (Envelope.Functions.overhangSunlitFraction).
-_PROBE = """package Probe
-  connector Port Real T; flow Real Q_flow; end Port;
-  model Node parameter Real C = 1; Real T(start = 290, fixed = true); Port port;
-  equation port.T = T; C*der(T) = port.Q_flow; end Node;
-  model Link Port a; Port b; equation a.Q_flow = a.T - b.T; a.Q_flow + b.Q_flow = 0; end Link;
-  function step input Real x; input Real y1; input Real y2; input Real d; output Real y;
-  algorithm y := if x > d then y1 else if x < -d then y2 else (x/d)*((x/d)^2 - 3)*(y2 - y1)/4 + (y1 + y2)/2; end step;
-  function limit input Real x; input Real l; input Real u; input Real d; output Real y; protected Real z;
-  algorithm z := if x > l + d then x else l; y := if z < u - d then z else u; end limit;
-  function shade input Real x; output Real y; protected Real cut; Real area[2];
-  algorithm for i in 1:2 loop cut := step(i*0.2 - x, x, i*0.2, 0.01) - 0.3; area[i] := step(cut, cut, 0, 0.01)*cut;
-    end for; y := area[1] + area[2]; end shade;
-  model M Node n1; Node n2; Link l;
-    Real x = 2*time - 1; Real limited = limit(x, -0.5, 0.5, 0.1); Real shaded = shade(x);
-  equation connect(n1.port, l.a); connect(l.b, n2.port); end M;
-end Probe;
-"""
+UPGRADE_COMMAND = 'pip install --upgrade "rumoca>=0.10.3,<0.11" "fastsmoothbuildings>=0.6.0,<1"'
+"""The releases that translate the FastSmoothBuildings models into CasADi together: rumoca 0.10.2 lacks the connected
+components, FastSmoothBuildings before 0.6.0 holds function shapes that rumoca 0.10.3 refuses."""
+_PROBE_MODEL = "FastSmoothBuildings.Examples.FreeFloatingRoom"
+"""A model of the installed library the probe translates: zone, walls, window and shading, weather (about 3 s)."""
 
 
-def _rumoca_version() -> str:
+def _version(package: str) -> str:
     from importlib.metadata import PackageNotFoundError, version
 
     try:
-        return version("rumoca")
+        return version(package)
     except PackageNotFoundError:
         return "version unknown"
+
+
+def _rumoca_version() -> str:
+    return _version("rumoca")
 
 
 class ModelError(ValueError):
@@ -115,16 +94,17 @@ def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
 
 @cache
 def rumoca_exports_building_models() -> bool:
-    """Whether the installed rumoca exports the FastSmoothBuildings models to CasADi.
+    """Whether the installed rumoca exports the models of the installed FastSmoothBuildings to CasADi.
 
-    It translates a small probe with connected components and the function shapes of the library that the rumoca
-    releases after :data:`RUMOCA_COMMIT` refuse; the version number cannot tell, as the 0.10.3 on PyPI and the build of
-    that commit both report 0.10.3.
+    It translates an example of the library: the version numbers cannot tell, as builds of different rumoca commits
+    report the same version.
     """
+    import fastsmoothbuildings
     import rumoca
 
+    probe = f"model Probe\n  extends {_PROBE_MODEL};\nend Probe;\n"
     try:
-        rumoca.Session().loads(_PROBE, model="Probe.M").to_casadi()
+        rumoca.Session(roots=[str(fastsmoothbuildings.LIBRARY)]).loads(probe, model="Probe").to_casadi()
     except Exception:
         return False
     return True
@@ -173,9 +153,9 @@ class BuildingModel:
         except Exception as error:
             if not rumoca_exports_building_models():
                 raise ModelError(
-                    f"The installed rumoca ({_rumoca_version()}) cannot export FastSmoothBuildings models to CasADi: "
-                    f"mpctrano needs the build of commit {RUMOCA_COMMIT}, which `uv sync` installs. With pip:\n"
-                    f'    pip install --force-reinstall --no-deps "{RUMOCA_REQUIREMENT}"'
+                    f"The installed rumoca ({_rumoca_version()}) cannot export the models of the installed "
+                    f"FastSmoothBuildings ({_version('fastsmoothbuildings')}) to CasADi; upgrade them:\n"
+                    f"    {UPGRADE_COMMAND}"
                 ) from error
             raise
         casadi_model = with_temperature_units(without_containers(casadi_model))

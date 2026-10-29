@@ -129,7 +129,7 @@ def test_the_installed_rumoca_exports_the_building_models() -> None:
     assert mpctrano.model.rumoca_exports_building_models()
 
 
-def test_a_rumoca_that_cannot_export_the_library_gets_the_install_command(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_rumoca_that_cannot_export_the_library_gets_the_upgrade_command(monkeypatch: pytest.MonkeyPatch) -> None:
     def refuse(*_: object, **__: object) -> None:
         raise RuntimeError(
             "Target rendering error: unsupported-feature:residual_equations: Target 'casadi-ode' does not support "
@@ -138,9 +138,9 @@ def test_a_rumoca_that_cannot_export_the_library_gets_the_install_command(monkey
 
     monkeypatch.setattr(mpctrano.model.CasadiModel, "from_modelica", refuse)
     monkeypatch.setattr(mpctrano.model, "rumoca_exports_building_models", lambda: False)
-    with pytest.raises(ModelError, match="cannot export FastSmoothBuildings models") as raised:
+    with pytest.raises(ModelError, match="cannot export the models") as raised:
         BuildingModel.from_source("package house end house;", "house.building_mpc")
-    assert mpctrano.model.RUMOCA_REQUIREMENT in str(raised.value)
+    assert mpctrano.model.UPGRADE_COMMAND in str(raised.value)
     assert isinstance(raised.value.__cause__, RuntimeError)
 
 

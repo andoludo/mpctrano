@@ -1762,7 +1762,7 @@ if "google.colab" in sys.modules:  # Colab: fetch the tutorials, install mpctran
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"mpctrano </span><span class="si">{</span><span class="n">mpctrano</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"quick mode: </span><span class="si">{</span><span class="n">QUICK</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="k">assert</span> <span class="n">mpctrano</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">rumoca_exports_building_models</span><span class="p">(),</span> <span class="p">(</span>
-    <span class="s2">"rumoca cannot export the FastSmoothBuildings models: run `uv sync`"</span>
+    <span class="sa">f</span><span class="s2">"this rumoca cannot export the FastSmoothBuildings models: run `uv sync`, or </span><span class="si">{</span><span class="n">mpctrano</span><span class="o">.</span><span class="n">model</span><span class="o">.</span><span class="n">UPGRADE_COMMAND</span><span class="si">}</span><span class="s2">"</span>
 <span class="p">)</span>
 </pre></div>
 <div class="clipboard-copy-txt" id="cell-2">from importlib.metadata import version
@@ -1781,7 +1781,7 @@ print(f"casadi {casadi.__version__}")
 print(f"mpctrano {mpctrano.__version__}")
 print(f"quick mode: {QUICK}")
 assert mpctrano.model.rumoca_exports_building_models(), (
-    "rumoca cannot export the FastSmoothBuildings models: run `uv sync`"
+    f"this rumoca cannot export the FastSmoothBuildings models: run `uv sync`, or {mpctrano.model.UPGRADE_COMMAND}"
 )</div>
 </div>
 </div>

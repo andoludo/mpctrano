@@ -1016,8 +1016,9 @@ the elements in since 0.57 (<code>network.model(include_container=False)</code>)
 strips their prefixes (<code>envelope1.</code>, <code>production1.</code>, ...) from a containerised model, as written by
 <code>trano create-model</code>. Both give the same model; <code>tests/test_trano_contract.py</code> checks it, with the
 translation of Trano's models by rumoca, against the installed Trano.</p>
-<p>The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to commit <code>c74cddf</code>); <code>uv sync</code>
-builds it from source, see the installation section of the README. The collocation, the moving
+<p>The CasADi export of these models needs rumoca 0.10.3 or later with FastSmoothBuildings 0.6.0 or later, both
+from PyPI; <code>mpctrano.model.rumoca_exports_building_models()</code> checks the installed pair by translating an example of
+the library. The collocation, the moving
 horizon estimation and the CasADi model come from <code>trano-optimization</code> (formerly <code>trano.optimization</code>).</p>
 <h2 id="2-disturbances">2. Disturbances</h2>
 <p><code>WeatherForecaster.from_model(model)</code> reads the TMY3 <code>.mos</code> weather file of the runnable model (a

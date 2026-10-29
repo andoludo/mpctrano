@@ -19,12 +19,13 @@ translates into an explicit ODE ``xdot = f(t, x, u, p)``:
 The ``BuildingModel`` library of Trano gives the closed loop of the same building, with the controllers of its YAML:
 the rule-based reference of the MPC (:func:`mpctrano.simulation.run_rule_based`).
 
-The CasADi export of these models needs rumoca 0.10.3 (rumoca main up to ``c74cddf``), which ``uv sync`` builds.
+The CasADi export of these models needs rumoca 0.10.3 or later with FastSmoothBuildings 0.6.0 or later (both on PyPI).
 """
 
 from __future__ import annotations
 
 import fnmatch
+import itertools
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -49,18 +50,24 @@ CLOSED_LOOP_LIBRARY = "FastSmoothBuildings"
 COMFORT_SUFFIX = ".TAir"
 _TEMPERATURE_STATE = re.compile(r"\.T(\[\d+\])?$")
 _WEATHER_FILE = re.compile(r"ReaderTMY3\s+\w+\s*\(\s*filNam\s*=[^\"]*\"([^\"]+)\"")
-RUMOCA_COMMIT = "c74cddf"
-"""Last rumoca commit known to export the connected FastSmoothBuildings models (later ones stop at residual
-equations)."""
+UPGRADE_COMMAND = 'pip install --upgrade "rumoca>=0.10.3,<0.11" "fastsmoothbuildings>=0.6.0,<1"'
+"""The releases that translate the FastSmoothBuildings models into CasADi together: rumoca 0.10.2 lacks the connected
+components, FastSmoothBuildings before 0.6.0 holds function shapes that rumoca 0.10.3 refuses."""
+_PROBE_MODEL = "FastSmoothBuildings.Examples.FreeFloatingRoom"
+"""A model of the installed library the probe translates: zone, walls, window and shading, weather (about 3 s)."""
 
-_PROBE = """package Probe
-  connector Port Real T; flow Real Q_flow; end Port;
-  model Node parameter Real C = 1; Real T(start = 290, fixed = true); Port port;
-  equation port.T = T; C*der(T) = port.Q_flow; end Node;
-  model Link Port a; Port b; equation a.Q_flow = a.T - b.T; a.Q_flow + b.Q_flow = 0; end Link;
-  model M Node n1; Node n2; Link l; equation connect(n1.port, l.a); connect(l.b, n2.port); end M;
-end Probe;
-"""
+
+def _version(package: str) -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return "version unknown"
+
+
+def _rumoca_version() -> str:
+    return _version("rumoca")
 
 
 class ModelError(ValueError):
@@ -86,13 +93,56 @@ def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
     return [] if library.resolve() in named else [library]
 
 
-@cache
-def rumoca_exports_building_models() -> bool:
-    """Whether the installed rumoca exports models made of connected components to CasADi."""
+def _dae_parameter_names(source: str, model: str, roots: Sequence[Path | str]) -> list[str]:
+    """The names of the CasADi parameter vector rebuilt from rumoca's DAE: the parameters, then the constants, in
+    their order of declaration, each array expanded element by element (row-major, 1-based)."""
     import rumoca
 
+    storage = rumoca.Session(roots=[str(root) for root in roots]).loads(source, model=model).to_dict(stage="dae")
+    types, variables = storage["storage"]["value_types"], storage["storage"]["variables"]
+    names = []
+    for role in ("parameter", "constant"):
+        for variable in (variable for variable in variables if variable["role"] == role):
+            sizes = [int(size) for size in types[variable["value_type"]]["dimensions"]]
+            indices = itertools.product(*(range(1, size + 1) for size in sizes))
+            names += [variable["name"] + (f"[{','.join(map(str, index))}]" if index else "") for index in indices]
+    return names
+
+
+def translate(source: str, model: str, roots: Sequence[Path | str] = ()) -> CasadiModel:
+    """:meth:`CasadiModel.from_modelica`, with the names of the parameters that rumoca 0.10.3 exports empty.
+
+    rumoca 0.10.3 from PyPI exports the elements of array parameters (``constructionType.x[1]``, ...) without their
+    names; they are rebuilt from its DAE, checked against every name it did export.
+    """
+    casadi_model = CasadiModel.from_modelica(source, model, roots=roots)
+    exported = casadi_model.description.parameter_names
+    if all(exported):
+        return casadi_model
+    names = _dae_parameter_names(source, model, roots)
+    if len(names) != len(exported) or any(old and old != new for old, new in zip(exported, names, strict=True)):
+        raise ModelError(f"The names of the parameters of {model} cannot be rebuilt from the DAE of rumoca.")
+    parameters = tuple(
+        variable.model_copy(update={"name": name})
+        for variable, name in zip(casadi_model.description.parameters, names, strict=True)
+    )
+    description = casadi_model.description.model_copy(update={"parameters": parameters})
+    return CasadiModel(rhs=casadi_model.rhs, description=description)
+
+
+@cache
+def rumoca_exports_building_models() -> bool:
+    """Whether the installed rumoca exports the models of the installed FastSmoothBuildings to CasADi.
+
+    It translates an example of the library: the version numbers cannot tell, as builds of different rumoca commits
+    report the same version.
+    """
+    import fastsmoothbuildings
+    import rumoca
+
+    probe = f"model Probe\n  extends {_PROBE_MODEL};\nend Probe;\n"
     try:
-        rumoca.Session().loads(_PROBE, model="Probe.M").to_casadi()
+        rumoca.Session(roots=[str(fastsmoothbuildings.LIBRARY)]).loads(probe, model="Probe").to_casadi()
     except Exception:
         return False
     return True
@@ -137,12 +187,13 @@ class BuildingModel:
         source declares it, as trano writes its packages (:func:`used_libraries`).
         """
         try:
-            casadi_model = CasadiModel.from_modelica(source, model, roots=[*roots, *used_libraries(source, roots)])
+            casadi_model = translate(source, model, roots=[*roots, *used_libraries(source, roots)])
         except Exception as error:
             if not rumoca_exports_building_models():
                 raise ModelError(
-                    f"The installed rumoca cannot export FastSmoothBuildings models to CasADi; install rumoca main at "
-                    f"{RUMOCA_COMMIT} (uv sync installs it)."
+                    f"The installed rumoca ({_rumoca_version()}) cannot export the models of the installed "
+                    f"FastSmoothBuildings ({_version('fastsmoothbuildings')}) to CasADi; upgrade them:\n"
+                    f"    {UPGRADE_COMMAND}"
                 ) from error
             raise
         casadi_model = with_temperature_units(without_containers(casadi_model))

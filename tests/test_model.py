@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import mpctrano.model
 from mpctrano import (
     BuildingModel,
     WeatherForecaster,
@@ -122,3 +123,31 @@ def test_a_source_that_uses_fast_smooth_buildings_without_holding_it_reads_it_fr
     assert used_libraries(uses, roots=[library]) == []
     assert used_libraries("package house\n  package FastSmoothBuildings\n  end FastSmoothBuildings;\nend house;") == []
     assert used_libraries('package house\n  annotation (uses(Buildings(version="12.0.0")));\nend house;') == []
+
+
+def test_the_installed_rumoca_exports_the_building_models() -> None:
+    assert mpctrano.model.rumoca_exports_building_models()
+
+
+def test_a_rumoca_that_cannot_export_the_library_gets_the_upgrade_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*_: object, **__: object) -> None:
+        raise RuntimeError(
+            "Target rendering error: unsupported-feature:residual_equations: Target 'casadi-ode' does not support "
+            "feature 'residual_equations'"
+        )
+
+    monkeypatch.setattr(mpctrano.model.CasadiModel, "from_modelica", refuse)
+    monkeypatch.setattr(mpctrano.model, "rumoca_exports_building_models", lambda: False)
+    with pytest.raises(ModelError, match="cannot export the models") as raised:
+        BuildingModel.from_source("package house end house;", "house.building_mpc")
+    assert mpctrano.model.UPGRADE_COMMAND in str(raised.value)
+    assert isinstance(raised.value.__cause__, RuntimeError)
+
+
+def test_a_model_error_unrelated_to_rumoca_is_not_masked(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(*_: object, **__: object) -> None:
+        raise RuntimeError("unresolved component")
+
+    monkeypatch.setattr(mpctrano.model.CasadiModel, "from_modelica", fail)
+    with pytest.raises(RuntimeError, match="unresolved component"):
+        BuildingModel.from_source("package house end house;", "house.building_mpc")

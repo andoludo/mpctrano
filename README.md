@@ -34,19 +34,13 @@ All optimisation problems collocate the model on Radau points (`trano_optimizati
 ## Installation
 
 ```bash
-git clone https://github.com/andoludo/mpctrano && cd mpctrano
-uv sync                        # trano, trano-optimization, casadi (IPOPT bundled) and rumoca built from source
+pip install "mpctrano[plot]"     # or, from a clone: uv sync
 ```
 
-The CasADi export of the FastSmoothBuildings models needs rumoca 0.10.3 (rumoca main up to commit `c74cddf`), which is not on
-PyPI yet: `uv sync` builds it from the commit pinned in `pyproject.toml` (a Rust toolchain is needed, about
-10 minutes the first time, cached afterwards). With pip, rumoca 0.10.2 from PyPI would install but cannot translate
-the FastSmoothBuildings models, so install rumoca first:
-
-```bash
-pip install "rumoca @ git+https://github.com/CogniPilot/rumoca@c74cddff6d7669fc2c3603d43529ab62e0964072#subdirectory=crates/rumoca-bind-python"
-pip install "mpctrano[plot]"
-```
+rumoca (Modelica to CasADi), CasADi (with IPOPT), trano and FastSmoothBuildings install as wheels from PyPI: no
+Modelica tool, no Rust toolchain. The CasADi export of the FastSmoothBuildings models needs rumoca 0.10.3 or later
+and FastSmoothBuildings 0.6.0 or later (rumoca 0.10.3 refuses some functions of the earlier releases of the library);
+`mpctrano.model.rumoca_exports_building_models()` checks the installed pair.
 
 ## Quick start
 

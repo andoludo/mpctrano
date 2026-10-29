@@ -4748,7 +4748,7 @@ wheels = [
 
 [[package]]
 name = "trano"
-version = "0.66.0"
+version = "0.67.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "buildingspy" },
@@ -4768,9 +4768,9 @@ dependencies = [
     { name = "typer" },
     { name = "yattag" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/d2/e851c8d70631b4e92a78f06d980768b835707eca57f6d9ac488c9af5b1e7/trano-0.66.0.tar.gz", hash = "sha256:30f6ee84f963db6acdf68d19d7e1638714296e7c5c948644a8be3ed832f8beae", size = 256895, upload-time = "2026-10-28T21:42:26.488Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/e3/9126e7c89adb93dadd000c8b0282aad056f724ddd9e0b940ea325e630884/trano-0.67.0.tar.gz", hash = "sha256:62c4f955a4412b05614c6faa0aa6b4e26dac52c9d2f53d68a4e76f79691990b9", size = 264617, upload-time = "2026-10-29T07:16:08.08Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/f6/58ec7a3d98454d4002a97eb4aa72bf67b28580d2d8634f1aac9679dd6f18/trano-0.66.0-py3-none-any.whl", hash = "sha256:bda085c50ccbff80f64847caf3dded8eb7332d2c531af2f3812b82c4ae7af00b", size = 313376, upload-time = "2026-10-28T21:42:25.341Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/d8/372416d8f383c5ecad2b81b09d2aa4b8961a4b6ef969049632a1d701fd0b/trano-0.67.0-py3-none-any.whl", hash = "sha256:c3a30b75b68eff0bfd55eda1e3d5ff8e8301f149760c7bd1ea900a1a6541edc0", size = 320830, upload-time = "2026-10-29T07:16:06.857Z" },
 ]
 
 [[package]]

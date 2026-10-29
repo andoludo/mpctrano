@@ -23,7 +23,7 @@ from trano_optimization import CasadiModel, Roles
 
 from mpctrano import BuildingModel, ModelError, WeatherForecaster
 from mpctrano.calibration import DEFAULT_GROUPS
-from mpctrano.model import CLOSED_LOOP_LIBRARY, MPC_LIBRARY, used_libraries, without_containers
+from mpctrano.model import CLOSED_LOOP_LIBRARY, MPC_LIBRARY, translate, used_libraries, without_containers
 from tests.conftest import BOILER_HOUSE, HEAT_PUMP_HOUSE, MODELS
 
 BESTEST_600FF = MODELS / "case_600FF.yaml"
@@ -51,7 +51,7 @@ def source(path: Path, library: str, include_container: bool) -> str:
 @cache
 def translated(path: Path, library: str, include_container: bool) -> CasadiModel:
     text = source(path, library, include_container)
-    return CasadiModel.from_modelica(text, f"{path.stem}.building_mpc", roots=used_libraries(text))
+    return translate(text, f"{path.stem}.building_mpc", roots=used_libraries(text))
 
 
 @pytest.mark.parametrize("library", LIBRARIES)
@@ -175,3 +175,12 @@ def test_a_network_that_embeds_the_library_gives_the_same_model(library: str) ->
     assert beside.state_names == embedded.state_names
     assert beside.input_names == embedded.input_names
     np.testing.assert_array_equal(beside.initial_state, embedded.initial_state)
+
+
+def test_every_parameter_has_its_name() -> None:
+    """rumoca 0.10.3 exports the elements of array parameters without their names: translate rebuilds them."""
+    model = translated(HEAT_PUMP_HOUSE, MPC_LIBRARY, True)
+    names = model.description.parameter_names
+    assert all(names)
+    assert len(set(names)) == len(names)
+    assert any(name.endswith(".constructionType.x[1]") for name in names)

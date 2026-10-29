@@ -25,6 +25,7 @@ The CasADi export of these models needs rumoca 0.10.3 or later with FastSmoothBu
 from __future__ import annotations
 
 import fnmatch
+import itertools
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -92,6 +93,43 @@ def used_libraries(source: str, roots: Sequence[Path | str] = ()) -> list[Path]:
     return [] if library.resolve() in named else [library]
 
 
+def _dae_parameter_names(source: str, model: str, roots: Sequence[Path | str]) -> list[str]:
+    """The names of the CasADi parameter vector rebuilt from rumoca's DAE: the parameters, then the constants, in
+    their order of declaration, each array expanded element by element (row-major, 1-based)."""
+    import rumoca
+
+    storage = rumoca.Session(roots=[str(root) for root in roots]).loads(source, model=model).to_dict(stage="dae")
+    types, variables = storage["storage"]["value_types"], storage["storage"]["variables"]
+    names = []
+    for role in ("parameter", "constant"):
+        for variable in (variable for variable in variables if variable["role"] == role):
+            sizes = [int(size) for size in types[variable["value_type"]]["dimensions"]]
+            indices = itertools.product(*(range(1, size + 1) for size in sizes))
+            names += [variable["name"] + (f"[{','.join(map(str, index))}]" if index else "") for index in indices]
+    return names
+
+
+def translate(source: str, model: str, roots: Sequence[Path | str] = ()) -> CasadiModel:
+    """:meth:`CasadiModel.from_modelica`, with the names of the parameters that rumoca 0.10.3 exports empty.
+
+    rumoca 0.10.3 from PyPI exports the elements of array parameters (``constructionType.x[1]``, ...) without their
+    names; they are rebuilt from its DAE, checked against every name it did export.
+    """
+    casadi_model = CasadiModel.from_modelica(source, model, roots=roots)
+    exported = casadi_model.description.parameter_names
+    if all(exported):
+        return casadi_model
+    names = _dae_parameter_names(source, model, roots)
+    if len(names) != len(exported) or any(old and old != new for old, new in zip(exported, names, strict=True)):
+        raise ModelError(f"The names of the parameters of {model} cannot be rebuilt from the DAE of rumoca.")
+    parameters = tuple(
+        variable.model_copy(update={"name": name})
+        for variable, name in zip(casadi_model.description.parameters, names, strict=True)
+    )
+    description = casadi_model.description.model_copy(update={"parameters": parameters})
+    return CasadiModel(rhs=casadi_model.rhs, description=description)
+
+
 @cache
 def rumoca_exports_building_models() -> bool:
     """Whether the installed rumoca exports the models of the installed FastSmoothBuildings to CasADi.
@@ -149,7 +187,7 @@ class BuildingModel:
         source declares it, as trano writes its packages (:func:`used_libraries`).
         """
         try:
-            casadi_model = CasadiModel.from_modelica(source, model, roots=[*roots, *used_libraries(source, roots)])
+            casadi_model = translate(source, model, roots=[*roots, *used_libraries(source, roots)])
         except Exception as error:
             if not rumoca_exports_building_models():
                 raise ModelError(

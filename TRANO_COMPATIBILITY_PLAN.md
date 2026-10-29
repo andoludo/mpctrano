@@ -209,3 +209,9 @@ a smooth function in an equation; `C[i]*der(T[i]) = Q[i]` in a for loop of equat
 if-expression with a computed branch), listed in its `UsersGuide.Translation`. Its tests pass with rumoca 0.10.3
 from PyPI and with the commit 33c2114; mpctrano requires rumoca >= 0.10.3 and FastSmoothBuildings >= 0.6.0 from
 PyPI and no longer pins a rumoca commit.
+
+rumoca 0.10.3 also exports the elements of array parameters with empty names (485 of the 760 parameters of the heat
+pump house); the commit c74cddf named them. `mpctrano.model.translate` rebuilds them from the DAE of rumoca (the
+parameters, then the constants, in their order of declaration, each array expanded row-major), checked against the
+names rumoca did export. The same fix belongs in `trano_optimization.CasadiModel.from_modelica`, after which mpctrano
+can call it directly.

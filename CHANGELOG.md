@@ -13,6 +13,10 @@ release pipeline.
   rumoca from source any more (no Rust toolchain; the `rumoca wheel` workflow is removed).
   `rumoca_exports_building_models` translates an example of the installed library; a translation error names
   `UPGRADE_COMMAND`. `RUMOCA_COMMIT` and `RUMOCA_REQUIREMENT` are removed.
+- `mpctrano.model.translate`: `CasadiModel.from_modelica` with the names of the parameters that rumoca 0.10.3
+  exports empty (the elements of array parameters, two thirds of a house's parameters), rebuilt from its DAE and
+  checked against every name it did export; `BuildingModel` translates with it. Without the names, the calibration
+  from the YAML and the contract with trano failed.
 
 ### Fixed
 
